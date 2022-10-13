@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
@@ -20,87 +21,90 @@ total_no_frames = int(vc.get(cv2.CAP_PROP_FRAME_COUNT))
 fps = vc.get(cv2.CAP_PROP_FPS)
 
 
-fourcc = cv2.VideoWriter_fourcc(*"XVID")
-out = cv2.VideoWriter(
-    (result_folder / "output.avi").as_posix(), fourcc, fps, (width, height)
-)
-
-for frame_number in range(1, total_no_frames + 1):
-    vc.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
-    rval, frame = vc.read()
-
-    track_path = track_folder / f"12_07_22_1_C_GH040468_1_cam1_rect_{frame_number}.txt"
-    track = np.loadtxt(track_path)
-
-    Xs = np.int64(np.round(track[:, 1] * width))
-    Ys = np.int64(np.round(track[:, 2] * height))
-    Ws = np.int64(np.round(track[:, 3] * width))
-    Hs = np.int64(np.round(track[:, 4] * height))
-    # # show as bounding boxes
-    # for x, y, w, h in zip(Xs, Ys, Ws, Hs):
-    #     w2 = int(w/2)
-    #     h2  = int(h/2)
-    #     color = tuple(int(i) for i in np.random.randint(0, 255, (3,)))
-    #     cv2.rectangle(frame, (x-w2,y-h2), (x+w2,y+h2), color=color, thickness=2)
-
-    # show as thick points
-    for i in range(6):
-        for j in range(6):
-            frame[Ys + i, Xs + j, :] = np.array([0, 0, 255])
-
-    out.write(frame)
-out.release()
+def match_two_detection_sets(dets1, dets2):
+    dist = np.zeros((len(dets1), len(dets2)), dtype=np.float32)
+    for i, det1 in enumerate(dets1):
+        for j, det2 in enumerate(dets2):
+            dist[i, j] = np.linalg.norm([det2.x - det1.x, det2.y - det1.y])
+    row_ind, col_ind = linear_sum_assignment(dist)
+    return row_ind, col_ind
 
 
-# visualize detections in frames
-for frame_number in range(1, total_no_frames + 1, 90):
-    vc.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
-    rval, frame = vc.read()
+def draw_matches(frame1, frame2, matches1, matches2):
+    _, ax1 = plt.subplots(1, 1)
+    _, ax2 = plt.subplots(1, 1)
+    ax1.imshow(frame1[..., ::-1])
+    ax2.imshow(frame2[..., ::-1])
+    ax1.set_xlim(1400, 2100)
+    ax1.set_ylim(1200, 700)
+    ax2.set_xlim(1400, 2100)
+    ax2.set_ylim(1200, 700)
 
-    track_path = track_folder / f"12_07_22_1_C_GH040468_1_cam1_rect_{frame_number}.txt"
-    track = np.loadtxt(track_path)
-
-    plt.figure()
-    plt.imshow(frame[..., ::-1])
-    plt.plot(track[:, 1] * frame.shape[1], track[:, 2] * frame.shape[0], "r*")
+    for match1, match2 in zip(matches1, matches2):
+        ax1.plot([match1.x, match2.x], [match1.y, match2.y], "*-", color=(0, 0, 1))
+        ax2.plot([match1.x, match2.x], [match1.y, match2.y], "*-", color=(0, 0, 1))
     plt.show(block=False)
 
 
-# matching
-frame_number = 1
-track_path = track_folder / f"12_07_22_1_C_GH040468_1_cam1_rect_{frame_number}.txt"
-track = np.loadtxt(track_path)
-X1 = track[:, 1] * width
-Y1 = track[:, 2] * height
-vc.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
+@dataclass
+class Detection:
+    x: int
+    y: int
+
+
+@dataclass
+class Track:
+    coords: list[Detection]
+    color: tuple
+    frames: list[int]
+
+
+def get_detections(det_path) -> list[Detection]:
+    detections = np.loadtxt(det_path)
+    return [Detection(int(det[1] * width), int(det[2] * height)) for det in detections]
+
+
+# initiate track
+det_path1 = track_folder / f"12_07_22_1_C_GH040468_1_cam1_rect_{1}.txt"
+det_path2 = track_folder / f"12_07_22_1_C_GH040468_1_cam1_rect_{2}.txt"
+dets1 = get_detections(det_path1)
+dets2 = get_detections(det_path2)
+ids1, ids2 = match_two_detection_sets(dets1, dets2)
+tracks = {}
+for id1, id2 in zip(ids1, ids2):
+    coords = [dets1[id1], dets2[id2]]
+    color = tuple(np.random.rand(3))
+    frames = [1, 2]
+    track = Track(coords=coords, color=color, frames=frames)
+    tracks[id1] = track
+
+for frame_number in range(2, 30):
+    det_path2 = track_folder / f"12_07_22_1_C_GH040468_1_cam1_rect_{frame_number}.txt"
+    det_path3 = track_folder / f"12_07_22_1_C_GH040468_1_cam1_rect_{frame_number+1}.txt"
+    dets2 = get_detections(det_path2)
+    dets3 = get_detections(det_path3)
+    ids1, ids2 = match_two_detection_sets(dets1, dets2)
+    ids2_2, ids3 = match_two_detection_sets(dets2, dets3)
+
+    id2_id1 = {id2: id1 for id1, id2 in zip(ids1, ids2)}
+    common_ids2 = set(ids2).intersection(ids2_2)
+    id2_2_id3 = {id2_2: id3 for id2_2, id3 in zip(ids2_2, ids3)}
+    for common_id2 in common_ids2:
+        id1 = id2_id1[common_id2]
+        id3 = id2_2_id3[common_id2]
+        tracks[id1].coords.append(dets3[id3])
+        tracks[id1].frames.append(frame_number + 1)
+
+# visualize tracks
+vc.set(cv2.CAP_PROP_POS_FRAMES, 0)
 _, frame1 = vc.read()
-
-frame_number = 15
-track_path = track_folder / f"12_07_22_1_C_GH040468_1_cam1_rect_{frame_number}.txt"
-track = np.loadtxt(track_path)
-X2 = track[:, 1] * width
-Y2 = track[:, 2] * height
-vc.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
-_, frame2 = vc.read()
-
-dist = np.zeros((X1.shape[0], X2.shape[0]), dtype=np.float32)
-for i, (x1, y1) in enumerate(zip(X1, Y1)):
-    for j, (x2, y2) in enumerate(zip(X2, Y2)):
-        dist[i, j] = np.linalg.norm([x2 - x1, y2 - y1])
-row_ind, col_ind = linear_sum_assignment(dist)
-
-fig1, ax1 = plt.subplots(1, 1)
-fig2, ax2 = plt.subplots(1, 1)
-ax1.imshow(frame1[..., ::-1])
-ax2.imshow(frame2[..., ::-1])
-ax1.set_xlim(1400, 2100)
-ax1.set_ylim(1200, 700)
-ax2.set_xlim(1400, 2100)
-ax2.set_ylim(1200, 700)
-
-for r, c in zip(row_ind, col_ind):
-    ax1.plot([X1[r], X2[c]], [Y1[r], Y2[c]], "*-", color=(0, 0, 1))
-    ax2.plot([X1[r], X2[c]], [Y1[r], Y2[c]], "*-", color=(0, 0, 1))
+plt.figure()
+plt.imshow(frame1[..., ::-1])
+for _, track in tracks.items():
+    plt.plot(
+        [det.x for det in track.coords],
+        [det.y for det in track.coords],
+        "*-",
+        color=track.color,
+    )
 plt.show(block=False)
-
-vc.release()
