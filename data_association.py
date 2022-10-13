@@ -78,7 +78,7 @@ for id1, id2 in zip(ids1, ids2):
     track = Track(coords=coords, color=color, frames=frames)
     tracks[id1] = track
 
-for frame_number in range(2, 30):
+for frame_number in range(2, 60):
     det_path2 = track_folder / f"12_07_22_1_C_GH040468_1_cam1_rect_{frame_number}.txt"
     det_path3 = track_folder / f"12_07_22_1_C_GH040468_1_cam1_rect_{frame_number+1}.txt"
     dets2 = get_detections(det_path2)
@@ -92,8 +92,13 @@ for frame_number in range(2, 30):
     for common_id2 in common_ids2:
         id1 = id2_id1[common_id2]
         id3 = id2_2_id3[common_id2]
-        tracks[id1].coords.append(dets3[id3])
-        tracks[id1].frames.append(frame_number + 1)
+        # remove wrong matches
+        det_new = dets3[id3]
+        det_previous = tracks[id1].coords[-1]
+        dist = np.linalg.norm([det_new.x - det_previous.x, det_new.y - det_previous.y])
+        if dist < 10:  # TODO fedge factor
+            tracks[id1].coords.append(dets3[id3])
+            tracks[id1].frames.append(frame_number + 1)
 
 # visualize tracks
 vc.set(cv2.CAP_PROP_POS_FRAMES, 0)
