@@ -6,13 +6,15 @@ import numpy as np
 from matplotlib import pyplot as plt
 from scipy.optimize import linear_sum_assignment
 
-data_folder = Path("/home/fatemeh/data/dataset1")
 result_folder = Path("/home/fatemeh/results/dataset1")
-track_folder = Path("/home/fatemeh/data/dataset1/cam1_labels/cam1_labels")
-vc = cv2.VideoCapture(
-    (data_folder / "12_07_22_1_C_GH040468_1_cam1_rect 1.mp4").as_posix()
-)
+data_folder = Path("/home/fatemeh/data/dataset1")
+track_folder = (
+    data_folder / "cam1_labels/cam1_labels"
+)  # cam1_labels/cam1_labels, cam2_labels/cam2_labels
+filename_fixpart = "12_07_22_1_C_GH040468_1_cam1_rect"  # 12_07_22_1_C_GH040468_1_cam1_rect, 12_07_22_1_D_GH040468_1_cam2_rect
+vc = cv2.VideoCapture((data_folder / f"{filename_fixpart}.mp4").as_posix())
 vc.isOpened()
+
 
 # visualize detection as video
 height = int(vc.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -50,6 +52,9 @@ def draw_matches(frame1, frame2, matches1, matches2):
 class Detection:
     x: int
     y: int
+    w: int
+    h: int
+    id: int
 
 
 @dataclass
@@ -61,12 +66,21 @@ class Track:
 
 def get_detections(det_path) -> list[Detection]:
     detections = np.loadtxt(det_path)
-    return [Detection(int(det[1] * width), int(det[2] * height)) for det in detections]
+    return [
+        Detection(
+            x=int(det[1] * width),
+            y=int(det[2] * height),
+            w=int(det[3] * width),
+            h=int(det[4] * height),
+            id=i,
+        )
+        for i, det in enumerate(detections)
+    ]
 
 
 # initiate track
-det_path1 = track_folder / f"12_07_22_1_C_GH040468_1_cam1_rect_{1}.txt"
-det_path2 = track_folder / f"12_07_22_1_C_GH040468_1_cam1_rect_{2}.txt"
+det_path1 = track_folder / f"{filename_fixpart}_{1}.txt"
+det_path2 = track_folder / f"{filename_fixpart}_{2}.txt"
 dets1 = get_detections(det_path1)
 dets2 = get_detections(det_path2)
 ids1, ids2 = match_two_detection_sets(dets1, dets2)
@@ -78,9 +92,9 @@ for id1, id2 in zip(ids1, ids2):
     track = Track(coords=coords, color=color, frames=frames)
     tracks[id1] = track
 
-for frame_number in range(2, 60):
-    det_path2 = track_folder / f"12_07_22_1_C_GH040468_1_cam1_rect_{frame_number}.txt"
-    det_path3 = track_folder / f"12_07_22_1_C_GH040468_1_cam1_rect_{frame_number+1}.txt"
+for frame_number in range(2, 10):
+    det_path2 = track_folder / f"{filename_fixpart}_{frame_number}.txt"
+    det_path3 = track_folder / f"{filename_fixpart}_{frame_number+1}.txt"
     dets2 = get_detections(det_path2)
     dets3 = get_detections(det_path3)
     ids1, ids2 = match_two_detection_sets(dets1, dets2)
