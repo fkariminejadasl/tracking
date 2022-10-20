@@ -44,10 +44,10 @@ def draw_matches(frame1, frame2, matches1, matches2):
 
 
 class Status(enum.Enum):
-    Tracked: bool = 1
-    Untracked: bool = 2
-    Stoped: bool = 3
-    NewTrack: bool = 4
+    Tracked: bool = enum.auto()
+    Untracked: bool = enum.auto()
+    Stoped: bool = enum.auto()
+    NewTrack: bool = enum.auto()
 
 
 @dataclass
@@ -177,7 +177,8 @@ for id in diff_ids:
     tracks[track_id] = _make_a_new_track(coords, frameids, flow, Status.NewTrack)
     track_id += 1
 
-
+# start track
+# ===========
 for frame_number in range(3, 681):
     det_path = track_folder / f"{filename_fixpart}_{frame_number}.txt"
     dets = get_detections(det_path, frame_number)
@@ -249,12 +250,13 @@ _, frame1 = vc.read()
 plt.figure()
 plt.imshow(frame1[..., ::-1])
 for _, track in tracks.items():
-    plt.plot(
-        [det.x for det in track.coords],
-        [det.y for det in track.coords],
-        "*-",
-        color=track.color,
-    )
+    if track.status == Status.Tracked:
+        plt.plot(
+            [det.x for det in track.coords],
+            [det.y for det in track.coords],
+            "*-",
+            color=track.color,
+        )
 plt.show(block=False)
 
 
@@ -284,3 +286,20 @@ plt.show(block=False)
 #         print(f"{k},{len(track.frameids)}")
 #         plt.plot(track.frameids,"*-",label=str(k))
 # print(f"{c}")
+
+# frameid-y axis
+def plot_frameid_y(tracks, status, legned=False):
+    _, ax = plt.subplots(1,1)
+    for k, track in tracks.items():
+        if track.status == status:
+            ax.plot(
+                track.frameids,
+                [coord.y for coord in track.coords],
+                "*-",
+                color=track.color,
+                label=str(k),
+            )
+            print(f"{k}, {track.status}")
+    if legned == True:
+        ax.legend()
+    plt.show(block=False)
