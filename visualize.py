@@ -9,7 +9,7 @@ data_folder = Path("/home/fatemeh/data/dataset1")
 result_folder = Path("/home/fatemeh/results/dataset1")
 track_folder = Path("/home/fatemeh/data/dataset1/cam1_labels/cam1_labels")
 vc = cv2.VideoCapture(
-    (data_folder / "12_07_22_1_C_GH040468_1_cam1_rect 1.mp4").as_posix()
+    (data_folder / "12_07_22_1_C_GH040468_1_cam1_rect.mp4").as_posix()
 )
 vc.isOpened()
 
@@ -65,3 +65,37 @@ for frame_number in range(1, total_no_frames + 1, 90):
     plt.show(block=False)
 
 vc.release()
+
+
+# visualize tracks as video
+fourcc = cv2.VideoWriter_fourcc(*"XVID")
+out = cv2.VideoWriter(
+    (result_folder / "track_cam1.avi").as_posix(),
+    fourcc,
+    fps,
+    (700, 500),  # (width, height)
+)
+for frame_number in range(1, total_no_frames + 1):
+    vc.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
+    _, frame = vc.read()
+
+    for _, track in tracks.items():
+        if frame_number in track.frameids:
+            color = tuple(int(round(c * 255)) for c in track.color)
+            idx = np.where(np.array(track.frameids) == frame_number)[0][0]
+            coord = track.coords[idx]
+            w2 = int(coord.w / 2)
+            h2 = int(coord.h / 2)
+            cv2.rectangle(
+                frame,
+                (coord.x - w2, coord.y - h2),
+                (coord.x + w2, coord.y + h2),
+                color=color,
+                thickness=2,
+            )
+            # show as thick points
+            # for i in range(6):
+            #     for j in range(6):
+            #         frame[coord.y + i, coord.x + j, :] = color
+    out.write(frame[700:1200, 1400:2100, :])  # cam1: 1400:2100; cam2: 1000:1700
+out.release()
