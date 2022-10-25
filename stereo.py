@@ -1,128 +1,85 @@
 from dataclasses import dataclass
-from pathlib import Path
 
-import cv2
-import numpy as np
-from matplotlib import pyplot as plt
-from scipy.optimize import linear_sum_assignment
-from scipy.cluster.hierarchy import ward, fcluster
-from scipy.spatial.distance import pdist
+from data_association import Detection
 
-data_folder = Path("/home/fatemeh/data/dataset1")
-result_folder = Path("/home/fatemeh/results/dataset1")
-track_folder1 = Path("/home/fatemeh/data/dataset1/cam1_labels/cam1_labels")
-track_folder2 = Path("/home/fatemeh/data/dataset1/cam2_labels/cam2_labels")
-vc1 = cv2.VideoCapture(
-    (data_folder / "12_07_22_1_C_GH040468_1_cam1_rect 1.mp4").as_posix()
-)
-vc2 = cv2.VideoCapture(
-    (data_folder / "12_07_22_1_D_GH040468_1_cam2_rect 1.mp4").as_posix()
-)
-
-
-# visualize detection as video
-height = int(vc1.get(cv2.CAP_PROP_FRAME_HEIGHT))
-width = int(vc1.get(cv2.CAP_PROP_FRAME_WIDTH))
-total_no_frames = int(vc1.get(cv2.CAP_PROP_FRAME_COUNT))
-fps = vc1.get(cv2.CAP_PROP_FPS)
+accepted_track_length = 50
+matched_track_length = 50
+accepted_error = 3
+# match_file = result_folder/"matches.txt"
 
 
 @dataclass
-class Detection:
-    x: int
-    y: int
-    w: int
-    h: int
-    id: int
+class Matches:
+    error: float
+    l1_norm: float
+    count: int
+    ids: list[int]
+    coords1: list[Detection]
+    coords2: list[Detection]
 
 
-def get_detections(det_path) -> list[Detection]:
-    detections = np.loadtxt(det_path)
-    return [
-        Detection(
-            x = int(det[1] * width),
-            y = int(det[2] * height),
-            w = int(det[3] * width),
-            h = int(det[4] * height),
-            id = i,
-        )
-        for i, det in enumerate(detections)
-    ]
+def compute_possible_matches_for_a_track(track1, tracks2):
+    possible_matches = {}
+    for track_id2, track2 in tracks2.items():
+        if len(track2.frameids) > accepted_track_length:
+            # TODO: [1:] is a hack for the existing bug
+            common_frames = set(track1.frameids[1:]).intersection(
+                set(track2.frameids[1:])
+            )
+            error = 0
+            count = 0
+            ids = []
+            coords1 = []
+            coords2 = []
+            if len(common_frames) > matched_track_length:
+                for frame_id in common_frames:
+                    coord1 = [coord for coord in track1.coords if coord.id == frame_id][
+                        0
+                    ]
+                    coord2 = [coord for coord in track2.coords if coord.id == frame_id][
+                        0
+                    ]
+                    l1_norm = abs(coord1.y - coord2.y)
+                    if l1_norm < accepted_error:
+                        error += l1_norm
+                        count += 1
+                        ids.append(frame_id)
+                        coords1.append(coord1)
+                        coords2.append(coord2)
+                if count != 0:
+                    possible_matches[track_id2] = Matches(
+                        error / count, error, count, ids, coords1, coords2
+                    )
+    matched_groups = {
+        key: matches
+        for key, matches in possible_matches.items()
+        if len(matches.ids) > matched_track_length
+        if matches.error < 1
+    }
+    return matched_groups
 
 
-vc1.set(cv2.CAP_PROP_POS_FRAMES, 0)
-_, frame1_1 = vc1.read()
-vc2.set(cv2.CAP_PROP_POS_FRAMES, 0)
-_, frame1_2 = vc2.read()
+def compute_possible_matches(tracks1, tracks2):
+    all_matches = {}
+    for track_id1, track1 in tracks1.items():
+        if len(track1.frameids) > accepted_track_length:
+            matched_groups = compute_possible_matches_for_a_track(track1, tracks2)
+            if matched_groups:
+                all_matches[track_id1] = matched_groups
+                print(f"{track_id1}: {list(matched_groups.keys())}")
+    return all_matches
 
 
-det_path1 = track_folder1 / f"12_07_22_1_C_GH040468_1_cam1_rect_{1}.txt"
-det_path2 = track_folder2 / f"12_07_22_1_D_GH040468_1_cam2_rect_{1}.txt"
-dets1 = get_detections(det_path1)
-dets2 = get_detections(det_path2)
+def save_matches(match_file, track_id1, matched_groups, inverse=False):
+    # inverse is true when first tracks2 and then tracks1
+    with open(match_file, "a") as file:
+        for track_id2, matches in matched_groups.items():
+            for coord1, coord2 in zip(matches.coords1, matches.coords2):
+                file.write(
+                    f"{track_id1},{track_id2},{coord1.x},{coord1.y},{coord1.id},{coord2.x},{coord2.y},{coord2.id},{int(inverse)}\n"
+                )
 
 
-def draw_detections(frame, dets):
-    for det in dets:
-        w2 = int(det.w / 2)
-        h2 = int(det.h / 2)
-        color = tuple(int(i) for i in np.random.randint(0, 255, (3,)))
-        cv2.rectangle(
-            frame,
-            (det.x - w2, det.y - h2),
-            (det.x + w2, det.y + h2),
-            color=color,
-            thickness=1,
-        )
-    plt.figure()
-    plt.imshow(frame[..., ::-1])
-    plt.show(block=False)
-
-
-# cluster detections with similar y-coodinates
-# similarity threshold = 10
-@dataclass
-class Cluster:
-    ids1: list[int]
-    ids2: list[int]
-
-
-def cluster_by_y(dets1, sim_thres=10):
-    data = np.array([(0.0, float(det1.y)) for det1 in dets1])
-    ids1 = fcluster(ward(pdist(data)), t=sim_thres, criterion="distance")
-    c1 = {}
-    for i, id1 in enumerate(ids1):
-        if id1 in c1:
-            c1[id1].append(i)
-        else:
-            c1[id1] = [i]
-    return c1
-
-cluster1 = cluster_by_y(dets1) 
-cluster2 = {}
-for det1 in dets1:
-    for det2 in dets2:
-        if (abs(det1.y-det2.y)<10) and (det1.id is not det2.id):
-            if det1.id in cluster2:
-                cluster2[det1.id].append(det2.id)
-            else:
-                cluster2[det1.id] = [det2.id]
-
-cluster = {}
-for i, (key1, values1) in enumerate(cluster1.items()):
-    ids2 = set()
-    for value1 in values1:
-        if value1 in cluster2:
-            ids2 = ids2.union(set(cluster2[value1]))
-    cluster[i] = Cluster(ids1=values1, ids2=list(ids2))
-
-
-# TODO
-# problem is that that cluster1 is good but cluster2 is bad. distance become larger
-# maybe I can do Hungerian without clustering only on flows. 
-
-# currently:
-# cluster on similar y
-# for each cluster find similar flow
-
-
+def save_all_matches(match_file, all_matches, inverse=False):
+    for track_id1, matched_group in all_matches.items():
+        save_matches(match_file, track_id1, all_matches[track_id1], inverse)

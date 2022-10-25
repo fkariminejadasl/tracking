@@ -4,8 +4,9 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from matplotlib import pyplot as plt
 from scipy.optimize import linear_sum_assignment
+
+np.random.seed(1000)
 
 accepted_flow_length = 10
 stopped_track_length = 50
