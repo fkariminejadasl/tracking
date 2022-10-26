@@ -167,7 +167,7 @@ def visualize_tracks_in_video(
     vc,
     output_video_file,
     focus_point=Point(1400, 700),
-    out_width=700,
+    out_width=900,
     out_height=500,
 ):
     _, _, total_no_frames, fps = get_video_parameters(vc)
@@ -208,5 +208,74 @@ def visualize_tracks_in_video(
                 int(focus_point.x) : int(focus_point.x) + out_width,
                 :,
             ]
-        )  # cam1: 1400:2100; cam2: 1000:1700, height: 700:1200
+        )  # cam1: 1300:2200; cam2: 1100:1900, height: 700:1200
+    out.release()
+
+
+def visualize_matches_in_video(
+    all_matches,
+    vc1,
+    vc2,
+    output_video_file,
+    focus_point=Point(1300, 700),
+    out_width=900,
+    out_height=500,
+):
+    _, _, total_no_frames, fps = get_video_parameters(vc1)
+
+    fourcc = cv2.VideoWriter_fourcc(*"XVID")
+    out = cv2.VideoWriter(
+        output_video_file.as_posix(),
+        fourcc,
+        fps,
+        (out_width * 2, out_height),  # (width, height)
+    )
+    for frame_number in range(1, total_no_frames + 1):
+        vc1.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
+        _, frame1 = vc1.read()
+        vc2.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
+        _, frame2 = vc2.read()
+
+        for track_id1, value in all_matches.items():
+            for track_id2, matches in value.items():
+                frameids = [coord1.id for coord1 in matches.coords1]
+                if frame_number in frameids:
+                    color = tuple(int(round(c * 255)) for c in matches.track1_color)
+                    color = (color[2], color[1], color[0])
+                    idx = np.where(np.array(frameids) == frame_number)[0][0]
+                    coord = matches.coords1[idx]
+                    w2 = int(coord.w / 2)
+                    h2 = int(coord.h / 2)
+                    cv2.rectangle(
+                        frame1,
+                        (int(coord.x) - w2, int(coord.y) - h2),
+                        (int(coord.x) + w2, int(coord.y) + h2),
+                        color=color,
+                        thickness=1,
+                    )
+                    color = tuple(int(round(c * 255)) for c in matches.track2_color)
+                    color = (color[2], color[1], color[0])
+                    coord = matches.coords2[idx]
+                    w2 = int(coord.w / 2)
+                    h2 = int(coord.h / 2)
+                    cv2.rectangle(
+                        frame2,
+                        (int(coord.x) - w2, int(coord.y) - h2),
+                        (int(coord.x) + w2, int(coord.y) + h2),
+                        color=color,
+                        thickness=1,
+                    )
+        frame1 = frame1[
+            int(focus_point.y) : int(focus_point.y) + out_height,
+            int(focus_point.x) : int(focus_point.x) + out_width,
+            :,
+        ]
+        frame2 = frame2[
+            int(focus_point.y) : int(focus_point.y) + out_height,
+            int(focus_point.x - 200) : int(focus_point.x - 200) + out_width,
+            :,
+        ]
+        out.write(
+            np.concatenate((frame1, frame2), axis=1)
+        )  # cam1: 1300:2200; cam2: 1100:1900, height: 700:1200
     out.release()

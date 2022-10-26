@@ -16,6 +16,8 @@ class Matches:
     ids: list[int]
     coords1: list[Detection]
     coords2: list[Detection]
+    track1_color: tuple
+    track2_color: tuple
 
 
 def compute_possible_matches_for_a_track(track1, tracks2):
@@ -48,7 +50,7 @@ def compute_possible_matches_for_a_track(track1, tracks2):
                         coords2.append(coord2)
                 if count != 0:
                     possible_matches[track_id2] = Matches(
-                        error / count, error, count, ids, coords1, coords2
+                        error / count, error, count, ids, coords1, coords2, track1.color, track2.color
                     )
     matched_groups = {
         key: matches
