@@ -237,7 +237,7 @@ def compute_tracks(det_folder: Path, filename_fixpart: str, width: int, height: 
         # unmatched tracks: frame2
         diff_ids = set(range(len(dets))).difference(set(ids2))
         for id in diff_ids:
-            coords = [dets2[id]]
+            coords = [dets[id]]
             frameids = [frame_number]
 
             tracks[track_id] = _make_a_new_track(

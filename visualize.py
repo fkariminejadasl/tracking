@@ -4,6 +4,7 @@ from matplotlib import pyplot as plt
 
 from data_association import Point, get_detections, get_video_parameters
 
+
 def crop_video(
     vc,
     output_video_file,

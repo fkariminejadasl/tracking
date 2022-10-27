@@ -24,10 +24,7 @@ def compute_possible_matches_for_a_track(track1, tracks2):
     possible_matches = {}
     for track_id2, track2 in tracks2.items():
         if len(track2.frameids) > accepted_track_length:
-            # TODO: [1:] is a hack for the existing bug
-            common_frames = set(track1.frameids[1:]).intersection(
-                set(track2.frameids[1:])
-            )
+            common_frames = set(track1.frameids).intersection(set(track2.frameids))
             error = 0
             count = 0
             ids = []
@@ -50,7 +47,14 @@ def compute_possible_matches_for_a_track(track1, tracks2):
                         coords2.append(coord2)
                 if count != 0:
                     possible_matches[track_id2] = Matches(
-                        error / count, error, count, ids, coords1, coords2, track1.color, track2.color
+                        error / count,
+                        error,
+                        count,
+                        ids,
+                        coords1,
+                        coords2,
+                        track1.color,
+                        track2.color,
                     )
     matched_groups = {
         key: matches
