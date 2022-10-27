@@ -4,6 +4,32 @@ from matplotlib import pyplot as plt
 
 from data_association import Point, get_detections, get_video_parameters
 
+def crop_video(
+    vc,
+    output_video_file,
+    focus_point=Point(1300, 700),
+    out_width=900,
+    out_height=500,
+):
+    _, _, total_no_frames, fps = get_video_parameters(vc)
+
+    fourcc = cv2.VideoWriter_fourcc(*"XVID")
+    out = cv2.VideoWriter(
+        output_video_file.as_posix(), fourcc, fps, (out_width, out_height)
+    )
+
+    for frame_number in range(1, total_no_frames + 1):
+        vc.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
+        _, frame = vc.read()
+
+        out.write(
+            frame[
+                int(focus_point.y) : int(focus_point.y) + out_height,
+                int(focus_point.x) : int(focus_point.x) + out_width,
+                :,
+            ]
+        )
+    out.release()
 
 def draw_detections_in_a_frame(frame, dets):
     for det in dets:
@@ -23,21 +49,27 @@ def draw_detections_in_a_frame(frame, dets):
 
 
 def visualize_detections_in_video(
+    filename_fixpart,
     det_folder,
     vc,
     output_video_file,
+    focus_point=Point(1300, 700),
+    out_width=900,
+    out_height=500,
     color=(0, 0, 255),
 ):
     height, width, total_no_frames, fps = get_video_parameters(vc)
 
     fourcc = cv2.VideoWriter_fourcc(*"XVID")
-    out = cv2.VideoWriter(output_video_file.as_posix(), fourcc, fps, (width, height))
+    out = cv2.VideoWriter(
+        output_video_file.as_posix(), fourcc, fps, (out_width, out_height)
+    )
 
     for frame_number in range(1, total_no_frames + 1):
         vc.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
         _, frame = vc.read()
 
-        det_path = det_folder / f"12_07_22_1_C_GH040468_1_cam1_rect_{frame_number}.txt"
+        det_path = det_folder / f"{filename_fixpart}_{frame_number}.txt"
         dets = get_detections(det_path, frame_number, width, height)
 
         for coord in dets:
@@ -54,7 +86,13 @@ def visualize_detections_in_video(
             # for i in range(6):
             #     for j in range(6):
             #         frame[int(coord.y) + i, int(coord.x) + j, :] = np.array(color)
-        out.write(frame)
+        out.write(
+            frame[
+                int(focus_point.y) : int(focus_point.y) + out_height,
+                int(focus_point.x) : int(focus_point.x) + out_width,
+                :,
+            ]
+        )
     out.release()
 
 
@@ -63,10 +101,10 @@ def draw_matches(frame1, frame2, matches1, matches2):
     _, ax2 = plt.subplots(1, 1)
     ax1.imshow(frame1[..., ::-1])
     ax2.imshow(frame2[..., ::-1])
-    ax1.set_xlim(1400, 2100)
+    ax1.set_xlim(1300, 2200)
     ax1.set_ylim(1200, 700)
-    ax2.set_xlim(1000, 1700)
-    ax2.set_ylim(1200, 700)  # cam1: 1400:2100; cam2: 1000:1700
+    ax2.set_xlim(1100, 2000)
+    ax2.set_ylim(1200, 700)
 
     for match1, match2 in zip(matches1, matches2):
         ax1.plot([match1.x, match2.x], [match1.y, match2.y], "*-", color=(0, 0, 1))
@@ -166,7 +204,7 @@ def visualize_tracks_in_video(
     tracks,
     vc,
     output_video_file,
-    focus_point=Point(1400, 700),
+    focus_point=Point(1300, 700),
     out_width=900,
     out_height=500,
 ):
@@ -208,7 +246,7 @@ def visualize_tracks_in_video(
                 int(focus_point.x) : int(focus_point.x) + out_width,
                 :,
             ]
-        )  # cam1: 1300:2200; cam2: 1100:1900, height: 700:1200
+        )  # cam1: 1300:2200; cam2: 1100:2000, height: 700:1200
     out.release()
 
 
@@ -277,5 +315,5 @@ def visualize_matches_in_video(
         ]
         out.write(
             np.concatenate((frame1, frame2), axis=1)
-        )  # cam1: 1300:2200; cam2: 1100:1900, height: 700:1200
+        )  # cam1: 1300:2200; cam2: 1100:2000, height: 700:1200
     out.release()
