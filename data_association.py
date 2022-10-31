@@ -11,15 +11,6 @@ np.random.seed(1000)
 accepted_flow_length = 10
 stopped_track_length = 50
 
-result_folder = Path("/home/fatemeh/results/dataset1")
-data_folder = Path("/home/fatemeh/data/dataset1")
-det_folder1 = data_folder / "cam1_labels/cam1_labels"
-det_folder2 = data_folder / "cam2_labels/cam2_labels"
-filename_fixpart1 = "12_07_22_1_C_GH040468_1_cam1_rect"
-filename_fixpart2 = "12_07_22_1_D_GH040468_1_cam2_rect"
-vc1 = cv2.VideoCapture((data_folder / f"{filename_fixpart1}.mp4").as_posix())
-vc2 = cv2.VideoCapture((data_folder / f"{filename_fixpart2}.mp4").as_posix())
-
 
 def get_video_parameters(vc: cv2.VideoCapture):
     if vc.isOpened():
@@ -30,9 +21,6 @@ def get_video_parameters(vc: cv2.VideoCapture):
         return height, width, total_no_frames, fps
     else:
         return
-
-
-height, width, total_no_frames, fps = get_video_parameters(vc1)
 
 
 class Status(enum.Enum):
@@ -113,9 +101,7 @@ def _get_common_flow(flows):
     return common_flow
 
 
-def compute_tracks(det_folder: Path, filename_fixpart: str, width: int, height: int):
-    # initiate track
-    # ===============
+def initiate_tracks(det_folder: Path, filename_fixpart: str, width: int, height: int):
     frame_number1 = 1
     frame_number2 = 2
     det_path1 = det_folder / f"{filename_fixpart}_{frame_number1}.txt"
@@ -177,6 +163,13 @@ def compute_tracks(det_folder: Path, filename_fixpart: str, width: int, height: 
             coords, frameids, flow, track_id, Status.NewTrack
         )
         track_id += 1
+    return tracks, common_flow, track_id
+
+
+def compute_tracks(det_folder: Path, filename_fixpart: str, width: int, height: int):
+    tracks, common_flow, track_id = initiate_tracks(
+        det_folder, filename_fixpart, width, height
+    )
 
     # start track
     # ===========
@@ -245,3 +238,12 @@ def compute_tracks(det_folder: Path, filename_fixpart: str, width: int, height: 
             )
             track_id += 1
     return tracks
+
+
+def save_tracks(track_file, tracks):
+    with open(track_file, "w") as file:
+        for track_id, track in tracks.items():
+            for det in track.coords:
+                file.write(
+                    f"{track_id},{det.x},{det.y},{det.w},{det.h},{det.id},{track.status.value}\n"
+                )

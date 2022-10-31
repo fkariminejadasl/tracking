@@ -5,7 +5,6 @@ from data_association import Detection
 accepted_track_length = 50
 matched_track_length = 50
 accepted_error = 3
-# match_file = result_folder/"matches.txt"
 
 
 @dataclass
