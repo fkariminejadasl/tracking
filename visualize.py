@@ -259,6 +259,7 @@ def visualize_matches_in_video(
     focus_point=Point(1300, 700),
     out_width=900,
     out_height=500,
+    inverse=False
 ):
     _, _, total_no_frames, fps = get_video_parameters(vc1)
 
@@ -285,25 +286,43 @@ def visualize_matches_in_video(
                     coord = matches.coords1[idx]
                     w2 = int(coord.w / 2)
                     h2 = int(coord.h / 2)
-                    cv2.rectangle(
-                        frame1,
-                        (int(coord.x) - w2, int(coord.y) - h2),
-                        (int(coord.x) + w2, int(coord.y) + h2),
-                        color=color,
-                        thickness=1,
-                    )
-                    color = tuple(int(round(c * 255)) for c in matches.track2_color)
-                    color = (color[2], color[1], color[0])
-                    coord = matches.coords2[idx]
-                    w2 = int(coord.w / 2)
-                    h2 = int(coord.h / 2)
-                    cv2.rectangle(
+                    if inverse:
+                        cv2.rectangle(
                         frame2,
                         (int(coord.x) - w2, int(coord.y) - h2),
                         (int(coord.x) + w2, int(coord.y) + h2),
                         color=color,
                         thickness=1,
                     )
+                    else:
+                        cv2.rectangle(
+                            frame1,
+                            (int(coord.x) - w2, int(coord.y) - h2),
+                            (int(coord.x) + w2, int(coord.y) + h2),
+                            color=color,
+                            thickness=1,
+                        )
+                    color = tuple(int(round(c * 255)) for c in matches.track2_color)
+                    color = (color[2], color[1], color[0])
+                    coord = matches.coords2[idx]
+                    w2 = int(coord.w / 2)
+                    h2 = int(coord.h / 2)
+                    if inverse:
+                        cv2.rectangle(
+                            frame1,
+                            (int(coord.x) - w2, int(coord.y) - h2),
+                            (int(coord.x) + w2, int(coord.y) + h2),
+                            color=color,
+                            thickness=1,
+                        )
+                    else:
+                        cv2.rectangle(
+                            frame2,
+                            (int(coord.x) - w2, int(coord.y) - h2),
+                            (int(coord.x) + w2, int(coord.y) + h2),
+                            color=color,
+                            thickness=1,
+                        )
         frame1 = frame1[
             int(focus_point.y) : int(focus_point.y) + out_height,
             int(focus_point.x) : int(focus_point.x) + out_width,
