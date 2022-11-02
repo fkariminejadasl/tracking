@@ -258,14 +258,20 @@ def _track_matches(ids1, ids2, pred_dets, dets, tracks, frame_number, common_flo
     return tracks, common_flow
 
 
-def compute_tracks(det_folder: Path, filename_fixpart: str, width: int, height: int):
+def compute_tracks(
+    det_folder: Path,
+    filename_fixpart: str,
+    width: int,
+    height: int,
+    total_no_frames: int = 680,
+):
     tracks, common_flow, track_id = initializ_tracks(
         det_folder, filename_fixpart, width, height
     )
 
     # start track
     # ===========
-    for frame_number in range(3, 681):
+    for frame_number in range(3, total_no_frames + 1):
         det_path = det_folder / f"{filename_fixpart}_{frame_number}.txt"
         dets = get_detections(det_path, frame_number, width, height)
         pred_dets = [

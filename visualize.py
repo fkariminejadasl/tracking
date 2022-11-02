@@ -5,18 +5,30 @@ from matplotlib import pyplot as plt
 from data_association import Point, get_detections, get_video_parameters
 
 
+def _create_output_video(output_video_file, vc, out_width=None, out_height=None):
+    height, width, total_no_frames, fps = get_video_parameters(vc)
+    if not out_width:
+        out_width = width
+    if not out_height:
+        out_height = height
+
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # (*"XVID") with .avi
+    out = cv2.VideoWriter(
+        output_video_file.as_posix(), fourcc, fps, (out_width, out_height)
+    )
+
+    return out, height, width, total_no_frames
+
+
 def crop_video(
     vc,
     output_video_file,
-    focus_point=Point(1300, 700),
+    top_left=Point(1300, 700),
     out_width=900,
     out_height=500,
 ):
-    _, _, total_no_frames, fps = get_video_parameters(vc)
-
-    fourcc = cv2.VideoWriter_fourcc(*"XVID")
-    out = cv2.VideoWriter(
-        output_video_file.as_posix(), fourcc, fps, (out_width, out_height)
+    out, height, width, total_no_frames = _create_output_video(
+        output_video_file, vc, out_width, out_height
     )
 
     for frame_number in range(1, total_no_frames + 1):
@@ -25,12 +37,13 @@ def crop_video(
 
         out.write(
             frame[
-                int(focus_point.y) : int(focus_point.y) + out_height,
-                int(focus_point.x) : int(focus_point.x) + out_width,
+                int(top_left.y) : int(top_left.y) + out_height,
+                int(top_left.x) : int(top_left.x) + out_width,
                 :,
             ]
         )
     out.release()
+
 
 def draw_detections_in_a_frame(frame, dets):
     for det in dets:
@@ -54,16 +67,13 @@ def visualize_detections_in_video(
     det_folder,
     vc,
     output_video_file,
-    focus_point=Point(1300, 700),
+    top_left=Point(1300, 700),
     out_width=900,
     out_height=500,
     color=(0, 0, 255),
 ):
-    height, width, total_no_frames, fps = get_video_parameters(vc)
-
-    fourcc = cv2.VideoWriter_fourcc(*"XVID")
-    out = cv2.VideoWriter(
-        output_video_file.as_posix(), fourcc, fps, (out_width, out_height)
+    out, height, width, total_no_frames = _create_output_video(
+        output_video_file, vc, out_width, out_height
     )
 
     for frame_number in range(1, total_no_frames + 1):
@@ -89,8 +99,8 @@ def visualize_detections_in_video(
             #         frame[int(coord.y) + i, int(coord.x) + j, :] = np.array(color)
         out.write(
             frame[
-                int(focus_point.y) : int(focus_point.y) + out_height,
-                int(focus_point.x) : int(focus_point.x) + out_width,
+                int(top_left.y) : int(top_left.y) + out_height,
+                int(top_left.x) : int(top_left.x) + out_width,
                 :,
             ]
         )
@@ -179,7 +189,6 @@ def plot_frameid_y(tracks, status, legned=False):
 
 
 def plot_frameid_y_for_stereo(tracks1, track1_ids, tracks2, track2_ids):
-    track_id1 = 15
     _, ax1 = plt.subplots(1, 1)
     for track_id1 in track1_ids:
         ax1.plot(
@@ -205,24 +214,19 @@ def visualize_tracks_in_video(
     tracks,
     vc,
     output_video_file,
-    focus_point=Point(1300, 700),
+    top_left=Point(1300, 700),
     out_width=900,
     out_height=500,
 ):
-    _, _, total_no_frames, fps = get_video_parameters(vc)
-
-    fourcc = cv2.VideoWriter_fourcc(*"XVID")
-    out = cv2.VideoWriter(
-        output_video_file.as_posix(),
-        fourcc,
-        fps,
-        (out_width, out_height),  # (width, height)
+    out, height, width, total_no_frames = _create_output_video(
+        output_video_file, vc, out_width, out_height
     )
+
     for frame_number in range(1, total_no_frames + 1):
         vc.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
         _, frame = vc.read()
 
-        for _, track in tracks.items():
+        for track_id, track in tracks.items():
             if frame_number in track.frameids:
                 color = tuple(int(round(c * 255)) for c in track.color)
                 color = (color[2], color[1], color[0])
@@ -237,17 +241,27 @@ def visualize_tracks_in_video(
                     color=color,
                     thickness=1,
                 )
+                cv2.putText(
+                    frame,
+                    f"{track_id}",
+                    (int(coord.x) - w2, int(coord.y) - h2),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,  # font scale
+                    color,
+                    1,  # Thinckness
+                    2,  # line type
+                )
                 # show as thick points
                 # for i in range(6):
                 #     for j in range(6):
                 #         frame[coord.y + i, coord.x + j, :] = color
         out.write(
             frame[
-                int(focus_point.y) : int(focus_point.y) + out_height,
-                int(focus_point.x) : int(focus_point.x) + out_width,
+                int(top_left.y) : int(top_left.y) + out_height,
+                int(top_left.x) : int(top_left.x) + out_width,
                 :,
             ]
-        )  # cam1: 1300:2200; cam2: 1100:2000, height: 700:1200
+        )
     out.release()
 
 
@@ -256,20 +270,16 @@ def visualize_matches_in_video(
     vc1,
     vc2,
     output_video_file,
-    focus_point=Point(1300, 700),
+    top_left=Point(1300, 700),
     out_width=900,
     out_height=500,
-    inverse=False
+    inverse=False,
 ):
-    _, _, total_no_frames, fps = get_video_parameters(vc1)
 
-    fourcc = cv2.VideoWriter_fourcc(*"XVID")
-    out = cv2.VideoWriter(
-        output_video_file.as_posix(),
-        fourcc,
-        fps,
-        (out_width * 2, out_height),  # (width, height)
+    out, height, width, total_no_frames = _create_output_video(
+        output_video_file, vc1, out_width * 2, out_height
     )
+
     for frame_number in range(1, total_no_frames + 1):
         vc1.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
         _, frame1 = vc1.read()
@@ -288,12 +298,12 @@ def visualize_matches_in_video(
                     h2 = int(coord.h / 2)
                     if inverse:
                         cv2.rectangle(
-                        frame2,
-                        (int(coord.x) - w2, int(coord.y) - h2),
-                        (int(coord.x) + w2, int(coord.y) + h2),
-                        color=color,
-                        thickness=1,
-                    )
+                            frame2,
+                            (int(coord.x) - w2, int(coord.y) - h2),
+                            (int(coord.x) + w2, int(coord.y) + h2),
+                            color=color,
+                            thickness=1,
+                        )
                     else:
                         cv2.rectangle(
                             frame1,
@@ -324,16 +334,39 @@ def visualize_matches_in_video(
                             thickness=1,
                         )
         frame1 = frame1[
-            int(focus_point.y) : int(focus_point.y) + out_height,
-            int(focus_point.x) : int(focus_point.x) + out_width,
+            int(top_left.y) : int(top_left.y) + out_height,
+            int(top_left.x) : int(top_left.x) + out_width,
             :,
         ]
         frame2 = frame2[
-            int(focus_point.y) : int(focus_point.y) + out_height,
-            int(focus_point.x - 200) : int(focus_point.x - 200) + out_width,
+            int(top_left.y) : int(top_left.y) + out_height,
+            int(top_left.x - 200) : int(top_left.x - 200) + out_width,
             :,
         ]
-        out.write(
-            np.concatenate((frame1, frame2), axis=1)
-        )  # cam1: 1300:2200; cam2: 1100:2000, height: 700:1200
+        out.write(np.concatenate((frame1, frame2), axis=1))
     out.release()
+
+
+"""
+fig, axs = plt.subplots(1,3)
+for track_id in [21,19,20,23]:
+    track = tracks1[track_id] # track = tracks1[21]
+    axs[0].plot(track.frameids, [coord.x for coord in track.coords], '*-', color=track.color, label=str(track.predicted_loc.id))
+    axs[1].plot(track.frameids, [coord.y for coord in track.coords], '*-', color=track.color, label=str(track.predicted_loc.id))
+    axs[2].plot([coord.x for coord in track.coords], [coord.y for coord in track.coords], '*-', color=track.color, label=str(track.predicted_loc.id))
+axs[0].set_xlabel('frame');axs[0].set_ylabel('x')
+axs[1].set_xlabel('frame');axs[1].set_ylabel('y')
+axs[2].set_xlabel('x');axs[2].set_ylabel('y')
+axs[0].legend();axs[1].legend();axs[2].legend()
+plt.show(block=False)
+
+from mpl_toolkits import mplot3d
+plt.figure()
+ax = plt.axes(projection='3d')
+for track_id in [21,19,20,23]:
+    track = tracks1[track_id]
+    ax.plot([coord.x for coord in track.coords], [coord.y for coord in track.coords], track.frameids, '*-', color=track.color, label=str(track.predicted_loc.id))
+ax.set_xlabel('x');ax.set_ylabel('y');ax.set_zlabel('frame')
+ax.legend()
+plt.show(block=False)
+"""
