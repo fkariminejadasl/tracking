@@ -42,7 +42,9 @@ class Detection:
     y: int
     w: int
     h: int
-    id: int
+    frame_number: int
+    det_id: int = -1
+    score: np.float16 = -1
 
 
 def get_detections(det_path, frame_number, width: int, height: int) -> list[Detection]:
@@ -53,9 +55,11 @@ def get_detections(det_path, frame_number, width: int, height: int) -> list[Dete
             y=int(det[2] * height),
             w=int(det[3] * width),
             h=int(det[4] * height),
-            id=frame_number,
+            frame_number=frame_number,
+            det_id=det_id,
+            score=np.float16(f"{det[5]:.2f}"),
         )
-        for det in detections
+        for det_id, det in enumerate(detections)
     ]
 
 
@@ -87,7 +91,7 @@ def _make_a_new_track(coords, frameids, flow, track_id, status) -> Track:
     color = tuple(np.random.rand(3).astype(np.float16))
     pred = Point(x=flow.x + coords[-1].x, y=flow.y + coords[-1].y)
     predicted_loc = Detection(
-        x=pred.x, y=pred.y, w=coords[-1].w, h=coords[-1].h, id=track_id
+        x=pred.x, y=pred.y, w=coords[-1].w, h=coords[-1].h, frame_number=track_id
     )
     track = Track(
         coords=coords,
@@ -199,7 +203,7 @@ def initializ_tracks(det_folder: Path, filename_fixpart: str, width: int, height
 def _track_predicted_unmatched(pred_dets, ids1, tracks, common_flow):
     diff_ids = set(range(len(pred_dets))).difference(set(ids1))
     for id in diff_ids:
-        current_track_id = pred_dets[id].id
+        current_track_id = pred_dets[id].frame_number
         track = tracks[current_track_id]
         track.predicted_loc.x += common_flow.x
         track.predicted_loc.y += common_flow.y
@@ -224,7 +228,7 @@ def _track_current_unmatched(dets, ids2, frame_number, tracks, track_id, common_
 def _track_matches(ids1, ids2, pred_dets, dets, tracks, frame_number, common_flow):
     flows = [Point(x=0.0, y=0.0)]
     for id1, id2 in zip(ids1, ids2):
-        current_track_id = pred_dets[id1].id
+        current_track_id = pred_dets[id1].frame_number
         track = tracks[current_track_id]
         # kill tracks that are not tracked for a while
         if frame_number - track.frameids[-1] > stopped_track_length:
@@ -301,5 +305,5 @@ def save_tracks(track_file, tracks):
         for track_id, track in tracks.items():
             for det in track.coords:
                 file.write(
-                    f"{track_id},{det.x},{det.y},{det.w},{det.h},{det.id},{track.status.value}\n"
+                    f"{track_id},{det.frame_number},{det.det_id},{det.x},{det.y},{det.w},{det.h},{det.score:.2f},{track.status.value}\n"
                 )

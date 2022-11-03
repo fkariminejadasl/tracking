@@ -20,6 +20,28 @@ def _create_output_video(output_video_file, vc, out_width=None, out_height=None)
     return out, height, width, total_no_frames
 
 
+def _write_frame_in_video(frame, out, frame_number, top_left, out_width, out_height):
+    cv2.putText(
+        frame,
+        f"{frame_number}",
+        (top_left.x + 15, top_left.y + 25),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        1,  # font scale
+        (0, 0, 0),  # color
+        1,  # Thinckness
+        2,  # line type
+    )
+    out.write(
+        frame[
+            int(top_left.y) : int(top_left.y) + out_height,
+            int(top_left.x) : int(top_left.x) + out_width,
+            :,
+        ]
+    )
+
+    return out
+
+
 def crop_video(
     vc,
     output_video_file,
@@ -35,12 +57,8 @@ def crop_video(
         vc.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
         _, frame = vc.read()
 
-        out.write(
-            frame[
-                int(top_left.y) : int(top_left.y) + out_height,
-                int(top_left.x) : int(top_left.x) + out_width,
-                :,
-            ]
+        out = _write_frame_in_video(
+            frame, out, frame_number, top_left, out_width, out_height
         )
     out.release()
 
@@ -97,12 +115,8 @@ def visualize_detections_in_video(
             # for i in range(6):
             #     for j in range(6):
             #         frame[int(coord.y) + i, int(coord.x) + j, :] = np.array(color)
-        out.write(
-            frame[
-                int(top_left.y) : int(top_left.y) + out_height,
-                int(top_left.x) : int(top_left.x) + out_width,
-                :,
-            ]
+        out = _write_frame_in_video(
+            frame, out, frame_number, top_left, out_width, out_height
         )
     out.release()
 
@@ -255,13 +269,10 @@ def visualize_tracks_in_video(
                 # for i in range(6):
                 #     for j in range(6):
                 #         frame[coord.y + i, coord.x + j, :] = color
-        out.write(
-            frame[
-                int(top_left.y) : int(top_left.y) + out_height,
-                int(top_left.x) : int(top_left.x) + out_width,
-                :,
-            ]
+        out = _write_frame_in_video(
+            frame, out, frame_number, top_left, out_width, out_height
         )
+
     out.release()
 
 
@@ -288,7 +299,7 @@ def visualize_matches_in_video(
 
         for track_id1, value in all_matches.items():
             for track_id2, matches in value.items():
-                frameids = [coord1.id for coord1 in matches.coords1]
+                frameids = [coord1.frame_number for coord1 in matches.coords1]
                 if frame_number in frameids:
                     color = tuple(int(round(c * 255)) for c in matches.track1_color)
                     color = (color[2], color[1], color[0])
@@ -351,9 +362,9 @@ def visualize_matches_in_video(
 fig, axs = plt.subplots(1,3)
 for track_id in [21,19,20,23]:
     track = tracks1[track_id] # track = tracks1[21]
-    axs[0].plot(track.frameids, [coord.x for coord in track.coords], '*-', color=track.color, label=str(track.predicted_loc.id))
-    axs[1].plot(track.frameids, [coord.y for coord in track.coords], '*-', color=track.color, label=str(track.predicted_loc.id))
-    axs[2].plot([coord.x for coord in track.coords], [coord.y for coord in track.coords], '*-', color=track.color, label=str(track.predicted_loc.id))
+    axs[0].plot(track.frameids, [coord.x for coord in track.coords], '*-', color=track.color, label=str(track.predicted_loc.frame_number))
+    axs[1].plot(track.frameids, [coord.y for coord in track.coords], '*-', color=track.color, label=str(track.predicted_loc.frame_number))
+    axs[2].plot([coord.x for coord in track.coords], [coord.y for coord in track.coords], '*-', color=track.color, label=str(track.predicted_loc.frame_number))
 axs[0].set_xlabel('frame');axs[0].set_ylabel('x')
 axs[1].set_xlabel('frame');axs[1].set_ylabel('y')
 axs[2].set_xlabel('x');axs[2].set_ylabel('y')
@@ -365,8 +376,26 @@ plt.figure()
 ax = plt.axes(projection='3d')
 for track_id in [21,19,20,23]:
     track = tracks1[track_id]
-    ax.plot([coord.x for coord in track.coords], [coord.y for coord in track.coords], track.frameids, '*-', color=track.color, label=str(track.predicted_loc.id))
+    ax.plot([coord.x for coord in track.coords], [coord.y for coord in track.coords], track.frameids, '*-', color=track.color, label=str(track.predicted_loc.frame_number))
 ax.set_xlabel('x');ax.set_ylabel('y');ax.set_zlabel('frame')
 ax.legend()
 plt.show(block=False)
+
+def plot_ious(tracks, track_ids):
+    plt.figure()
+    for track_id in track_ids:
+        track = tracks[track_id]
+        ious = []
+        for frame_id, det1, det2 in zip(track.frameids[1:], track.coords[1:], track.coords[0:-1]):
+            iou = get_iou(det1,det2)
+            ious.append(get_iou(det1,det2))
+            # print(f"{frame_id}, {iou:.2f}")
+        idx = np.where(np.diff(track.frameids) !=1)[0]
+        print(f"{track_id}: {np.diff(track.frameids)[idx]}")
+
+        plt.plot(track.frameids[1:], ious,  '*-', color=track.color, label=str(track_id))
+        if idx.size>0:
+            plt.plot([np.array(track.frameids)[idx]], [np.array(ious)[idx]],'or',markerfacecolor='none')
+    plt.legend()
+    plt.show(block=False)
 """

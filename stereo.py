@@ -31,12 +31,16 @@ def compute_possible_matches_for_a_track(track1, tracks2):
             coords2 = []
             if len(common_frames) > matched_track_length:
                 for frame_id in common_frames:
-                    coord1 = [coord for coord in track1.coords if coord.id == frame_id][
-                        0
-                    ]
-                    coord2 = [coord for coord in track2.coords if coord.id == frame_id][
-                        0
-                    ]
+                    coord1 = [
+                        coord
+                        for coord in track1.coords
+                        if coord.frame_number == frame_id
+                    ][0]
+                    coord2 = [
+                        coord
+                        for coord in track2.coords
+                        if coord.frame_number == frame_id
+                    ][0]
                     l1_norm = abs(coord1.y - coord2.y)
                     if l1_norm < accepted_error:
                         error += l1_norm
@@ -81,7 +85,7 @@ def save_matches(match_file, track_id1, matched_groups, inverse=False):
         for track_id2, matches in matched_groups.items():
             for coord1, coord2 in zip(matches.coords1, matches.coords2):
                 file.write(
-                    f"{track_id1},{track_id2},{coord1.x},{coord1.y},{coord1.id},{coord2.x},{coord2.y},{coord2.id},{int(inverse)}\n"
+                    f"{track_id1},{track_id2},{coord1.x},{coord1.y},{coord1.frame_number},{coord2.x},{coord2.y},{coord2.frame_number},{int(inverse)}\n"
                 )
 
 
