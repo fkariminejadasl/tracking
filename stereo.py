@@ -5,6 +5,8 @@ from data_association import Detection
 accepted_track_length = 50
 matched_track_length = 50
 accepted_error = 3
+smallest_disparity = 250
+largest_disparity = 650
 
 
 @dataclass
@@ -92,3 +94,45 @@ def save_matches(match_file, track_id1, matched_groups, inverse=False):
 def save_all_matches(match_file, all_matches, inverse=False):
     for track_id1, matched_group in all_matches.items():
         save_matches(match_file, track_id1, all_matches[track_id1], inverse)
+
+
+@dataclass
+class StereoItem:
+    camera_id: int
+    track_id: int
+    det: Detection
+    disp: int
+    disp_prob: float
+
+
+@dataclass
+class Stereo:
+    frame_number: int
+    target: StereoItem
+    candidates: list[StereoItem]
+
+
+def compute_match_candidates(dets1, dets2, inverse=False):
+    cam_id1 = 0
+    cam_id2 = 1
+    if inverse:
+        cam_id1 = 1
+        cam_id2 = 0
+    matches = []
+    for det1 in dets1:
+        candidates = []
+        for det2 in dets2:
+            disp = det1.x - det2.x
+            rectification_error = abs(det1.y - det2.y)
+            if (
+                rectification_error < accepted_error
+                and disp < largest_disparity
+                and disp > smallest_disparity
+            ):
+                st_item1 = StereoItem(cam_id1, -1, det1, disp, -1)
+                st_item2 = StereoItem(cam_id2, -1, det2, disp, -1)
+                candidates.append(st_item2)
+        if candidates:
+            match = Stereo(1, st_item1, candidates)
+            matches.append(match)
+    return matches

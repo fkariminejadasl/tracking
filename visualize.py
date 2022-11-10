@@ -1,4 +1,5 @@
 import cv2
+import matplotlib.patches as patches
 import numpy as np
 from matplotlib import pyplot as plt
 
@@ -283,7 +284,7 @@ def visualize_matches_in_video(
     output_video_file,
     top_left=Point(1300, 700),
     out_width=900,
-    out_height=500,
+    out_height=500, 
     inverse=False,
 ):
 
@@ -356,6 +357,51 @@ def visualize_matches_in_video(
         ]
         out.write(np.concatenate((frame1, frame2), axis=1))
     out.release()
+
+
+def superimpose_two_images(frame1, frame2):
+    gray1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
+    gray2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
+    combined = np.zeros_like(frame1)
+    combined[..., 0] = gray1
+    combined[..., 1] = gray2
+    combined[..., 2] = gray2
+    plt.figure()
+    plt.imshow(combined)
+    plt.show(block=False)
+
+
+def _draw_detections_on_image(dets, ax, image_width, draw_text=True):
+    for det in dets:
+        ax.plot([0, image_width - 1], [det.y, det.y], "--r", linewidth=0.5, alpha=0.5)
+        if draw_text:
+            ax.text(
+                det.x - det.w // 2,
+                det.y - det.h // 2,
+                str(f"{det.det_id},{det.score:.2f}"),
+                color="r",
+                fontsize=12,
+            )
+        rect = patches.Rectangle(
+            (det.x - det.w // 2, det.y - det.h // 2),
+            det.w,
+            det.h,
+            linewidth=1,
+            edgecolor="r",
+            facecolor="none",
+        )
+        ax.add_patch(rect)
+
+
+def draw_detections_in_stereo(frame1, frame2, dets1, dets2, image_width):
+    _, axes = plt.subplots(1, 2)
+    axes[0].imshow(frame1[..., ::-1])
+    axes[1].imshow(frame2[..., ::-1])
+    axes[0].axis("off")
+    axes[1].axis("off")
+    plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
+    _draw_detections_on_image(dets1, axes[0], image_width)
+    _draw_detections_on_image(dets2, axes[1], image_width)
 
 
 """
