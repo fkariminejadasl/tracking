@@ -11,12 +11,12 @@ det_folder2 = data_folder / "cam2_rect_labels"
 filename_fixpart1 = "12_07_22_1_C_GH040468_1_cam1_rect"
 filename_fixpart2 = "12_07_22_1_D_GH040468_1_cam2_rect"
 
-result_folder = Path("/home/fatemeh/results/dataset2")
-data_folder = Path("/home/fatemeh/data/dataset2")
-det_folder1 = data_folder / "cam1_labels"
-det_folder2 = data_folder / "cam2_labels"
-filename_fixpart1 = "10_07_22_A_GH040718_1_cam1"
-filename_fixpart2 = "10_07_22_B_GH040718_1_cam2"
+# result_folder = Path("/home/fatemeh/results/dataset2")
+# data_folder = Path("/home/fatemeh/data/dataset2")
+# det_folder1 = data_folder / "cam1_labels"
+# det_folder2 = data_folder / "cam2_labels"
+# filename_fixpart1 = "10_07_22_A_GH040718_1_cam1"
+# filename_fixpart2 = "10_07_22_B_GH040718_1_cam2"
 
 vc1 = cv2.VideoCapture((data_folder / f"{filename_fixpart1}.mp4").as_posix())
 vc2 = cv2.VideoCapture((data_folder / f"{filename_fixpart2}.mp4").as_posix())

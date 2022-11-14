@@ -35,6 +35,12 @@ class Point:
     x: float
     y: float
 
+    def __add__(self, other):
+        return Point(x=self.x + other.x, y=self.y + other.y)
+
+    def __mul__(self, scale: float):
+        return Point(x=self.x * scale, y=self.y * scale)
+
 
 @dataclass
 class Detection:
@@ -72,7 +78,7 @@ class Track:
     status: Status
 
 
-def find_coordinate_in_track(track, frame_id):
+def find_detection_in_track_by_frame_id(track, frame_id):
     for det in track.coords:
         if det.id == frame_id:
             return det
@@ -82,13 +88,16 @@ def match_two_detection_sets(dets1, dets2):
     dist = np.zeros((len(dets1), len(dets2)), dtype=np.float32)
     for i, det1 in enumerate(dets1):
         for j, det2 in enumerate(dets2):
-            dist[i, j] = 1 - get_iou(det1, det2)
-            # dist[i, j] = np.linalg.norm([det2.x - det1.x, det2.y - det1.y])
+            iou_loss = 1 - get_iou(det1, det2)
+            loc_loss = np.linalg.norm([det2.x - det1.x, det2.y - det1.y])
+            dist[i, j] = iou_loss
     row_ind, col_ind = linear_sum_assignment(dist)
     return row_ind, col_ind
 
 
-def _make_a_new_track(coords, frameids, flow, track_id, status) -> Track:
+def _make_a_new_track(
+    coords: list[Detection], frameids, flow: Point, track_id, status
+) -> Track:
     color = tuple(np.random.rand(3).astype(np.float16))
     pred = Point(x=flow.x + coords[-1].x, y=flow.y + coords[-1].y)
     predicted_loc = Detection(
@@ -134,7 +143,11 @@ def _initialize_matches(ids1, ids2, dets1, dets2, frame_number1, frame_number2):
         else:
             common_flow = _get_common_flow(flows)
             tracks[track_id] = _make_a_new_track(
-                [dets1[id1]], [frame_number1], common_flow, track_id, Status.NewTrack
+                [dets1[id1]],
+                [frame_number1],
+                common_flow * 2,
+                track_id,
+                Status.NewTrack,
             )
             track_id += 1
             tracks[track_id] = _make_a_new_track(
@@ -153,10 +166,9 @@ def _initialize_unmatched_frame1(
     for id in diff_ids:
         coords = [dets1[id]]
         frameids = [frame_number1]
-        flow = Point(x=common_flow.x * 2, y=common_flow * 2)
 
         tracks[track_id] = _make_a_new_track(
-            coords, frameids, flow, track_id, Status.NewTrack
+            coords, frameids, common_flow * 2, track_id, Status.NewTrack
         )
         track_id += 1
     return tracks, track_id
@@ -169,10 +181,9 @@ def _initialize_unmatched_frame2(
     for id in diff_ids:
         coords = [dets2[id]]
         frameids = [frame_number2]
-        flow = common_flow
 
         tracks[track_id] = _make_a_new_track(
-            coords, frameids, flow, track_id, Status.NewTrack
+            coords, frameids, common_flow, track_id, Status.NewTrack
         )
         track_id += 1
     return tracks, track_id
@@ -201,20 +212,20 @@ def initializ_tracks(det_folder: Path, filename_fixpart: str, width: int, height
     return tracks, common_flow, track_id
 
 
-def _track_predicted_unmatched(pred_dets, ids1, tracks, common_flow):
-    diff_ids = set(range(len(pred_dets))).difference(set(ids1))
+def _track_predicted_unmatched(pred_dets, pred_ids, tracks, common_flow):
+    diff_ids = set(range(len(pred_dets))).difference(set(pred_ids))
     for id in diff_ids:
         current_track_id = pred_dets[id].frame_number
         track = tracks[current_track_id]
-        track.predicted_loc.x += common_flow.x
-        track.predicted_loc.y += common_flow.y
+        track.predicted_loc.x = track.predicted_loc.x + common_flow.x
+        track.predicted_loc.y = track.predicted_loc.y + common_flow.y
         if track.status != Status.NewTrack:
             track.status = Status.Untracked
     return tracks
 
 
-def _track_current_unmatched(dets, ids2, frame_number, tracks, track_id, common_flow):
-    diff_ids = set(range(len(dets))).difference(set(ids2))
+def _track_current_unmatched(dets, ids, frame_number, tracks, track_id, common_flow):
+    diff_ids = set(range(len(dets))).difference(set(ids))
     for id in diff_ids:
         coords = [dets[id]]
         frameids = [frame_number]
@@ -226,9 +237,9 @@ def _track_current_unmatched(dets, ids2, frame_number, tracks, track_id, common_
     return tracks, track_id
 
 
-def _track_matches(ids1, ids2, pred_dets, dets, tracks, frame_number, common_flow):
+def _track_matches(pred_ids, ids, pred_dets, dets, tracks, frame_number, common_flow):
     flows = [Point(x=0.0, y=0.0)]
-    for id1, id2 in zip(ids1, ids2):
+    for id1, id2 in zip(pred_ids, ids):
         current_track_id = pred_dets[id1].frame_number
         track = tracks[current_track_id]
         # kill tracks that are not tracked for a while
@@ -248,11 +259,8 @@ def _track_matches(ids1, ids2, pred_dets, dets, tracks, frame_number, common_flo
                 flow_length = np.linalg.norm([flow.x, flow.y])
                 if flow_length < accepted_flow_length:
                     flows.append(flow)
-                pred = Point(
-                    x=flow.x + track.coords[-1].x, y=flow.y + track.coords[-1].y
-                )
-                track.predicted_loc.x = pred.x
-                track.predicted_loc.y = pred.y
+                track.predicted_loc.x = flow.x + track.coords[-1].x
+                track.predicted_loc.y = flow.y + track.coords[-1].y
                 track.status = Status.Tracked
             else:
                 track.predicted_loc.x = common_flow.x + track.predicted_loc.x
@@ -284,19 +292,19 @@ def compute_tracks(
             for _, track in tracks.items()
             if track.status != Status.Stoped
         ]
-        ids1, ids2 = match_two_detection_sets(pred_dets, dets)
+        pred_ids, ids = match_two_detection_sets(pred_dets, dets)
 
         # track maches
         tracks, common_flow = _track_matches(
-            ids1, ids2, pred_dets, dets, tracks, frame_number, common_flow
+            pred_ids, ids, pred_dets, dets, tracks, frame_number, common_flow
         )
 
         # unmatched tracks: predicted
-        tracks = _track_predicted_unmatched(pred_dets, ids1, tracks, common_flow)
+        tracks = _track_predicted_unmatched(pred_dets, pred_ids, tracks, common_flow)
 
         # unmatched tracks: current
         tracks, track_id = _track_current_unmatched(
-            dets, ids2, frame_number, tracks, track_id, common_flow
+            dets, ids, frame_number, tracks, track_id, common_flow
         )
     return tracks
 
