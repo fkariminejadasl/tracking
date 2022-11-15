@@ -35,8 +35,10 @@ _, frame1 = vc1.read()
 vc2.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
 _, frame2 = vc2.read()
 
-dets1 = get_detections(det_folder1/f"{filename_fixpart1}_{frame_number}.txt", frame_number, width, height)
-dets2 = get_detections(det_folder2/f"{filename_fixpart2}_{frame_number}.txt", frame_number, width, height)
+det_path_cam1 = det_folder1 / f"{filename_fixpart1}_{frame_number}.txt"
+det_path_cam2 = det_folder2 / f"{filename_fixpart2}_{frame_number}.txt"
+dets1 = get_detections(det_path_cam1, frame_number, width, height)
+dets2 = get_detections(det_path_cam2, frame_number, width, height)
 matches = compute_match_candidates(dets1, dets2, inverse=False)
 
 draw_detections_in_stereo(frame1, frame2, dets1, dets2, width)

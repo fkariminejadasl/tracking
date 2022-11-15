@@ -469,9 +469,9 @@ def draw_detections_in_stereo(frame1, frame2, dets1, dets2, image_width):
 fig, axs = plt.subplots(1,3)
 for track_id in [21,19,20,23]:
     track = tracks1[track_id] # track = tracks1[21]
-    axs[0].plot(track.frameids, [coord.x for coord in track.coords], '*-', color=track.color, label=str(track.predicted_loc.frame_number))
-    axs[1].plot(track.frameids, [coord.y for coord in track.coords], '*-', color=track.color, label=str(track.predicted_loc.frame_number))
-    axs[2].plot([coord.x for coord in track.coords], [coord.y for coord in track.coords], '*-', color=track.color, label=str(track.predicted_loc.frame_number))
+    axs[0].plot(track.frameids, [coord.x for coord in track.coords], '*-', color=track.color, label=str(track.predicted_loc.det_id))
+    axs[1].plot(track.frameids, [coord.y for coord in track.coords], '*-', color=track.color, label=str(track.predicted_loc.det_id))
+    axs[2].plot([coord.x for coord in track.coords], [coord.y for coord in track.coords], '*-', color=track.color, label=str(track.predicted_loc.det_id))
 axs[0].set_xlabel('frame');axs[0].set_ylabel('x')
 axs[1].set_xlabel('frame');axs[1].set_ylabel('y')
 axs[2].set_xlabel('x');axs[2].set_ylabel('y')
@@ -483,7 +483,7 @@ plt.figure()
 ax = plt.axes(projection='3d')
 for track_id in [21,19,20,23]:
     track = tracks1[track_id]
-    ax.plot([coord.x for coord in track.coords], [coord.y for coord in track.coords], track.frameids, '*-', color=track.color, label=str(track.predicted_loc.frame_number))
+    ax.plot([coord.x for coord in track.coords], [coord.y for coord in track.coords], track.frameids, '*-', color=track.color, label=str(track.predicted_loc.det_id))
 ax.set_xlabel('x');ax.set_ylabel('y');ax.set_zlabel('frame')
 ax.legend()
 plt.show(block=False)

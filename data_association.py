@@ -10,6 +10,9 @@ np.random.seed(1000)
 
 accepted_flow_length = 10
 stopped_track_length = 50
+accepted_rect_error = 3
+smallest_disparity = 250
+largest_disparity = 650
 
 
 def get_video_parameters(vc: cv2.VideoCapture):
@@ -48,12 +51,81 @@ class Detection:
     y: int
     w: int
     h: int
-    frame_number: int
-    det_id: int = -1
+    det_id: int
+    frame_number: int = -1
     score: np.float16 = -1
+    camera_id: int = 0
 
 
-def get_detections(det_path, frame_number, width: int, height: int) -> list[Detection]:
+def _compute_disp_candidates(det1, dets2) -> list[int]:
+    disp_candidates = []
+    for det2 in dets2:
+        disp = det1.x - det2.x
+        rectification_error = abs(det1.y - det2.y)
+        if (
+            rectification_error < accepted_rect_error
+            and disp < largest_disparity
+            and disp > smallest_disparity
+        ):
+            disp_candidates.append(disp)
+    return disp_candidates
+
+
+@dataclass
+class DispWithProb:
+    disp: int
+    p: float
+
+
+@dataclass
+class DetectionWithDisp:
+    x: int
+    y: int
+    w: int
+    h: int
+    det_id: int
+    disp_candidates: list[int]
+    frame_number: int = -1
+    score: np.float16 = -1
+    camera_id: int = 0
+
+
+def get_detections_with_disp(
+    det_path_cam1,
+    det_path_cam2,
+    frame_number,
+    width: int,
+    height: int,
+    camera_id: int = 0,
+) -> list[DetectionWithDisp]:
+    dets_cam1 = get_detections(
+        det_path_cam1, frame_number, width, height, camera_id=camera_id
+    )
+    dets_cam2 = get_detections(
+        det_path_cam2, frame_number, width, height, camera_id=1 - camera_id
+    )
+    detections = []
+    for det in dets_cam1:
+        disp_candidates = _compute_disp_candidates(det, dets_cam2)
+        detection = DetectionWithDisp(
+            x=det.x,
+            y=det.y,
+            w=det.w,
+            h=det.h,
+            frame_number=frame_number,
+            det_id=det.det_id,
+            score=det.score,
+            camera_id=det.camera_id,
+            disp_candidates=disp_candidates,
+        )
+        detections.append(detection)
+
+    return detections
+
+
+def get_detections(
+    det_path, frame_number, width: int, height: int, camera_id: int = 0
+) -> list[Detection]:
     detections = np.loadtxt(det_path)
     return [
         Detection(
@@ -64,6 +136,7 @@ def get_detections(det_path, frame_number, width: int, height: int) -> list[Dete
             frame_number=frame_number,
             det_id=det_id,
             score=np.float16(f"{det[5]:.2f}"),
+            camera_id=camera_id,
         )
         for det_id, det in enumerate(detections)
     ]
@@ -101,7 +174,7 @@ def _make_a_new_track(
     color = tuple(np.random.rand(3).astype(np.float16))
     pred = Point(x=flow.x + coords[-1].x, y=flow.y + coords[-1].y)
     predicted_loc = Detection(
-        x=pred.x, y=pred.y, w=coords[-1].w, h=coords[-1].h, frame_number=track_id
+        x=pred.x, y=pred.y, w=coords[-1].w, h=coords[-1].h, det_id=track_id
     )
     track = Track(
         coords=coords,
@@ -189,7 +262,62 @@ def _initialize_unmatched_frame2(
     return tracks, track_id
 
 
-def initializ_tracks(det_folder: Path, filename_fixpart: str, width: int, height: int):
+def initialize_tracks_with_disparities(
+    det_folder_cam1: Path,
+    filename_fixpart_cam1: str,
+    det_folder_cam2: Path,
+    filename_fixpart_cam2: str,
+    camera_id: int,
+    width: int,
+    height: int,
+):
+    frame_number1 = 1
+    frame_number2 = 2
+    det_path_cam1_frame1 = (
+        det_folder_cam1 / f"{filename_fixpart_cam1}_{frame_number1}.txt"
+    )
+    det_path_cam1_frame2 = (
+        det_folder_cam1 / f"{filename_fixpart_cam1}_{frame_number2}.txt"
+    )
+    det_path_cam2_frame1 = (
+        det_folder_cam2 / f"{filename_fixpart_cam2}_{frame_number1}.txt"
+    )
+    det_path_cam2_frame2 = (
+        det_folder_cam2 / f"{filename_fixpart_cam2}_{frame_number2}.txt"
+    )
+    dets1 = get_detections_with_disp(
+        det_path_cam1_frame1,
+        det_path_cam2_frame1,
+        frame_number1,
+        width,
+        height,
+        camera_id,
+    )
+    dets2 = get_detections_with_disp(
+        det_path_cam1_frame2,
+        det_path_cam2_frame2,
+        frame_number2,
+        width,
+        height,
+        1 - camera_id,
+    )
+    ids1, ids2 = match_two_detection_sets(dets1, dets2)
+    # matched tracks
+    tracks, track_id, common_flow = _initialize_matches(
+        ids1, ids2, dets1, dets2, frame_number1, frame_number2
+    )
+    # unmatched tracks: frame1
+    tracks, track_id = _initialize_unmatched_frame1(
+        dets1, ids1, frame_number1, common_flow, tracks, track_id
+    )
+    # unmatched tracks: frame2
+    tracks, track_id = _initialize_unmatched_frame2(
+        dets2, ids2, frame_number2, common_flow, tracks, track_id
+    )
+    return tracks, common_flow, track_id
+
+
+def initialize_tracks(det_folder: Path, filename_fixpart: str, width: int, height: int):
     frame_number1 = 1
     frame_number2 = 2
     det_path1 = det_folder / f"{filename_fixpart}_{frame_number1}.txt"
@@ -215,7 +343,7 @@ def initializ_tracks(det_folder: Path, filename_fixpart: str, width: int, height
 def _track_predicted_unmatched(pred_dets, pred_ids, tracks, common_flow):
     diff_ids = set(range(len(pred_dets))).difference(set(pred_ids))
     for id in diff_ids:
-        current_track_id = pred_dets[id].frame_number
+        current_track_id = pred_dets[id].det_id
         track = tracks[current_track_id]
         track.predicted_loc.x = track.predicted_loc.x + common_flow.x
         track.predicted_loc.y = track.predicted_loc.y + common_flow.y
@@ -240,7 +368,7 @@ def _track_current_unmatched(dets, ids, frame_number, tracks, track_id, common_f
 def _track_matches(pred_ids, ids, pred_dets, dets, tracks, frame_number, common_flow):
     flows = [Point(x=0.0, y=0.0)]
     for id1, id2 in zip(pred_ids, ids):
-        current_track_id = pred_dets[id1].frame_number
+        current_track_id = pred_dets[id1].det_id
         track = tracks[current_track_id]
         # kill tracks that are not tracked for a while
         if frame_number - track.frameids[-1] > stopped_track_length:
@@ -271,6 +399,61 @@ def _track_matches(pred_ids, ids, pred_dets, dets, tracks, frame_number, common_
     return tracks, common_flow
 
 
+def compute_tracks_with_disparities(
+    det_folder_cam1: Path,
+    filename_fixpart_cam1: str,
+    det_folder_cam2: Path,
+    filename_fixpart_cam2: str,
+    camera_id: int,
+    width: int,
+    height: int,
+    total_no_frames: int = 680,
+):
+    tracks, common_flow, track_id = initialize_tracks_with_disparities(
+        det_folder_cam1,
+        filename_fixpart_cam1,
+        det_folder_cam2,
+        filename_fixpart_cam2,
+        camera_id,
+        width,
+        height,
+    )
+    # start track
+    # ===========
+    for frame_number in range(3, total_no_frames + 1):
+        det_path_cam1 = det_folder_cam1 / f"{filename_fixpart_cam1}_{frame_number}.txt"
+        det_path_cam2 = det_folder_cam2 / f"{filename_fixpart_cam2}_{frame_number}.txt"
+        dets = get_detections_with_disp(
+            det_path_cam1,
+            det_path_cam2,
+            frame_number,
+            width,
+            height,
+            camera_id,
+        )
+
+        pred_dets = [
+            track.predicted_loc
+            for _, track in tracks.items()
+            if track.status != Status.Stoped
+        ]
+        pred_ids, ids = match_two_detection_sets(pred_dets, dets)
+
+        # track maches
+        tracks, common_flow = _track_matches(
+            pred_ids, ids, pred_dets, dets, tracks, frame_number, common_flow
+        )
+
+        # unmatched tracks: predicted
+        tracks = _track_predicted_unmatched(pred_dets, pred_ids, tracks, common_flow)
+
+        # unmatched tracks: current
+        tracks, track_id = _track_current_unmatched(
+            dets, ids, frame_number, tracks, track_id, common_flow
+        )
+    return tracks
+
+
 def compute_tracks(
     det_folder: Path,
     filename_fixpart: str,
@@ -278,10 +461,9 @@ def compute_tracks(
     height: int,
     total_no_frames: int = 680,
 ):
-    tracks, common_flow, track_id = initializ_tracks(
+    tracks, common_flow, track_id = initialize_tracks(
         det_folder, filename_fixpart, width, height
     )
-
     # start track
     # ===========
     for frame_number in range(3, total_no_frames + 1):
@@ -346,7 +528,7 @@ def read_tracks(track_file):
     return tracks
 
 
-def get_iou(det1: Detection, det2: Detection) -> float:
+def get_iou(det1, det2) -> float:
     # copied from
     # https://stackoverflow.com/questions/25349178/calculating-percentage-of-bounding-box-overlap-for-image-detector-evaluation
 
