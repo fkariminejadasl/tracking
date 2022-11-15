@@ -73,8 +73,11 @@ def _compute_disp_candidates(det1, dets2) -> list[int]:
 
 @dataclass
 class DispWithProb:
-    disp: int
-    p: float
+    val: int = -1
+    prob: float = 0.0
+    count: int = 0
+    current_frame_number: int = 0
+    frame_number: int = 0
 
 
 @dataclass
@@ -149,6 +152,7 @@ class Track:
     color: tuple
     frameids: list[int]
     status: Status
+    disp: DispWithProb = DispWithProb()
 
 
 def find_detection_in_track_by_frame_id(track, frame_id):
@@ -262,6 +266,23 @@ def _initialize_unmatched_frame2(
     return tracks, track_id
 
 
+def _assign_unique_disp(tracks, frame_number):
+    for track_id, track in tracks.items():
+        coord = track.coords[-1]
+        if (len(coord.disp_candidates) == 1) and (frame_number == coord.frame_number):
+            disp = DispWithProb(
+                coord.disp_candidates[0],
+                1.0,
+                track.disp.count + 1,
+                frame_number,
+                coord.frame_number,
+            )
+            track.disp = disp
+        if frame_number != coord.frame_number:
+            track.disp.current_frame_number = frame_number
+    return tracks
+
+
 def initialize_tracks_with_disparities(
     det_folder_cam1: Path,
     filename_fixpart_cam1: str,
@@ -299,7 +320,7 @@ def initialize_tracks_with_disparities(
         frame_number2,
         width,
         height,
-        1 - camera_id,
+        camera_id,
     )
     ids1, ids2 = match_two_detection_sets(dets1, dets2)
     # matched tracks
@@ -314,6 +335,10 @@ def initialize_tracks_with_disparities(
     tracks, track_id = _initialize_unmatched_frame2(
         dets2, ids2, frame_number2, common_flow, tracks, track_id
     )
+
+    # assign a unique disparity: heuristics
+    tracks = _assign_unique_disp(tracks, frame_number2)
+
     return tracks, common_flow, track_id
 
 
@@ -451,6 +476,9 @@ def compute_tracks_with_disparities(
         tracks, track_id = _track_current_unmatched(
             dets, ids, frame_number, tracks, track_id, common_flow
         )
+
+        # assign a unique disparity: heuristics
+        tracks = _assign_unique_disp(tracks, frame_number)
     return tracks
 
 
@@ -488,6 +516,7 @@ def compute_tracks(
         tracks, track_id = _track_current_unmatched(
             dets, ids, frame_number, tracks, track_id, common_flow
         )
+
     return tracks
 
 
