@@ -28,7 +28,7 @@ height, width, total_no_frames, fps = get_video_parameters(vc1)
 tracks1 = compute_tracks(det_folder1, filename_fixpart1, width, height, total_no_frames)
 tracks2 = compute_tracks(det_folder2, filename_fixpart2, width, height, total_no_frames)
 
-"""
+
 frame_number = 1
 vc1.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
 _, frame1 = vc1.read()
@@ -46,7 +46,7 @@ for match in matches:
     for candidate in match.candidates:
         disps += f"{candidate.det.det_id}:{str(candidate.disp)},"
     print(f"{match.target.det.det_id}, {match.target.det.y}: {disps}")
-"""
+
 
 # plot_frameid_y_for_stereo(tracks1, [15], tracks2, [16])
 

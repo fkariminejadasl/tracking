@@ -262,7 +262,7 @@ def visualize_tracks_in_video(
                     (int(coord.x) - w2, int(coord.y) - h2),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.5,  # font scale
-                    color,
+                    (0, 0, 0),  # color,
                     1,  # Thinckness
                     2,  # line type
                 )
@@ -277,6 +277,67 @@ def visualize_tracks_in_video(
     out.release()
 
 
+def visualize_tracks_in_video_from_file(
+    track_file,
+    vc,
+    output_video_file,
+    top_left=Point(1300, 700),
+    out_width=900,
+    out_height=500,
+):
+    if isinstance(tracks, list):
+        tracks = np.array(track_file)
+    if isinstance(tracks, Path):
+        tracks = np.array(read_tracks(track_file))
+
+    out, height, width, total_no_frames = _create_output_video(
+        output_video_file, vc, out_width, out_height
+    )
+
+    for frame_number in range(1, total_no_frames + 1):
+        vc.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
+        _, frame = vc.read()
+
+        indices = np.where(tracks[:, 1] == frame_number)[0]
+        # color = np.random.randint(0, 255, size=(3))
+        # color = tuple(int(c) for c in color)
+        color = (236, 186, 220)
+        for idx in indices:
+            track = tracks[idx]
+            track_id = int(track[0])
+
+            x = int(track[3])
+            y = int(track[4])
+            w2 = int(track[5] / 2)
+            h2 = int(track[6] / 2)
+            cv2.rectangle(
+                frame,
+                (x - w2, y - h2),
+                (x + w2, y + h2),
+                color=color,
+                thickness=1,
+            )
+            cv2.putText(
+                frame,
+                f"{track_id}",
+                (x - w2, y - h2),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,  # font scale
+                (0, 0, 0),  # color,
+                1,  # Thinckness
+                2,  # line type
+            )
+            # show as thick points
+            # for i in range(6):
+            #     for j in range(6):
+            #         frame[coord.y + i, coord.x + j, :] = color
+        out = _write_frame_in_video(
+            frame, out, frame_number, top_left, out_width, out_height
+        )
+
+    out.release()
+
+
 def visualize_matches_in_video(
     all_matches,
     vc1,
@@ -284,7 +345,7 @@ def visualize_matches_in_video(
     output_video_file,
     top_left=Point(1300, 700),
     out_width=900,
-    out_height=500, 
+    out_height=500,
     inverse=False,
 ):
 

@@ -107,12 +107,11 @@ class StereoItem:
 
 @dataclass
 class Stereo:
-    frame_number: int
     target: StereoItem
     candidates: list[StereoItem]
 
 
-def compute_match_candidates(dets1, dets2, inverse=False):
+def compute_match_candidates(dets1, dets2, inverse=False) -> list[Stereo]:
     cam_id1 = 0
     cam_id2 = 1
     if inverse:
@@ -133,6 +132,6 @@ def compute_match_candidates(dets1, dets2, inverse=False):
                 st_item2 = StereoItem(cam_id2, -1, det2, disp, -1)
                 candidates.append(st_item2)
         if candidates:
-            match = Stereo(1, st_item1, candidates)
+            match = Stereo(st_item1, candidates)
             matches.append(match)
     return matches

@@ -318,6 +318,34 @@ def save_tracks(track_file, tracks):
                 )
 
 
+def write_tracks(track_file, tracks):
+    with open(track_file, "w") as file:
+        for track in tracks:
+            file.write(
+                f"{track[0]},{track[1]},{track[2]},{track[3]},{track[4]},{track[5]},{track[6]},{track[7]:.2f},{track[8]}\n"
+            )
+
+
+def read_tracks(track_file):
+    tracks = []
+    with open(track_file, "r") as f:
+        for row in f:
+            items = row.split("\n")[0].split(",")
+            track_item = [
+                int(items[0]),
+                int(items[1]),
+                int(items[2]),
+                int(items[3]),
+                int(items[4]),
+                int(items[5]),
+                int(items[6]),
+                float(items[7]),
+                int(items[8]),
+            ]
+            tracks.append(track_item)
+    return tracks
+
+
 def get_iou(det1: Detection, det2: Detection) -> float:
     # copied from
     # https://stackoverflow.com/questions/25349178/calculating-percentage-of-bounding-box-overlap-for-image-detector-evaluation
