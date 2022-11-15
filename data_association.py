@@ -146,9 +146,19 @@ def get_detections(
 
 
 @dataclass
+class Prediction:
+    x: int
+    y: int
+    w: int
+    h: int
+    track_id: int
+    disp: DispWithProb = DispWithProb()
+
+
+@dataclass
 class Track:
     coords: list[Detection]
-    predicted_loc: Detection
+    predicted_loc: Prediction
     color: tuple
     frameids: list[int]
     status: Status
@@ -159,6 +169,23 @@ def find_detection_in_track_by_frame_id(track, frame_id):
     for det in track.coords:
         if det.id == frame_id:
             return det
+
+
+def match_two_detection_sets_with_disparities(dets1, dets2):
+    dist = np.zeros((len(dets1), len(dets2)), dtype=np.float32)
+    for i, det1 in enumerate(dets1):
+        for j, det2 in enumerate(dets2):
+            iou_loss = 1 - get_iou(det1, det2)
+            loc_loss = np.linalg.norm([det2.x - det1.x, det2.y - det1.y])
+            if det1.disp.val != -1 and len(det2.disp_candidates) > 0:
+                disp_loss = min(
+                    [abs(disp2 - det1.disp.val) for disp2 in det2.disp_candidates]
+                )
+            else:
+                disp_loss = 0
+            dist[i, j] = iou_loss + disp_loss
+    row_ind, col_ind = linear_sum_assignment(dist)
+    return row_ind, col_ind
 
 
 def match_two_detection_sets(dets1, dets2):
@@ -177,8 +204,8 @@ def _make_a_new_track(
 ) -> Track:
     color = tuple(np.random.rand(3).astype(np.float16))
     pred = Point(x=flow.x + coords[-1].x, y=flow.y + coords[-1].y)
-    predicted_loc = Detection(
-        x=pred.x, y=pred.y, w=coords[-1].w, h=coords[-1].h, det_id=track_id
+    predicted_loc = Prediction(
+        x=pred.x, y=pred.y, w=coords[-1].w, h=coords[-1].h, track_id=track_id
     )
     track = Track(
         coords=coords,
@@ -368,7 +395,7 @@ def initialize_tracks(det_folder: Path, filename_fixpart: str, width: int, heigh
 def _track_predicted_unmatched(pred_dets, pred_ids, tracks, common_flow):
     diff_ids = set(range(len(pred_dets))).difference(set(pred_ids))
     for id in diff_ids:
-        current_track_id = pred_dets[id].det_id
+        current_track_id = pred_dets[id].track_id
         track = tracks[current_track_id]
         track.predicted_loc.x = track.predicted_loc.x + common_flow.x
         track.predicted_loc.y = track.predicted_loc.y + common_flow.y
@@ -393,7 +420,7 @@ def _track_current_unmatched(dets, ids, frame_number, tracks, track_id, common_f
 def _track_matches(pred_ids, ids, pred_dets, dets, tracks, frame_number, common_flow):
     flows = [Point(x=0.0, y=0.0)]
     for id1, id2 in zip(pred_ids, ids):
-        current_track_id = pred_dets[id1].det_id
+        current_track_id = pred_dets[id1].track_id
         track = tracks[current_track_id]
         # kill tracks that are not tracked for a while
         if frame_number - track.frameids[-1] > stopped_track_length:
@@ -457,12 +484,16 @@ def compute_tracks_with_disparities(
             camera_id,
         )
 
+        # assign disparities to predictions
+        for track_id, track in tracks.items():
+            track.predicted_loc.disp = track.disp
+
         pred_dets = [
             track.predicted_loc
             for _, track in tracks.items()
             if track.status != Status.Stoped
         ]
-        pred_ids, ids = match_two_detection_sets(pred_dets, dets)
+        pred_ids, ids = match_two_detection_sets_with_disparities(pred_dets, dets)
 
         # track maches
         tracks, common_flow = _track_matches(
