@@ -6,16 +6,20 @@ from matplotlib import pyplot as plt
 from data_association import Point, get_detections, get_video_parameters
 
 
-def _create_output_video(output_video_file, vc, out_width=None, out_height=None):
+def _create_output_video(
+    output_video_file, vc, out_width=None, out_height=None, out_fps=None
+):
     height, width, total_no_frames, fps = get_video_parameters(vc)
     if not out_width:
         out_width = width
     if not out_height:
         out_height = height
+    if not out_fps:
+        out_fps = fps
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # (*"XVID") with .avi
     out = cv2.VideoWriter(
-        output_video_file.as_posix(), fourcc, fps, (out_width, out_height)
+        output_video_file.as_posix(), fourcc, out_fps, (out_width, out_height)
     )
 
     return out, height, width, total_no_frames
@@ -232,10 +236,19 @@ def visualize_tracks_in_video(
     top_left=Point(1300, 700),
     out_width=900,
     out_height=500,
+    total_no_frames: int = 0,
+    fps: int = None,
+    show_det_id=False,
+    black=True,
 ):
-    out, height, width, total_no_frames = _create_output_video(
-        output_video_file, vc, out_width, out_height
-    )
+    if total_no_frames != 0:
+        out, height, width, _ = _create_output_video(
+            output_video_file, vc, out_width, out_height, fps
+        )
+    else:
+        out, height, width, total_no_frames = _create_output_video(
+            output_video_file, vc, out_width, out_height, fps
+        )
 
     for frame_number in range(1, total_no_frames + 1):
         vc.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
@@ -256,13 +269,19 @@ def visualize_tracks_in_video(
                     color=color,
                     thickness=1,
                 )
+                if show_det_id:
+                    text = f"{track_id},{coord.det_id}"
+                else:
+                    text = f"{track_id}"
+                if black:
+                    color = (0, 0, 0)
                 cv2.putText(
                     frame,
-                    f"{track_id}",
+                    text,
                     (int(coord.x) - w2, int(coord.y) - h2),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.5,  # font scale
-                    (0, 0, 0),  # color,
+                    color,
                     1,  # Thinckness
                     2,  # line type
                 )
@@ -432,7 +451,16 @@ def superimpose_two_images(frame1, frame2):
     plt.show(block=False)
 
 
-def _draw_detections_on_image(dets, ax, image_width, draw_text=True):
+def _show_two_frames(axes, frame1, frame2):
+    axes[0].imshow(frame1[..., ::-1])
+    axes[1].imshow(frame2[..., ::-1])
+    axes[0].axis("off")
+    axes[1].axis("off")
+    plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
+    return axes
+
+
+def _draw_detections_epipolar_lines(dets, ax, image_width, draw_text=True):
     for det in dets:
         ax.plot([0, image_width - 1], [det.y, det.y], "--r", linewidth=0.5, alpha=0.5)
         if draw_text:
@@ -454,15 +482,31 @@ def _draw_detections_on_image(dets, ax, image_width, draw_text=True):
         ax.add_patch(rect)
 
 
-def draw_detections_in_stereo(frame1, frame2, dets1, dets2, image_width):
+def _draw_detections_and_flows(dets, ax):
+    for det in dets:
+        ax.text(
+            det.x - det.w // 2,
+            det.y - det.h // 2,
+            str(f"{det.det_id}"),
+            color="r",
+            fontsize=12,
+        )
+        rect = patches.Rectangle(
+            (det.x - det.w // 2, det.y - det.h // 2),
+            det.w,
+            det.h,
+            linewidth=1,
+            edgecolor="r",
+            facecolor="none",
+        )
+        ax.add_patch(rect)
+
+
+def show_detections_in_stereo(frame1, frame2, dets1, dets2, image_width):
     _, axes = plt.subplots(1, 2)
-    axes[0].imshow(frame1[..., ::-1])
-    axes[1].imshow(frame2[..., ::-1])
-    axes[0].axis("off")
-    axes[1].axis("off")
-    plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
-    _draw_detections_on_image(dets1, axes[0], image_width)
-    _draw_detections_on_image(dets2, axes[1], image_width)
+    axes = _show_two_frames(axes, frame1, frame2)
+    _draw_detections_epipolar_lines(dets1, axes[0], image_width)
+    _draw_detections_epipolar_lines(dets2, axes[1], image_width)
 
 
 """
