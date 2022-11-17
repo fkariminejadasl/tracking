@@ -24,8 +24,10 @@ class Matches:
 def compute_possible_matches_for_a_track(track1, tracks2):
     possible_matches = {}
     for track_id2, track2 in tracks2.items():
-        if len(track2.frameids) > accepted_track_length:
-            common_frames = set(track1.frameids).intersection(set(track2.frameids))
+        if len(track2.coords) > accepted_track_length:
+            frame_numbers1 = get_frame_numbers_of_track(track1)
+            frame_numbers2 = get_frame_numbers_of_track(track2)
+            common_frames = set(frame_numbers1).intersection(set(frame_numbers))
             error = 0
             count = 0
             ids = []
@@ -73,7 +75,7 @@ def compute_possible_matches_for_a_track(track1, tracks2):
 def compute_possible_matches(tracks1, tracks2):
     all_matches = {}
     for track_id1, track1 in tracks1.items():
-        if len(track1.frameids) > accepted_track_length:
+        if len(track1.coords) > accepted_track_length:
             matched_groups = compute_possible_matches_for_a_track(track1, tracks2)
             if matched_groups:
                 all_matches[track_id1] = matched_groups

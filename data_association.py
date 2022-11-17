@@ -164,15 +164,8 @@ class Track:
     coords: list[Detection]
     predicted_loc: Prediction
     color: tuple
-    frameids: list[int]
     status: Status
     disp: DispWithProb = DispWithProb()
-
-
-def find_detection_in_track_by_frame_id(track, frame_id):
-    for det in track.coords:
-        if det.id == frame_id:
-            return det
 
 
 # def match_two_detection_sets_with_disps(dets1, dets2):
@@ -225,9 +218,7 @@ def match_two_detection_sets(dets1, dets2):
     return row_ind, col_ind
 
 
-def _make_a_new_track(
-    coords: list[Detection], frameids, flow: Point, track_id, status
-) -> Track:
+def _make_a_new_track(coords: list[Detection], flow: Point, track_id, status) -> Track:
     color = tuple(np.random.rand(3).astype(np.float16))
     pred = Point(x=flow.x + coords[-1].x, y=flow.y + coords[-1].y)
     predicted_loc = Prediction(
@@ -237,7 +228,6 @@ def _make_a_new_track(
         coords=coords,
         predicted_loc=predicted_loc,
         color=color,
-        frameids=frameids,
         status=status,
     )
     return track
@@ -261,27 +251,23 @@ def _initialize_matches(ids1, ids2, dets1, dets2, frame_number1, frame_number2):
         )
         if dist < accepted_flow_length:
             coords = [dets1[id1], dets2[id2]]
-            frameids = [frame_number1, frame_number2]
             flow = Point(x=coords[-1].x - coords[-2].x, y=coords[-1].y - coords[-2].y)
             flow_length = np.linalg.norm([flow.x, flow.y])
             if flow_length < accepted_flow_length:
                 flows.append(flow)
-            tracks[track_id] = _make_a_new_track(
-                coords, frameids, flow, track_id, Status.Tracked
-            )
+            tracks[track_id] = _make_a_new_track(coords, flow, track_id, Status.Tracked)
             track_id += 1
         else:
             common_flow = _get_common_flow(flows)
             tracks[track_id] = _make_a_new_track(
                 [dets1[id1]],
-                [frame_number1],
                 common_flow * 2,
                 track_id,
                 Status.NewTrack,
             )
             track_id += 1
             tracks[track_id] = _make_a_new_track(
-                [dets2[id2]], [frame_number2], common_flow, track_id, Status.NewTrack
+                [dets2[id2]], common_flow, track_id, Status.NewTrack
             )
             track_id += 1
 
@@ -295,10 +281,9 @@ def _initialize_unmatched_frame1(
     diff_ids = set(range(len(dets1))).difference(set(ids1))
     for id in diff_ids:
         coords = [dets1[id]]
-        frameids = [frame_number1]
 
         tracks[track_id] = _make_a_new_track(
-            coords, frameids, common_flow * 2, track_id, Status.NewTrack
+            coords, common_flow * 2, track_id, Status.NewTrack
         )
         track_id += 1
     return tracks, track_id
@@ -310,10 +295,9 @@ def _initialize_unmatched_frame2(
     diff_ids = set(range(len(dets2))).difference(set(ids2))
     for id in diff_ids:
         coords = [dets2[id]]
-        frameids = [frame_number2]
 
         tracks[track_id] = _make_a_new_track(
-            coords, frameids, common_flow, track_id, Status.NewTrack
+            coords, common_flow, track_id, Status.NewTrack
         )
         track_id += 1
     return tracks, track_id
@@ -430,10 +414,9 @@ def _track_current_unmatched(dets, ids, frame_number, tracks, track_id, common_f
     diff_ids = set(range(len(dets))).difference(set(ids))
     for id in diff_ids:
         coords = [dets[id]]
-        frameids = [frame_number]
 
         tracks[track_id] = _make_a_new_track(
-            coords, frameids, common_flow, track_id, Status.NewTrack
+            coords, common_flow, track_id, Status.NewTrack
         )
         track_id += 1
     return tracks, track_id
@@ -445,7 +428,7 @@ def _track_matches(pred_ids, ids, pred_dets, dets, tracks, frame_number, common_
         current_track_id = pred_dets[id1].track_id
         track = tracks[current_track_id]
         # kill tracks that are not tracked for a while
-        if frame_number - track.frameids[-1] > stopped_track_length:
+        if frame_number - track.coords[-1].frame_number > stopped_track_length:
             track.status = Status.Stoped
         else:
             dist = np.linalg.norm(
@@ -453,7 +436,6 @@ def _track_matches(pred_ids, ids, pred_dets, dets, tracks, frame_number, common_
             )
             if dist < accepted_flow_length:
                 track.coords.append(dets[id2])
-                track.frameids.append(frame_number)
                 flow = Point(
                     x=track.coords[-1].x - track.coords[-2].x,
                     y=track.coords[-1].y - track.coords[-2].y,
@@ -650,3 +632,22 @@ def test_get_iou():
     det1 = Detection(0, 0, 4, 2, 0)
     det2 = Detection(4, 2, 2, 1, 1)
     np.testing.assert_almost_equal(get_iou(det1, det2), 0.0, decimal=2)
+
+
+def find_detection_in_track_by_frame_number(track, frame_number):
+    for det in track.coords:
+        if det.frame_number == frame_number:
+            return det
+
+
+def find_detectios_in_tracks_by_frame_number(tracks, frame_number):
+    dets = {}
+    for track_id, track in tracks.items():
+        det = find_detection_in_track_by_frame_number(track, frame_number)
+        if det:
+            dets[track_id] = det
+    return dets
+
+
+def get_frame_numbers_of_track(track):
+    return [coord.frame_number for coord in track.coords]

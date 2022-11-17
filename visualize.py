@@ -3,7 +3,8 @@ import matplotlib.patches as patches
 import numpy as np
 from matplotlib import pyplot as plt
 
-from data_association import Point, get_detections, get_video_parameters
+from data_association import (Point, get_detections,
+                              get_frame_numbers_of_track, get_video_parameters)
 
 
 def _create_output_video(
@@ -157,45 +158,25 @@ def visualize_tracks_on_a_frame(tracks, vc, frame_number=1):
     plt.show(block=False)
 
 
-def visualize_tracks_on_two_frames(tracks, vc, frame_number1, frame_number2):
-    vc.set(cv2.CAP_PROP_POS_FRAMES, frame_number1 - 1)
-    _, frame1 = vc.read()
-    vc.set(cv2.CAP_PROP_POS_FRAMES, frame_number2 - 1)
-    _, frame2 = vc.read()
-    _, (ax1, ax2) = plt.subplots(2, 1, sharex=True, sharey=True)
-    ax1.imshow(frame1[..., ::-1])
-    ax2.imshow(frame2[..., ::-1])
-    for _, track in tracks.items():
-        for id in track.frameids:
-            if id == frame_number1:
-                ax1.plot(
-                    [track.coords[0].x], [track.coords[0].y], "*", color=track.color
-                )
-            if id == frame_number2:
-                ax2.plot(
-                    [track.coords[-1].x], [track.coords[-1].y], "*", color=track.color
-                )
-    plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
-    plt.show(block=False)
-
-
 # roughly up to 50 frames they can be tracked
 # c = 0
 # plt.figure()
 # for k, track in tracks.items():
+#     frame_numbers = get_frame_numbers_of_track(track)
 #     if track.status == Status.Tracked:
 #         c += 1
-#         print(f"{k},{len(track.frameids)}")
-#         plt.plot(track.frameids,"*-",label=str(k))
+#         print(f"{k},{len(frame_numbers)}")
+#         plt.plot(frame_numbers,"*-",label=str(k))
 # print(f"{c}")
 
 
 def plot_frameid_y(tracks, status, legned=False):
     _, ax = plt.subplots(1, 1)
     for k, track in tracks.items():
+        frame_numbers = get_frame_numbers_of_track(track)
         if track.status == status:
             ax.plot(
-                track.frameids,
+                frame_numbers,
                 [coord.y for coord in track.coords],
                 "*-",
                 color=track.color,
@@ -210,19 +191,23 @@ def plot_frameid_y(tracks, status, legned=False):
 def plot_frameid_y_for_stereo(tracks1, track1_ids, tracks2, track2_ids):
     _, ax1 = plt.subplots(1, 1)
     for track_id1 in track1_ids:
+        track = tracks1[track_id1]
+        frame_numbers = get_frame_numbers_of_track(track)
         ax1.plot(
-            tracks1[track_id1].frameids,
-            [coords.y for coords in tracks1[track_id1].coords],
+            frame_numbers,
+            [coords.y for coords in track.coords],
             "-*",
-            color=tracks1[track_id1].color,
+            color=track.color,
             label=f"track1: {track_id1}",
         )
     for track_id2 in track2_ids:
+        track = tracks1[track_id2]
+        frame_numbers = get_frame_numbers_of_track(track)
         ax1.plot(
-            tracks2[track_id2].frameids,
-            [coords.y for coords in tracks2[track_id2].coords],
+            frame_numbers,
+            [coords.y for coords in track.coords],
             "-*",
-            color=tracks2[track_id2].color,
+            color=track.color,
             label=f"track2: {track_id2}",
         )
     ax1.legend()
@@ -255,10 +240,11 @@ def visualize_tracks_in_video(
         _, frame = vc.read()
 
         for track_id, track in tracks.items():
-            if frame_number in track.frameids:
+            frame_numbers = get_frame_numbers_of_track(track)
+            if frame_number in frame_numbers:
                 color = tuple(int(round(c * 255)) for c in track.color)
                 color = (color[2], color[1], color[0])
-                idx = np.where(np.array(track.frameids) == frame_number)[0][0]
+                idx = frame_numbers.index(frame_number)
                 coord = track.coords[idx]
                 w2 = int(coord.w / 2)
                 h2 = int(coord.h / 2)
@@ -285,10 +271,6 @@ def visualize_tracks_in_video(
                     1,  # Thinckness
                     2,  # line type
                 )
-                # show as thick points
-                # for i in range(6):
-                #     for j in range(6):
-                #         frame[coord.y + i, coord.x + j, :] = color
         out = _write_frame_in_video(
             frame, out, frame_number, top_left, out_width, out_height
         )
@@ -380,11 +362,11 @@ def visualize_matches_in_video(
 
         for track_id1, value in all_matches.items():
             for track_id2, matches in value.items():
-                frameids = [coord1.frame_number for coord1 in matches.coords1]
-                if frame_number in frameids:
+                frame_numbers = [coord1.frame_number for coord1 in matches.coords1]
+                if frame_number in frame_numbers:
                     color = tuple(int(round(c * 255)) for c in matches.track1_color)
                     color = (color[2], color[1], color[0])
-                    idx = np.where(np.array(frameids) == frame_number)[0][0]
+                    idx = frame_numbers.index(frame_number)
                     coord = matches.coords1[idx]
                     w2 = int(coord.w / 2)
                     h2 = int(coord.h / 2)
@@ -457,7 +439,6 @@ def _show_two_frames(axes, frame1, frame2):
     axes[0].axis("off")
     axes[1].axis("off")
     plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
-    return axes
 
 
 def _draw_detections_epipolar_lines(dets, ax, image_width, draw_text=True):
@@ -504,49 +485,44 @@ def _draw_detections_and_flows(dets, ax):
 
 def show_detections_in_stereo(frame1, frame2, dets1, dets2, image_width):
     _, axes = plt.subplots(1, 2)
-    axes = _show_two_frames(axes, frame1, frame2)
+    _show_two_frames(axes, frame1, frame2)
     _draw_detections_epipolar_lines(dets1, axes[0], image_width)
     _draw_detections_epipolar_lines(dets2, axes[1], image_width)
 
 
-"""
-fig, axs = plt.subplots(1,3)
-for track_id in [21,19,20,23]:
-    track = tracks1[track_id] # track = tracks1[21]
-    axs[0].plot(track.frameids, [coord.x for coord in track.coords], '*-', color=track.color, label=str(track.predicted_loc.det_id))
-    axs[1].plot(track.frameids, [coord.y for coord in track.coords], '*-', color=track.color, label=str(track.predicted_loc.det_id))
-    axs[2].plot([coord.x for coord in track.coords], [coord.y for coord in track.coords], '*-', color=track.color, label=str(track.predicted_loc.det_id))
-axs[0].set_xlabel('frame');axs[0].set_ylabel('x')
-axs[1].set_xlabel('frame');axs[1].set_ylabel('y')
-axs[2].set_xlabel('x');axs[2].set_ylabel('y')
-axs[0].legend();axs[1].legend();axs[2].legend()
-plt.show(block=False)
+def get_frame(frame_number, vc):
+    vc.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
+    _, frame = vc.read()
+    return frame
 
-from mpl_toolkits import mplot3d
-plt.figure()
-ax = plt.axes(projection='3d')
-for track_id in [21,19,20,23]:
-    track = tracks1[track_id]
-    ax.plot([coord.x for coord in track.coords], [coord.y for coord in track.coords], track.frameids, '*-', color=track.color, label=str(track.predicted_loc.det_id))
-ax.set_xlabel('x');ax.set_ylabel('y');ax.set_zlabel('frame')
-ax.legend()
-plt.show(block=False)
 
-def plot_ious(tracks, track_ids):
-    plt.figure()
-    for track_id in track_ids:
-        track = tracks[track_id]
-        ious = []
-        for frame_id, det1, det2 in zip(track.frameids[1:], track.coords[1:], track.coords[0:-1]):
-            iou = get_iou(det1,det2)
-            ious.append(get_iou(det1,det2))
-            # print(f"{frame_id}, {iou:.2f}")
-        idx = np.where(np.diff(track.frameids) !=1)[0]
-        print(f"{track_id}: {np.diff(track.frameids)[idx]}")
+def get_stereo_frames(frame_number, vc1, vc2):
+    vc1.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
+    vc2.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
+    _, frame_c1 = vc1.read()
+    _, frame_c2 = vc2.read()
+    return frame_c1, frame_c2
 
-        plt.plot(track.frameids[1:], ious,  '*-', color=track.color, label=str(track_id))
-        if idx.size>0:
-            plt.plot([np.array(track.frameids)[idx]], [np.array(ious)[idx]],'or',markerfacecolor='none')
-    plt.legend()
+
+### Maybe removed
+####################################333
+def visualize_tracks_on_two_frames(tracks, vc, frame_number1, frame_number2):
+    frame1 = get_frame(frame_number1, vc)
+    frame2 = get_frame(frame_number2, vc)
+
+    _, axs = plt.subplots(2, 1, sharex=True, sharey=True)
+    _show_two_frames(axs, frame1, frame2)
+
+    for _, track in tracks.items():
+        frame_numbers = get_frame_numbers_of_track(track)
+        for frame_number in frame_numbers:
+            if frame_number == frame_number1:
+                axs[0].plot(
+                    [track.coords[0].x], [track.coords[0].y], "*", color=track.color
+                )
+            if frame_number == frame_number2:
+                axs[1].plot(
+                    [track.coords[-1].x], [track.coords[-1].y], "*", color=track.color
+                )
+    plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
     plt.show(block=False)
-"""

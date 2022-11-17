@@ -1,8 +1,6 @@
 from data_association import *
-
 # from stereo import *
 from visualize import *
-
 
 result_folder = Path("/home/fatemeh/results/dataset1")
 data_folder = Path("/home/fatemeh/data/dataset1")
@@ -85,29 +83,34 @@ tracks2 = compute_tracks(
 )
 
 """
-dets3_c1_disp = get_detections_with_disp(det_folder1 / f"{filename_fixpart1}_{3}.txt", det_folder2 / f"{filename_fixpart2}_{3}.txt", 3, width, height, cam_id1)
-tracks1_disp = compute_tracks_with_disps(det_folder1,filename_fixpart1,det_folder2,filename_fixpart2,cam_id1,width,height,2)
+fn = 147
+dets = get_detections_with_disp(det_folder1 / f"{filename_fixpart1}_{fn}.txt", det_folder2 / f"{filename_fixpart2}_{fn}.txt", fn, width, height, cam_id1)
+dets_prev = get_detections_with_disp(det_folder1 / f"{filename_fixpart1}_{fn}.txt", det_folder2 / f"{filename_fixpart2}_{fn-1}.txt", fn-1, width, height, cam_id1)
+tracks = compute_tracks_with_disps(det_folder1,filename_fixpart1,det_folder2,filename_fixpart2,cam_id1,width,height,fn-1)
 pred_dets = [
             track.predicted_loc
-            for _, track in tracks1_disp.items()
+            for _, track in tracks.items()
             if track.status != Status.Stoped
         ]
+track_dets_prev = find_detectios_in_tracks_by_frame_number(tracks, fn-1)
 
-ids1, ids2 = match_two_detection_sets(pred_dets, dets3_c1_disp)
+ids1, ids2 = match_two_detection_sets(pred_dets, dets)
 
-frame2_c1, frame2_c2 = get_stereo_frames(2, vc1, vc2)
-frame3_c1, frame3_c2 = get_stereo_frames(3, vc1, vc2)
+frame_prev = get_frame(fn-1, vc1)
+frame_curr = get_frame(fn, vc1)
 
-_, axes = plt.subplots(1, 2, sharex=True, sharey=True)
-axs = _show_two_frames(axes, frame2_c1, frame3_c1)
-_draw_detections_and_flows(dets2_c1_disp, axs[0])
-_draw_detections_and_flows(dets3_c1_disp, axs[1])
+_, axs = plt.subplots(1, 2, sharex=True, sharey=True)
+_show_two_frames(axs, frame_prev, frame_curr)
+_draw_detections_and_flows(dets_prev, axs[0])
+_draw_detections_and_flows(dets, axs[1])
+for track_id, det in track_dets_prev.items():
+    axs[0].plot([det.x], [det.y], "*r")
+    axs[0].text(det.x, det.y, str(track_id), color="r", fontsize=12)
 for det in pred_dets:
     axs[1].plot([det.x], [det.y], "*r")
     axs[1].text(det.x, det.y, str(det.track_id), color="r", fontsize=12)
 for id1, id2 in zip(ids1, ids2):
-    axs[1].plot([pred_dets[id1].x, dets3_c1_disp[id2].x], [pred_dets[id1].y, dets3_c1_disp[id2].y], "-r")
-
+    axs[1].plot([pred_dets[id1].x, dets[id2].x], [pred_dets[id1].y, dets[id2].y], "-r")
 """
 # (array([ 0,  1,  2,  3,  4,  5,  6,  8, 10, 11, 12, 13, 14, 15, 16, 17, 18,
 #         19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
@@ -117,12 +120,6 @@ for id1, id2 in zip(ids1, ids2):
 #         34, 35, 36]))
 
 
-def get_stereo_frames(frame_number, vc1, vc2):
-    vc1.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
-    vc2.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
-    _, frame_c1 = vc1.read()
-    _, frame_c2 = vc2.read()
-    return frame_c1, frame_c2
 
 
 """
