@@ -156,6 +156,8 @@ class Prediction:
     w: int
     h: int
     track_id: int
+    det_id: int
+    frame_number: int
     disp: DispWithProb = DispWithProb()
 
 
@@ -218,11 +220,23 @@ def match_two_detection_sets(dets1, dets2):
     return row_ind, col_ind
 
 
+def _connect_idxs_to_detection_ids(dets):
+    idxs_to_det_ids = {i: det.det_id for i, det in enumerate(dets)}
+    det_ids_to_idxs = {det.det_id: id for i, det in enumerate(dets)}
+    return idxs_to_det_ids, det_ids_to_idxs
+
+
 def _make_a_new_track(coords: list[Detection], flow: Point, track_id, status) -> Track:
     color = tuple(np.random.rand(3).astype(np.float16))
     pred = Point(x=flow.x + coords[-1].x, y=flow.y + coords[-1].y)
     predicted_loc = Prediction(
-        x=pred.x, y=pred.y, w=coords[-1].w, h=coords[-1].h, track_id=track_id
+        x=pred.x,
+        y=pred.y,
+        w=coords[-1].w,
+        h=coords[-1].h,
+        track_id=track_id,
+        det_id=coords[-1].det_id,
+        frame_number=coords[-1].frame_number,
     )
     track = Track(
         coords=coords,
@@ -239,6 +253,25 @@ def _get_common_flow(flows):
         y=np.average(np.array([flow.y for flow in flows])),
     )
     return common_flow
+
+
+def _make_pred_loc_from_det(det, track_id: int = -1):
+    return Prediction(
+        det.x, det.y, det.w, det.h, track_id, det.det_id, det.frame_number
+    )
+
+
+def _update_pred_loc(predicted_loc, flow):
+    updated_predicted_loc = Prediction(
+        x=predicted_loc.x + flow.x,
+        y=predicted_loc.y + flow.y,
+        w=predicted_loc.w,
+        h=predicted_loc.h,
+        track_id=predicted_loc.track_id,
+        det_id=predicted_loc.det_id,
+        frame_number=predicted_loc.frame_number,
+    )
+    return updated_predicted_loc
 
 
 def _initialize_matches(ids1, ids2, dets1, dets2, frame_number1, frame_number2):
@@ -403,8 +436,7 @@ def _track_predicted_unmatched(pred_dets, pred_ids, tracks, common_flow):
     for id in diff_ids:
         current_track_id = pred_dets[id].track_id
         track = tracks[current_track_id]
-        track.predicted_loc.x = track.predicted_loc.x + common_flow.x
-        track.predicted_loc.y = track.predicted_loc.y + common_flow.y
+        track.predicted_loc = _update_pred_loc(track.predicted_loc, common_flow)
         if track.status != Status.NewTrack:
             track.status = Status.Untracked
     return tracks
@@ -443,12 +475,13 @@ def _track_matches(pred_ids, ids, pred_dets, dets, tracks, frame_number, common_
                 flow_length = np.linalg.norm([flow.x, flow.y])
                 if flow_length < accepted_flow_length:
                     flows.append(flow)
-                track.predicted_loc.x = flow.x + track.coords[-1].x
-                track.predicted_loc.y = flow.y + track.coords[-1].y
+                predicted_loc = _make_pred_loc_from_det(
+                    track.coords[-1], current_track_id
+                )
+                track.predicted_loc = _update_pred_loc(predicted_loc, flow)
                 track.status = Status.Tracked
             else:
-                track.predicted_loc.x = common_flow.x + track.predicted_loc.x
-                track.predicted_loc.y = common_flow.y + track.predicted_loc.y
+                track.predicted_loc = _update_pred_loc(track.predicted_loc, common_flow)
                 if track.status != Status.NewTrack:
                     track.status = Status.Untracked
     common_flow = _get_common_flow(flows)

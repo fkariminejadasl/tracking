@@ -120,8 +120,6 @@ for id1, id2 in zip(ids1, ids2):
 #         34, 35, 36]))
 
 
-
-
 """
 matches = compute_match_candidates(dets1, dets2, inverse=False)
 show_detections_in_stereo(frame1, frame2, dets1, dets2, width)
