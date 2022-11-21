@@ -1,6 +1,9 @@
 from data_association import *
+from data_association import (_track_current_unmatched, _track_matches,
+                              _track_predicted_unmatched)
 # from stereo import *
 from visualize import *
+from visualize import _draw_detections_and_flows, _show_two_frames
 
 result_folder = Path("/home/fatemeh/results/dataset1")
 data_folder = Path("/home/fatemeh/data/dataset1")
@@ -31,6 +34,8 @@ height, width, total_no_frames, fps = get_video_parameters(vc1)
 
 cam_id1 = 1
 cam_id2 = 2
+
+"""
 frame_number1 = 1
 frame_number2 = 2
 det_path1_c1 = det_folder1 / f"{filename_fixpart1}_{frame_number1}.txt"
@@ -84,19 +89,62 @@ tracks2 = compute_tracks(
 
 """
 fn = 147
-dets = get_detections_with_disp(det_folder1 / f"{filename_fixpart1}_{fn}.txt", det_folder2 / f"{filename_fixpart2}_{fn}.txt", fn, width, height, cam_id1)
-dets_prev = get_detections_with_disp(det_folder1 / f"{filename_fixpart1}_{fn}.txt", det_folder2 / f"{filename_fixpart2}_{fn-1}.txt", fn-1, width, height, cam_id1)
-tracks = compute_tracks_with_disps(det_folder1,filename_fixpart1,det_folder2,filename_fixpart2,cam_id1,width,height,fn-1)
+# dets = get_detections_with_disp(
+#     det_folder1 / f"{filename_fixpart1}_{fn}.txt",
+#     det_folder2 / f"{filename_fixpart2}_{fn}.txt",
+#     fn,
+#     width,
+#     height,
+#     cam_id1,
+# )
+# dets_prev = get_detections_with_disp(
+#     det_folder1 / f"{filename_fixpart1}_{fn-1}.txt",
+#     det_folder2 / f"{filename_fixpart2}_{fn-1}.txt",
+#     fn - 1,
+#     width,
+#     height,
+#     cam_id1,
+# )
+# tracks = compute_tracks_with_disps(
+#     det_folder1,
+#     filename_fixpart1,
+#     det_folder2,
+#     filename_fixpart2,
+#     cam_id1,
+#     width,
+#     height,
+#     fn - 1,
+# )
+dets = get_detections(
+    det_folder1 / f"{filename_fixpart1}_{fn}.txt",
+    fn,
+    width,
+    height,
+    cam_id1,
+)
+dets_prev = get_detections(
+    det_folder1 / f"{filename_fixpart1}_{fn-1}.txt",
+    fn - 1,
+    width,
+    height,
+    cam_id1,
+)
+tracks = compute_tracks(
+    det_folder1,
+    filename_fixpart1,
+    cam_id1,
+    width,
+    height,
+    fn - 1,
+)
 pred_dets = [
-            track.predicted_loc
-            for _, track in tracks.items()
-            if track.status != Status.Stoped
-        ]
-track_dets_prev = find_detectios_in_tracks_by_frame_number(tracks, fn-1)
+    track.predicted_loc for _, track in tracks.items() if track.status != Status.Stoped
+]
+track_dets_prev = find_detectios_in_tracks_by_frame_number(tracks, fn - 1)
 
-ids1, ids2 = match_two_detection_sets(pred_dets, dets)
+pred_ids, ids = match_two_detection_sets(pred_dets, dets)
 
-frame_prev = get_frame(fn-1, vc1)
+frame_prev = get_frame(fn - 1, vc1)
 frame_curr = get_frame(fn, vc1)
 
 _, axs = plt.subplots(1, 2, sharex=True, sharey=True)
@@ -106,19 +154,12 @@ _draw_detections_and_flows(dets, axs[1])
 for track_id, det in track_dets_prev.items():
     axs[0].plot([det.x], [det.y], "*r")
     axs[0].text(det.x, det.y, str(track_id), color="r", fontsize=12)
-for det in pred_dets:
-    axs[1].plot([det.x], [det.y], "*r")
-    axs[1].text(det.x, det.y, str(det.track_id), color="r", fontsize=12)
-for id1, id2 in zip(ids1, ids2):
+for pred_det in pred_dets:
+    axs[1].plot([pred_det.x], [pred_det.y], "*r")
+    axs[1].text(pred_det.x, pred_det.y, str(pred_det.track_id), color="r", fontsize=12)
+for id1, id2 in zip(pred_ids, ids):
     axs[1].plot([pred_dets[id1].x, dets[id2].x], [pred_dets[id1].y, dets[id2].y], "-r")
-"""
-# (array([ 0,  1,  2,  3,  4,  5,  6,  8, 10, 11, 12, 13, 14, 15, 16, 17, 18,
-#         19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
-#         36, 37, 38]),
-#  array([ 3, 10,  4,  2,  0,  1, 11,  6,  5,  9, 16,  8, 12, 15,  7, 13, 17,
-#         24, 22, 14, 20, 19, 32, 21, 26, 25, 27, 28, 30, 23, 29, 31, 33, 18,
-#         34, 35, 36]))
-
+plt.show(block=False)
 
 """
 matches = compute_match_candidates(dets1, dets2, inverse=False)
