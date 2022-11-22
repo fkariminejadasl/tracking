@@ -3,8 +3,12 @@ import matplotlib.patches as patches
 import numpy as np
 from matplotlib import pyplot as plt
 
-from data_association import (Point, get_detections,
-                              get_frame_numbers_of_track, get_video_parameters)
+from data_association import (
+    Point,
+    get_detections,
+    get_frame_numbers_of_track,
+    get_video_parameters,
+)
 
 
 def _create_output_video(
@@ -344,21 +348,26 @@ def visualize_matches_in_video(
     vc1,
     vc2,
     output_video_file,
-    top_left=Point(1300, 700),
-    out_width=900,
-    out_height=500,
-    inverse=False,
+    top_left1,
+    bottom_right1,
+    top_left2,
+    bottom_right2,
+    total_no_frames=0,
+    fps: int = None,
 ):
-
-    out, height, width, total_no_frames = _create_output_video(
-        output_video_file, vc1, out_width * 2, out_height
-    )
-
+    out_width = bottom_right1.x - top_left1.x + bottom_right2.x - top_left2.x
+    out_height = bottom_right1.y - top_left1.y
+    if total_no_frames != 0:
+        out, height, width, _ = _create_output_video(
+            output_video_file, vc1, out_width, out_height, fps
+        )
+    else:
+        out, height, width, total_no_frames = _create_output_video(
+            output_video_file, vc1, out_width, out_height, fps
+        )
+    font_scale = 1
     for frame_number in range(1, total_no_frames + 1):
-        vc1.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
-        _, frame1 = vc1.read()
-        vc2.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
-        _, frame2 = vc2.read()
+        frame1, frame2 = get_stereo_frames(frame_number, vc1, vc2)
 
         for track_id1, value in all_matches.items():
             for track_id2, matches in value.items():
@@ -370,52 +379,66 @@ def visualize_matches_in_video(
                     coord = matches.coords1[idx]
                     w2 = int(coord.w / 2)
                     h2 = int(coord.h / 2)
-                    if inverse:
-                        cv2.rectangle(
-                            frame2,
-                            (int(coord.x) - w2, int(coord.y) - h2),
-                            (int(coord.x) + w2, int(coord.y) + h2),
-                            color=color,
-                            thickness=1,
-                        )
-                    else:
-                        cv2.rectangle(
-                            frame1,
-                            (int(coord.x) - w2, int(coord.y) - h2),
-                            (int(coord.x) + w2, int(coord.y) + h2),
-                            color=color,
-                            thickness=1,
-                        )
-                    color = tuple(int(round(c * 255)) for c in matches.track2_color)
-                    color = (color[2], color[1], color[0])
+                    cam_id = coord.camera_id
+                    text = f"{track_id1}"
+
+                    cv2.rectangle(
+                        frame1,
+                        (int(coord.x) - w2, int(coord.y) - h2),
+                        (int(coord.x) + w2, int(coord.y) + h2),
+                        color=color,
+                        thickness=1,
+                    )
+                    cv2.putText(
+                        frame1,
+                        text,
+                        (int(coord.x) - w2, int(coord.y) - h2),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        font_scale,  # font scale
+                        (0, 0, 0),
+                        1,  # Thinckness
+                        2,  # line type
+                    )
+                    cv2.putText(
+                        frame1,
+                        f"{frame_number}",
+                        (top_left1.x + 15, top_left1.y + 45),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        2,  # font scale
+                        (0, 0, 0),  # color
+                        1,  # Thinckness
+                        2,  # line type
+                    )
+
                     coord = matches.coords2[idx]
                     w2 = int(coord.w / 2)
                     h2 = int(coord.h / 2)
-                    if inverse:
-                        cv2.rectangle(
-                            frame1,
-                            (int(coord.x) - w2, int(coord.y) - h2),
-                            (int(coord.x) + w2, int(coord.y) + h2),
-                            color=color,
-                            thickness=1,
-                        )
-                    else:
-                        cv2.rectangle(
-                            frame2,
-                            (int(coord.x) - w2, int(coord.y) - h2),
-                            (int(coord.x) + w2, int(coord.y) + h2),
-                            color=color,
-                            thickness=1,
-                        )
+
+                    cv2.rectangle(
+                        frame2,
+                        (int(coord.x) - w2, int(coord.y) - h2),
+                        (int(coord.x) + w2, int(coord.y) + h2),
+                        color=color,
+                        thickness=1,
+                    )
+                    cv2.putText(
+                        frame2,
+                        text,
+                        (int(coord.x) - w2, int(coord.y) - h2),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        font_scale,  # font scale
+                        (0, 0, 0),
+                        1,  # Thinckness
+                        2,  # line type
+                    )
         frame1 = frame1[
-            int(top_left.y) : int(top_left.y) + out_height,
-            int(top_left.x) : int(top_left.x) + out_width,
+            top_left1.y : bottom_right1.y,
+            top_left1.x : bottom_right1.x,
             :,
         ]
         frame2 = frame2[
-            int(top_left.y) : int(top_left.y) + out_height,
-            int(top_left.x - 200) : int(top_left.x - 200) + out_width,
-            :,
+            top_left2.y : bottom_right2.y,
+            top_left2.x : bottom_right2.x :,
         ]
         out.write(np.concatenate((frame1, frame2), axis=1))
     out.release()
@@ -428,9 +451,15 @@ def superimpose_two_images(frame1, frame2):
     combined[..., 0] = gray1
     combined[..., 1] = gray2
     combined[..., 2] = gray2
-    plt.figure()
-    plt.imshow(combined)
-    plt.show(block=False)
+
+    _, ax = plt.subplots(1, 1)
+    _show_one_frame(ax, combined)
+
+
+def _show_one_frame(ax, frame):
+    ax.imshow(frame[..., ::-1])
+    ax.axis("off")
+    plt.subplots_adjust(top=1, bottom=0, right=1, left=0)
 
 
 def _show_two_frames(axes, frame1, frame2):

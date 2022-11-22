@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from data_association import Detection
+from data_association import Detection, get_frame_numbers_of_track
 
 accepted_track_length = 50
 matched_track_length = 50
@@ -14,7 +14,6 @@ class Matches:
     error: float
     l1_norm: float
     count: int
-    ids: list[int]
     coords1: list[Detection]
     coords2: list[Detection]
     track1_color: tuple
@@ -27,10 +26,9 @@ def compute_possible_matches_for_a_track(track1, tracks2):
         if len(track2.coords) > accepted_track_length:
             frame_numbers1 = get_frame_numbers_of_track(track1)
             frame_numbers2 = get_frame_numbers_of_track(track2)
-            common_frames = set(frame_numbers1).intersection(set(frame_numbers))
+            common_frames = set(frame_numbers1).intersection(set(frame_numbers2))
             error = 0
             count = 0
-            ids = []
             coords1 = []
             coords2 = []
             if len(common_frames) > matched_track_length:
@@ -49,7 +47,6 @@ def compute_possible_matches_for_a_track(track1, tracks2):
                     if l1_norm < accepted_error:
                         error += l1_norm
                         count += 1
-                        ids.append(frame_id)
                         coords1.append(coord1)
                         coords2.append(coord2)
                 if count != 0:
@@ -57,7 +54,6 @@ def compute_possible_matches_for_a_track(track1, tracks2):
                         error / count,
                         error,
                         count,
-                        ids,
                         coords1,
                         coords2,
                         track1.color,
@@ -66,7 +62,7 @@ def compute_possible_matches_for_a_track(track1, tracks2):
     matched_groups = {
         key: matches
         for key, matches in possible_matches.items()
-        if len(matches.ids) > matched_track_length
+        if len(matches.coords1) > matched_track_length
         if matches.error < 1
     }
     return matched_groups
@@ -83,19 +79,19 @@ def compute_possible_matches(tracks1, tracks2):
     return all_matches
 
 
-def save_matches(match_file, track_id1, matched_groups, inverse=False):
+def save_matches(match_file, track_id1, matched_groups, cam_id):
     # inverse is true when first tracks2 and then tracks1
     with open(match_file, "a") as file:
         for track_id2, matches in matched_groups.items():
             for coord1, coord2 in zip(matches.coords1, matches.coords2):
                 file.write(
-                    f"{track_id1},{track_id2},{coord1.x},{coord1.y},{coord1.frame_number},{coord2.x},{coord2.y},{coord2.frame_number},{int(inverse)}\n"
+                    f"{track_id1},{track_id2},{coord1.frame_number},{cam_id},{coord1.x},{coord1.y},{coord2.x},{coord2.y}\n"
                 )
 
 
-def save_all_matches(match_file, all_matches, inverse=False):
+def save_all_matches(match_file, all_matches, cam_id):
     for track_id1, matched_group in all_matches.items():
-        save_matches(match_file, track_id1, all_matches[track_id1], inverse)
+        save_matches(match_file, track_id1, all_matches[track_id1], cam_id)
 
 
 @dataclass

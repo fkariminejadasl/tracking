@@ -26,7 +26,21 @@ filename_fixpart2 = "12_07_22_1_D_GH040468_1_cam2_rect"
 # filename_fixpart1 = "12_07_22_1_F_GH040291_1_cam1"
 # filename_fixpart2 = "12_07_22_1_H_GH040291_1_cam2"
 
+# result_folder = Path("/home/fatemeh/results/dataset4")
+# data_folder = Path("/home/fatemeh/data/dataset4")
+# det_folder1 = data_folder / "cam1_rect_labels"
+# det_folder2 = data_folder / "cam2_rect_labels"
+# filename_fixpart1 = "04_07_22_F_1_rect"
+# filename_fixpart2 = "04_07_22_G_1_rect"
 
+result_folder = Path("/home/fatemeh/results/dataset5")
+data_folder = Path("/home/fatemeh/data/dataset5")
+det_folder1 = data_folder / "cam1_labels"
+det_folder2 = data_folder / "cam2_labels"
+filename_fixpart1 = "04_07_22_F_2_rect_valid"
+filename_fixpart2 = "04_07_22_G_2_rect_valid"
+
+result_folder.mkdir(parents=True, exist_ok=True)
 vc1 = cv2.VideoCapture((data_folder / f"{filename_fixpart1}.mp4").as_posix())
 vc2 = cv2.VideoCapture((data_folder / f"{filename_fixpart2}.mp4").as_posix())
 
@@ -35,6 +49,12 @@ height, width, total_no_frames, fps = get_video_parameters(vc1)
 cam_id1 = 1
 cam_id2 = 2
 
+tracks1 = compute_tracks(
+    det_folder1, filename_fixpart1, cam_id1, width, height, total_no_frames
+)
+tracks2 = compute_tracks(
+    det_folder2, filename_fixpart2, cam_id2, width, height, total_no_frames
+)
 """
 frame_number1 = 1
 frame_number2 = 2
@@ -117,14 +137,12 @@ fn = 147
 # )
 dets = get_detections(
     det_folder1 / f"{filename_fixpart1}_{fn}.txt",
-    fn,
     width,
     height,
     cam_id1,
 )
 dets_prev = get_detections(
     det_folder1 / f"{filename_fixpart1}_{fn-1}.txt",
-    fn - 1,
     width,
     height,
     cam_id1,

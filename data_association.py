@@ -45,7 +45,7 @@ class Point:
         return Point(x=self.x * scale, y=self.y * scale)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Detection:
     x: int
     y: int
@@ -80,23 +80,14 @@ class DispWithProb:
     frame_number: int = 0
 
 
-@dataclass
-class DetectionWithDisp:
-    x: int
-    y: int
-    w: int
-    h: int
-    det_id: int
+@dataclass(kw_only=True)
+class DetectionWithDisp(Detection):
     disp_candidates: list[int]
-    frame_number: int = -1
-    score: np.float16 = -1
-    camera_id: int = 0
 
 
 def get_detections_with_disp(
     det_path_cam1,
     det_path_cam2,
-    frame_number,
     width: int,
     height: int,
     camera_id: int = 1,
@@ -104,13 +95,10 @@ def get_detections_with_disp(
     camera_id2 = 2
     if camera_id == 2:
         camera_id2 = 1
-
-    dets_cam1 = get_detections(
-        det_path_cam1, frame_number, width, height, camera_id=camera_id
-    )
-    dets_cam2 = get_detections(
-        det_path_cam2, frame_number, width, height, camera_id=camera_id2
-    )
+    frame_number = int(det_path_cam1.stem.split("_")[-1])
+    assert frame_number == int(det_path_cam2.stem.split("_")[-1]), "not a stereo pair"
+    dets_cam1 = get_detections(det_path_cam1, width, height, camera_id=camera_id)
+    dets_cam2 = get_detections(det_path_cam2, width, height, camera_id=camera_id2)
     detections = []
     for det in dets_cam1:
         disp_candidates = _compute_disp_candidates(det, dets_cam2)
@@ -131,8 +119,9 @@ def get_detections_with_disp(
 
 
 def get_detections(
-    det_path, frame_number, width: int, height: int, camera_id: int = 1
+    det_path, width: int, height: int, camera_id: int = 1
 ) -> list[Detection]:
+    frame_number = int(det_path.stem.split("_")[-1])
     detections = np.loadtxt(det_path)
     return [
         Detection(
@@ -375,7 +364,6 @@ def initialize_tracks_with_disps(
     dets1 = get_detections_with_disp(
         det_path1_cam1,
         det_path1_cam2,
-        frame_number1,
         width,
         height,
         camera_id,
@@ -383,7 +371,6 @@ def initialize_tracks_with_disps(
     dets2 = get_detections_with_disp(
         det_path2_cam1,
         det_path2_cam2,
-        frame_number2,
         width,
         height,
         camera_id,
@@ -417,8 +404,8 @@ def initialize_tracks(det_folder: Path, filename_fixpart: str, width: int, heigh
     frame_number2 = 2
     det_path1 = det_folder / f"{filename_fixpart}_{frame_number1}.txt"
     det_path2 = det_folder / f"{filename_fixpart}_{frame_number2}.txt"
-    dets1 = get_detections(det_path1, frame_number1, width, height)
-    dets2 = get_detections(det_path2, frame_number2, width, height)
+    dets1 = get_detections(det_path1, width, height)
+    dets2 = get_detections(det_path2, width, height)
     ids1, ids2 = match_two_detection_sets(dets1, dets2)
     # matched tracks
     tracks, new_track_id, common_flow = _initialize_matches(
@@ -488,10 +475,11 @@ def _track_matches(
             else:
                 track.predicted_loc = _update_pred_loc(track.predicted_loc, common_flow)
                 track.status = Status.Untracked
-                tracks[new_track_id] = _make_a_new_track(
-                    [dets[id2]], common_flow, new_track_id, Status.NewTrack
-                )
-                new_track_id += 1
+                # # bug resolve: but generates many tracklets
+                # tracks[new_track_id] = _make_a_new_track(
+                #     [dets[id2]], common_flow, new_track_id, Status.NewTrack
+                # )
+                # new_track_id += 1
     common_flow = _get_common_flow(flows)
     return tracks, common_flow, new_track_id
 
@@ -523,7 +511,6 @@ def compute_tracks_with_disps(
         dets = get_detections_with_disp(
             det_path_cam1,
             det_path_cam2,
-            frame_number,
             width,
             height,
             camera_id,
@@ -580,7 +567,7 @@ def compute_tracks(
     # ===========
     for frame_number in range(3, total_no_frames + 1):
         det_path = det_folder / f"{filename_fixpart}_{frame_number}.txt"
-        dets = get_detections(det_path, frame_number, width, height, camera_id)
+        dets = get_detections(det_path, width, height, camera_id)
         pred_dets = [
             track.predicted_loc
             for _, track in tracks.items()
