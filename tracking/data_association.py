@@ -45,7 +45,7 @@ class Point:
         return Point(x=self.x * scale, y=self.y * scale)
 
 
-@dataclass(kw_only=True)
+@dataclass
 class Detection:
     x: int
     y: int
@@ -80,9 +80,17 @@ class DispWithProb:
     frame_number: int = 0
 
 
-@dataclass(kw_only=True)
-class DetectionWithDisp(Detection):
+@dataclass
+class DetectionWithDisp:
+    x: int
+    y: int
+    w: int
+    h: int
+    det_id: int
     disp_candidates: list[int]
+    frame_number: int = -1
+    score: np.float16 = -1
+    camera_id: int = 0
 
 
 def get_detections_with_disp(

@@ -3,7 +3,7 @@ import matplotlib.patches as patches
 import numpy as np
 from matplotlib import pyplot as plt
 
-from data_association import (
+from tracking.data_association import (
     Point,
     get_detections,
     get_frame_numbers_of_track,

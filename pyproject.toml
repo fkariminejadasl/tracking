@@ -1,5 +1,5 @@
 [project]
-name = "fish_tracking"
+name = "ftracking"
 version = "0.1.0"
 description = "Tracking fishes in video, with and without stereo setup"
 authors = [

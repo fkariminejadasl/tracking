@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from data_association import Detection, get_frame_numbers_of_track
+from tracking.data_association import Detection, get_frame_numbers_of_track
 
 accepted_track_length = 50
 matched_track_length = 50
