@@ -1,33 +1,17 @@
 import argparse
-from pathlib import Path
-import sys
 import os
+import sys
+from pathlib import Path
 
 path = (Path(__file__).parents[1]).as_posix()
 sys.path.insert(0, path)
 
 import cv2
 import matplotlib.pylab as plt
-from tracking.data_association import (
-    _track_current_unmatched,
-    _track_matches,
-    _track_predicted_unmatched,
-    get_video_parameters,
-    compute_tracks,
-    get_detections,
-    Status,
-    find_detectios_in_tracks_by_frame_number,
-    match_two_detection_sets,
-    Point,
-    save_tracks,
-)
 
-from tracking.visualize import (
-    _draw_detections_and_flows,
-    _show_two_frames,
-    get_frame,
-    visualize_tracks_in_video,
-)
+from tracking.data_association import (Point, compute_tracks,
+                                       get_video_parameters, save_tracks)
+from tracking.visualize import get_frame, visualize_tracks_in_video
 
 
 def parse_args():
@@ -130,11 +114,12 @@ def main():
         video_width = width
         video_height = height
     else:
-        top_left_x, top_left_y, bottom_right_x, bottom_right_y = map(int, args.video_bbox.split(','))
+        top_left_x, top_left_y, bottom_right_x, bottom_right_y = map(
+            int, args.video_bbox.split(",")
+        )
         top_left = Point(top_left_x, top_left_y)
-        video_width = bottom_right_x-top_left_x
-        video_height = bottom_right_y-top_left_y
-        
+        video_width = bottom_right_x - top_left_x
+        video_height = bottom_right_y - top_left_y
 
     visualize_tracks_in_video(
         tracks1,
@@ -149,7 +134,6 @@ def main():
         black=True,
     )
     save_tracks(args.result_folder / f"{args.save_name}.txt", tracks1)
-
 
 
 if __name__ == "__main__":
