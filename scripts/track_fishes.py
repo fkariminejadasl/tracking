@@ -9,17 +9,17 @@ sys.path.insert(0, path)
 import cv2
 import matplotlib.pylab as plt
 
-from tracking.data_association import (Point, compute_tracks,
-                                       get_video_parameters, save_tracks)
+from tracking.data_association import (
+    Point,
+    compute_tracks,
+    get_video_parameters,
+    save_tracks,
+    save_tracks_mot_format,
+)
 from tracking.visualize import get_frame, visualize_tracks_in_video
 
 
 def parse_args():
-    # result_folder = Path("/home/fatemeh/results/dataset5")
-    # data_folder = Path("/home/fatemeh/data/dataset5")
-    # filename_fixpart1 = "04_07_22_F_2_rect_valid"
-    # filename_fixpart2 = "04_07_22_G_2_rect_valid"
-
     parser = argparse.ArgumentParser(description="Description of your program")
     parser.add_argument(
         "-r",
@@ -29,28 +29,21 @@ def parse_args():
         type=Path,
     )
     parser.add_argument(
-        "-d", "--data_folder", help="Path where the data is", required=True, type=Path
+        "-d",
+        "--det_folder",
+        help="Path where the detections are",
+        required=True,
+        type=Path,
     )
     parser.add_argument(
-        "-f1",
-        "--filename_fixpart1",
-        help="Fix part of the name in detection file in cam1",
-        required=True,
-        type=str,
-    )
-    parser.add_argument(
-        "-f2",
-        "--filename_fixpart2",
-        help="Fix part of the name in detection file in cam2",
-        required=True,
-        type=str,
+        "-v", "--video_file", help="Video file with full path", required=True, type=Path
     )
     parser.add_argument(
         "--save_name",
         help="The name of the file used to save tracks and video",
         required=False,
         type=str,
-        default="tracks1_test",
+        default="tracks_test",
     )
     parser.add_argument(
         "--fps",
@@ -72,7 +65,6 @@ def parse_args():
         """,
         required=False,
         type=str,
-        # default="270,100,1800,1200",
     )
     args = parser.parse_args()
     print(args)
@@ -81,32 +73,24 @@ def parse_args():
 
 def main():
     args = parse_args()
+    result_folder = args.result_folder.absolute()
+    det_folder = args.det_folder.absolute()
+    video_file = args.video_file.absolute()
+    filename_fixpart = video_file.stem
 
-    det_folder1 = args.data_folder / "cam1_labels"
-    det_folder2 = args.data_folder / "cam2_labels"
+    result_folder.mkdir(parents=True, exist_ok=True)
+    vc = cv2.VideoCapture(video_file.as_posix())
 
-    args.result_folder.mkdir(parents=True, exist_ok=True)
-    vc1 = cv2.VideoCapture(
-        (args.data_folder / f"{args.filename_fixpart1}.mp4").as_posix()
-    )
-    vc2 = cv2.VideoCapture(
-        (args.data_folder / f"{args.filename_fixpart2}.mp4").as_posix()
-    )
-
-    height, width, total_no_frames, fps = get_video_parameters(vc1)
+    height, width, total_no_frames, fps = get_video_parameters(vc)
     if args.fps is None:
         args.fps = fps
     if args.total_no_frames is None:
         args.total_no_frames = total_no_frames
 
-    cam_id1 = 1
-    cam_id2 = 2
+    cam_id = 1
 
-    tracks1 = compute_tracks(
-        det_folder1, args.filename_fixpart1, cam_id1, width, height, total_no_frames
-    )
-    tracks2 = compute_tracks(
-        det_folder2, args.filename_fixpart2, cam_id2, width, height, total_no_frames
+    tracks = compute_tracks(
+        det_folder, filename_fixpart, cam_id, width, height, total_no_frames
     )
 
     if args.video_bbox is None:
@@ -122,9 +106,9 @@ def main():
         video_height = bottom_right_y - top_left_y
 
     visualize_tracks_in_video(
-        tracks1,
-        vc1,
-        args.result_folder / f"{args.save_name}.mp4",
+        tracks,
+        vc,
+        result_folder / f"{args.save_name}.mp4",
         top_left,
         video_width,
         video_height,
@@ -133,7 +117,7 @@ def main():
         show_det_id=False,
         black=True,
     )
-    save_tracks(args.result_folder / f"{args.save_name}.txt", tracks1)
+    save_tracks_mot_format(result_folder / f"{args.save_name}", tracks)
 
 
 if __name__ == "__main__":

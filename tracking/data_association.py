@@ -1,4 +1,5 @@
 import enum
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -615,6 +616,25 @@ def save_tracks(track_file, tracks):
                 )
 
 
+def save_tracks_mot_format(save_file, tracks):
+    track_folder = save_file.parent / "gt"
+    track_folder.mkdir(parents=True, exist_ok=True)
+    with open(track_folder / "labels.txt", "w") as wf:
+        wf.write("fish")
+
+    track_file = track_folder / "gt.txt"
+    with open(track_file, "w") as file:
+        for track_id, track in tracks.items():
+            for det in track.coords:
+                left_top_x = det.x - det.w / 2
+                left_top_y = det.y - det.h / 2
+                file.write(
+                    f"{det.frame_number},{track_id},{left_top_x},{left_top_y},{det.w},{det.h},1,1,1.0\n"
+                )
+    shutil.make_archive(save_file, "zip", save_file.parent, "gt")
+    shutil.rmtree(track_folder)
+
+
 def write_tracks(track_file, tracks):
     with open(track_file, "w") as file:
         for track in tracks:
@@ -673,17 +693,6 @@ def get_iou(det1, det2) -> float:
     return iou
 
 
-def test_get_iou():
-    det1 = Detection(0, 0, 4, 2, 0)
-    det2 = Detection(2, 1, 3, 2, 1)
-
-    np.testing.assert_almost_equal(get_iou(det1, det2), 0.167, decimal=2)
-
-    det1 = Detection(0, 0, 4, 2, 0)
-    det2 = Detection(4, 2, 2, 1, 1)
-    np.testing.assert_almost_equal(get_iou(det1, det2), 0.0, decimal=2)
-
-
 def find_detection_in_track_by_frame_number(track, frame_number):
     for det in track.coords:
         if det.frame_number == frame_number:
@@ -701,3 +710,11 @@ def find_detectios_in_tracks_by_frame_number(tracks, frame_number):
 
 def get_frame_numbers_of_track(track):
     return [coord.frame_number for coord in track.coords]
+
+
+def find_track_id_by_coord_and_frame_number(tracks, x, y, frame_number, tolerance=3):
+    for track_id, track in tracks.items():
+        det = find_detection_in_track_by_frame_number(track, frame_number)
+        if det:
+            if (abs(det.x - x) < tolerance) & (abs(det.y - y) < tolerance):
+                return track_id
