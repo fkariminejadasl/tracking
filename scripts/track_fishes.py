@@ -14,7 +14,7 @@ from tracking.data_association import (
     compute_tracks,
     get_video_parameters,
     save_tracks,
-    save_tracks_mot_format,
+    save_tracks_to_mot_format,
 )
 from tracking.visualize import get_frame, visualize_tracks_in_video
 
@@ -117,7 +117,7 @@ def main():
         show_det_id=False,
         black=True,
     )
-    save_tracks_mot_format(result_folder / f"{args.save_name}", tracks)
+    save_tracks_to_mot_format(result_folder / f"{args.save_name}", tracks)
 
 
 if __name__ == "__main__":

@@ -616,7 +616,7 @@ def save_tracks(track_file, tracks):
                 )
 
 
-def save_tracks_mot_format(save_file, tracks):
+def save_tracks_to_mot_format(save_file, tracks):
     track_folder = save_file.parent / "gt"
     track_folder.mkdir(parents=True, exist_ok=True)
     with open(track_folder / "labels.txt", "w") as wf:
@@ -626,13 +626,105 @@ def save_tracks_mot_format(save_file, tracks):
     with open(track_file, "w") as file:
         for track_id, track in tracks.items():
             for det in track.coords:
-                left_top_x = det.x - det.w / 2
-                left_top_y = det.y - det.h / 2
+                top_left_x = det.x - det.w / 2
+                top_left_y = det.y - det.h / 2
                 file.write(
-                    f"{det.frame_number},{track_id},{left_top_x},{left_top_y},{det.w},{det.h},1,1,1.0\n"
+                    f"{det.frame_number},{track_id},{top_left_x},{top_left_y},{det.w},{det.h},1,1,1.0\n"
                 )
     shutil.make_archive(save_file, "zip", save_file.parent, "gt")
     shutil.rmtree(track_folder)
+
+
+def read_tracks_from_mot_format(track_file) -> np.ndarray:
+    tracks = []
+    with open(track_file, "r") as file:
+        for row in file:
+            items = row.split("\n")[0].split(",")
+            top_left_x, top_left_y, width, height = (
+                float(items[2]),
+                float(items[3]),
+                int(items[4]),
+                int(items[5]),
+            )
+            center_x = top_left_x + width / 2
+            center_y = top_left_y + height / 2
+            track = [
+                int(items[0]),
+                int(items[1]),
+                top_left_x,
+                top_left_y,
+                width,
+                height,
+                center_x,
+                center_y,
+            ]
+            tracks.append(track)
+    return tracks
+
+
+def write_tracks_mot_format(track_file, tracks: np.ndarray):
+    with open(track_file, "w") as file:
+        for item in tracks:
+            file.write(
+                f"{int(item[0])},{int(item[1])},{item[2]},{item[3]},{int(item[4])},{int(item[5])},1,1,1.0\n"
+            )
+
+
+def _rm_det_chang_track_id(tracks: np.ndarray, frame_number: int, track_id: int):
+    latest_track_id = np.unique(np.sort(tracks[:, 1]))[-1]
+    idx1 = np.where((tracks[:, 0] == frame_number) & (tracks[:, 1] == track_id))[0][0]
+    idxs = np.where((tracks[:, 0] > frame_number) & (tracks[:, 1] == track_id))[0]
+    if len(idxs) != 0:
+        tracks[idxs, 1] = latest_track_id + 1
+    tracks = np.delete(tracks, idx1, axis=0)
+    return tracks
+
+
+def remove_detect_change_track_id_per_frame(tracks: np.ndarray, frame_number: int):
+    frame_tracks = tracks[tracks[:, 0] == frame_number].copy()
+    track_ids_remove = []
+    for i in range(len(frame_tracks)):
+        for j in range(i + 1, len(frame_tracks)):
+            item1 = frame_tracks[i]
+            item2 = frame_tracks[j]
+            det1 = Detection(item1[6], item1[7], item1[4], item1[5], item1[1])
+            det2 = Detection(item2[6], item2[7], item2[4], item2[5], item2[1])
+            iou = get_iou(det1, det2)
+            if iou > 0:
+                track_ids_remove.append(item1[1])
+                track_ids_remove.append(item2[1])
+
+    track_ids_remove = list(set(track_ids_remove))
+    for track_id in track_ids_remove:
+        tracks = _rm_det_chang_track_id(tracks, frame_number, track_id)
+    return tracks
+
+
+def remove_detects_change_track_ids(tracks: np.ndarray):
+    frame_numbers = np.unique(np.sort(tracks[:, 0]))
+    for frame_number in frame_numbers:
+        tracks = remove_detect_change_track_id_per_frame(tracks, frame_number)
+    return tracks
+
+
+def remove_short_tracks(tracks: np.ndarray, min_track_length: int = 50):
+    track_ids = np.unique(np.sort(tracks[:, 1]))
+    for track_id in track_ids:
+        idxs = np.where(tracks[:, 1] == track_id)[0]
+        if len(idxs) < min_track_length:
+            tracks = np.delete(tracks, idxs, axis=0)
+    return tracks
+
+
+def arrange_track_ids(tracks: np.ndarray):
+    new_tracks = tracks.copy()
+    track_ids = np.unique(np.sort(tracks[:, 1]))
+    old_to_new_ids = {
+        track_id: new_track_id for new_track_id, track_id in enumerate(track_ids)
+    }
+    for track_id in track_ids:
+        new_tracks[tracks[:, 1] == track_id, 1] = old_to_new_ids[track_id]
+    return new_tracks
 
 
 def write_tracks(track_file, tracks):
