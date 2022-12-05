@@ -228,7 +228,6 @@ def _make_a_new_track(
     coords: list[Detection], flow: Point, new_track_id, status
 ) -> Track:
     color = tuple(np.random.rand(3).astype(np.float16))
-    pred = Point(x=flow.x + coords[-1].x, y=flow.y + coords[-1].y)
     predicted_loc = Prediction(
         x=flow.x + coords[-1].x,
         y=flow.y + coords[-1].y,
@@ -607,29 +606,28 @@ def compute_tracks(
     return tracks
 
 
-def save_tracks(track_file, tracks):
-    with open(track_file, "w") as file:
-        for track_id, track in tracks.items():
-            for det in track.coords:
-                file.write(
-                    f"{track_id},{det.frame_number},{det.det_id},{det.x},{det.y},{det.w},{det.h},{det.score:.2f},{track.status.value}\n"
-                )
-
-
-def save_tracks_to_mot_format(save_file, tracks):
+def save_tracks_to_mot_format(save_file, tracks: np.ndarray | dict[Track]):
+    """MOT format is 1-based, including bbox. https://arxiv.org/abs/2003.09003"""
     track_folder = save_file.parent / "gt"
     track_folder.mkdir(parents=True, exist_ok=True)
     with open(track_folder / "labels.txt", "w") as wf:
         wf.write("fish")
 
     track_file = track_folder / "gt.txt"
-    with open(track_file, "w") as file:
-        for track_id, track in tracks.items():
-            for det in track.coords:
-                top_left_x = det.x - det.w / 2
-                top_left_y = det.y - det.h / 2
+    if isinstance(tracks, dict):
+        with open(track_file, "w") as file:
+            for track_id, track in tracks.items():
+                for det in track.coords:
+                    top_left_x = det.x - det.w / 2
+                    top_left_y = det.y - det.h / 2
+                    file.write(
+                        f"{det.frame_number},{track_id+1},{top_left_x+1},{top_left_y+1},{det.w},{det.h},1,1,1.0\n"
+                    )
+    if isinstance(tracks, np.ndarray):
+        with open(track_file, "w") as file:
+            for item in tracks:
                 file.write(
-                    f"{det.frame_number},{track_id},{top_left_x},{top_left_y},{det.w},{det.h},1,1,1.0\n"
+                    f"{int(item[0])},{int(item[1])+1},{item[2]+1},{item[3]+1},{int(item[4])},{int(item[5])},1,1,1.0\n"
                 )
     shutil.make_archive(save_file, "zip", save_file.parent, "gt")
     shutil.rmtree(track_folder)
@@ -660,14 +658,6 @@ def read_tracks_from_mot_format(track_file) -> np.ndarray:
             ]
             tracks.append(track)
     return tracks
-
-
-def write_tracks_mot_format(track_file, tracks: np.ndarray):
-    with open(track_file, "w") as file:
-        for item in tracks:
-            file.write(
-                f"{int(item[0])},{int(item[1])},{item[2]},{item[3]},{int(item[4])},{int(item[5])},1,1,1.0\n"
-            )
 
 
 def _rm_det_chang_track_id(tracks: np.ndarray, frame_number: int, track_id: int):
@@ -727,6 +717,15 @@ def arrange_track_ids(tracks: np.ndarray):
     return new_tracks
 
 
+def save_tracks(track_file, tracks):
+    with open(track_file, "w") as file:
+        for track_id, track in tracks.items():
+            for det in track.coords:
+                file.write(
+                    f"{track_id},{det.frame_number},{det.det_id},{det.x},{det.y},{det.w},{det.h},{det.score:.2f},{track.status.value}\n"
+                )
+
+
 def write_tracks(track_file, tracks):
     with open(track_file, "w") as file:
         for track in tracks:
@@ -756,7 +755,7 @@ def read_tracks(track_file):
 
 
 def get_iou(det1, det2) -> float:
-    # copied from
+    # copied and modified from
     # https://stackoverflow.com/questions/25349178/calculating-percentage-of-bounding-box-overlap-for-image-detector-evaluation
 
     # determine the coordinates of the intersection rectangle
