@@ -22,7 +22,7 @@ def test_get_iou():
 
 
 def test_make_tracks_from_array_and_reverse():
-    data_path = Path(__file__).parent / "data/04_07_22_2_F_annotations.txt"
+    data_path = Path(__file__).parent / "data/test_gt.txt"
 
     annos = np.round(np.loadtxt(data_path, skiprows=1, delimiter=",")).astype(np.int64)
     tracks = make_tracks_from_array(annos)

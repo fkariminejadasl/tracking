@@ -1,7 +1,13 @@
 import numpy as np
 
-from tracking.data_association import (Detection, Prediction, Status, Track,
-                                       find_track_id_by_coord_and_frame_number)
+from tracking.data_association import (
+    Detection,
+    Prediction,
+    Status,
+    Track,
+    find_track_id_by_coord_and_frame_number,
+    get_iou,
+)
 
 
 def _get_dets_from_indices_of_array(idxs, annos: np.ndarray):
@@ -107,5 +113,47 @@ def compare_with_gt_track(tracks_gt: np.ndarray, tracks: np.ndarray):
     return tp, fp, fn, tp_id, tn_id, fp_id
 
 
-# track = find_track_by_coord_and_frame_number(tracks, x, y, frame_number)
-# track_gt = find_track_by_coord_and_frame_number(tracks_gt, x, y, frame_number)
+def get_gt_object_match(
+    atracks2, annos2, track_id, frame_number, thres=20, min_iou=0.1
+):
+    # This function should replace _find_track_id_from_xyf_in_tracks_array.
+    item = annos2[(annos2[:, 0] == track_id) & (annos2[:, 1] == frame_number)][0]
+    det1 = Detection(
+        x=(item[3] + item[5]) / 2,
+        y=(item[4] + item[6]) / 2,
+        w=item[5] - item[3],
+        h=item[6] - item[4],
+        det_id=item[0],
+    )
+    candidates = atracks2[
+        (atracks2[:, 1] == frame_number)
+        & (
+            (abs(atracks2[:, 3] - item[3]) < thres)
+            & (abs(atracks2[:, 4] - item[4]) < thres)
+            | (abs(atracks2[:, 5] - item[5]) < thres)
+            & (abs(atracks2[:, 6] - item[6]) < thres)
+        )
+    ]
+    if len(candidates) == 0:
+        return det1, None
+    ious = []
+    dets2 = []
+    for item in candidates:
+        det2 = Detection(
+            x=(item[3] + item[5]) / 2,
+            y=(item[4] + item[6]) / 2,
+            w=item[5] - item[3],
+            h=item[6] - item[4],
+            det_id=item[0],
+        )
+        ious.append([det2.det_id, get_iou(det1, det2)])
+        dets2.append(det2)
+    ious = np.array(ious)
+    print(ious, dets2)
+    iou_max = max(ious[:, 1])
+    if iou_max < min_iou:
+        return det1, None
+    det_id = ious[ious[:, 1] == iou_max][0, 0]
+    print(det_id)
+    det2 = [det for det in dets2 if det.det_id == det_id][0]
+    return det1, det2
