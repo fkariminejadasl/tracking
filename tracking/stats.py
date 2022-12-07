@@ -1,13 +1,7 @@
 import numpy as np
 
-from tracking.data_association import (
-    Detection,
-    Prediction,
-    Status,
-    Track,
-    find_track_id_by_coord_and_frame_number,
-    get_iou,
-)
+from tracking.data_association import (Detection, Prediction, Status, Track,
+                                       get_iou)
 
 
 def _get_dets_from_indices_of_array(idxs, annos: np.ndarray):
@@ -22,7 +16,7 @@ def _get_dets_from_indices_of_array(idxs, annos: np.ndarray):
             w=anno[5] - anno[3],
             h=anno[6] - anno[4],
             det_id=anno[0],
-            frame_number=anno[1] + 1,  # TODO: my frame_number starts from 1
+            frame_number=anno[1] + 1,  # my frame_number starts from 1
         )
         dets_anno.append(det)
     return dets_anno
@@ -61,26 +55,19 @@ def make_array_from_tracks(tracks) -> np.ndarray:
         for coord in track.coords:
             item = [
                 track_id,
-                coord.frame_number - 1,  # TODO: my frame_number starts from 1
+                coord.frame_number - 1,  # my frame_number starts from 1
                 0,
-                int(round(coord.x - coord.w / 2)),
+                int(round(coord.x - coord.w / 2)),  # top left
                 int(round(coord.y - coord.h / 2)),
-                int(round(coord.x + coord.w / 2)),
+                int(round(coord.x + coord.w / 2)),  # bottom right
                 int(round(coord.y + coord.h / 2)),
+                int(round(coord.x)),  # center
+                int(round(coord.y)),
+                coord.w,
+                coord.h,
             ]
             tracks_array.append(item)
     return np.array(tracks_array).astype(np.int64)
-
-
-def _find_track_id_from_xyf_in_tracks_array(
-    tracks, frame_number, x_gt, y_gt, tolerance=4
-):
-    candidate_idxs = np.where(
-        (tracks[:, 1] == frame_number)
-        & (abs(tracks[:, 3] - x_gt) < tolerance)
-        & (abs(tracks[:, 4] - y_gt) < tolerance)
-    )[0]
-    return candidate_idxs
 
 
 def compare_with_gt_track(tracks_gt: np.ndarray, tracks: np.ndarray):
@@ -113,47 +100,43 @@ def compare_with_gt_track(tracks_gt: np.ndarray, tracks: np.ndarray):
     return tp, fp, fn, tp_id, tn_id, fp_id
 
 
-def get_gt_object_match(
-    atracks2, annos2, track_id, frame_number, thres=20, min_iou=0.1
-):
+def get_gt_object_match(atracks, annos, track_id, frame_number, thres=20, min_iou=0.1):
     # This function should replace _find_track_id_from_xyf_in_tracks_array.
-    item = annos2[(annos2[:, 0] == track_id) & (annos2[:, 1] == frame_number)][0]
-    det1 = Detection(
-        x=(item[3] + item[5]) / 2,
-        y=(item[4] + item[6]) / 2,
-        w=item[5] - item[3],
-        h=item[6] - item[4],
-        det_id=item[0],
-    )
-    candidates = atracks2[
-        (atracks2[:, 1] == frame_number)
+    det_gt = annos[(annos[:, 0] == track_id) & (annos[:, 1] == frame_number)][0]
+
+    candidates = atracks[
+        (atracks[:, 1] == frame_number)
         & (
-            (abs(atracks2[:, 3] - item[3]) < thres)
-            & (abs(atracks2[:, 4] - item[4]) < thres)
-            | (abs(atracks2[:, 5] - item[5]) < thres)
-            & (abs(atracks2[:, 6] - item[6]) < thres)
+            (
+                (abs(atracks[:, 3] - det_gt[3]) < thres)
+                & (abs(atracks[:, 4] - det_gt[4]) < thres)
+            )
+            | (
+                (abs(atracks[:, 5] - det_gt[5]) < thres)
+                & (abs(atracks[:, 6] - det_gt[6]) < thres)
+            )
         )
     ]
     if len(candidates) == 0:
-        return det1, None
+        return det_gt, None
     ious = []
-    dets2 = []
-    for item in candidates:
-        det2 = Detection(
-            x=(item[3] + item[5]) / 2,
-            y=(item[4] + item[6]) / 2,
-            w=item[5] - item[3],
-            h=item[6] - item[4],
-            det_id=item[0],
-        )
-        ious.append([det2.det_id, get_iou(det1, det2)])
-        dets2.append(det2)
+    dets = []
+    for det in candidates:
+        ious.append([det[0], get_iou(det_gt[3:7], det[3:7])])
+        dets.append(det)
     ious = np.array(ious)
-    print(ious, dets2)
     iou_max = max(ious[:, 1])
     if iou_max < min_iou:
-        return det1, None
-    det_id = ious[ious[:, 1] == iou_max][0, 0]
-    print(det_id)
-    det2 = [det for det in dets2 if det.det_id == det_id][0]
-    return det1, det2
+        return det_gt, None
+    track_id = ious[ious[:, 1] == iou_max][0, 0]
+    det = [det for det in dets if det[0] == track_id][0]
+    return det_gt, det
+
+
+def _find_track_id_from_xyf_in_tracks_array(tracks, frame_number, x_gt, y_gt, thres=4):
+    candidate_idxs = np.where(
+        (tracks[:, 1] == frame_number)
+        & (abs(tracks[:, 3] - x_gt) < thres)
+        & (abs(tracks[:, 4] - y_gt) < thres)
+    )[0]
+    return candidate_idxs

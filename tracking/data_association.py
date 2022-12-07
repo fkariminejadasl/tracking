@@ -207,11 +207,16 @@ def match_two_detection_sets_with_disps(dets1, dets2):
     return row_ind, col_ind
 
 
+def _get_tl_and_br(det: Detection) -> tuple:
+    return det.x - det.w / 2, det.y - det.h / 2, det.x + det.w / 2, det.y + det.h / 2
+
+
 def match_two_detection_sets(dets1, dets2):
     dist = np.zeros((len(dets1), len(dets2)), dtype=np.float32)
     for i, det1 in enumerate(dets1):
         for j, det2 in enumerate(dets2):
-            iou_loss = 1 - get_iou(det1, det2)
+
+            iou_loss = 1 - get_iou(_get_tl_and_br(det1), _get_tl_and_br(det2))
             loc_loss = np.linalg.norm([det2.x - det1.x, det2.y - det1.y])
             dist[i, j] = iou_loss + loc_loss
     row_ind, col_ind = linear_sum_assignment(dist)
@@ -606,60 +611,6 @@ def compute_tracks(
     return tracks
 
 
-def save_tracks_to_mot_format(save_file, tracks: np.ndarray | dict[Track]):
-    """MOT format is 1-based, including bbox. https://arxiv.org/abs/2003.09003"""
-    track_folder = save_file.parent / "gt"
-    track_folder.mkdir(parents=True, exist_ok=True)
-    with open(track_folder / "labels.txt", "w") as wf:
-        wf.write("fish")
-
-    track_file = track_folder / "gt.txt"
-    if isinstance(tracks, dict):
-        with open(track_file, "w") as file:
-            for track_id, track in tracks.items():
-                for det in track.coords:
-                    top_left_x = det.x - det.w / 2
-                    top_left_y = det.y - det.h / 2
-                    file.write(
-                        f"{det.frame_number},{track_id+1},{top_left_x+1},{top_left_y+1},{det.w},{det.h},1,1,1.0\n"
-                    )
-    if isinstance(tracks, np.ndarray):
-        with open(track_file, "w") as file:
-            for item in tracks:
-                file.write(
-                    f"{int(item[0])},{int(item[1])+1},{item[2]+1},{item[3]+1},{int(item[4])},{int(item[5])},1,1,1.0\n"
-                )
-    shutil.make_archive(save_file, "zip", save_file.parent, "gt")
-    shutil.rmtree(track_folder)
-
-
-def read_tracks_from_mot_format(track_file) -> np.ndarray:
-    tracks = []
-    with open(track_file, "r") as file:
-        for row in file:
-            items = row.split("\n")[0].split(",")
-            top_left_x, top_left_y, width, height = (
-                float(items[2]),
-                float(items[3]),
-                int(items[4]),
-                int(items[5]),
-            )
-            center_x = top_left_x + width / 2
-            center_y = top_left_y + height / 2
-            track = [
-                int(items[0]),
-                int(items[1]),
-                top_left_x,
-                top_left_y,
-                width,
-                height,
-                center_x,
-                center_y,
-            ]
-            tracks.append(track)
-    return tracks
-
-
 def _rm_det_chang_track_id(tracks: np.ndarray, frame_number: int, track_id: int):
     latest_track_id = np.unique(np.sort(tracks[:, 1]))[-1]
     idx1 = np.where((tracks[:, 0] == frame_number) & (tracks[:, 1] == track_id))[0][0]
@@ -717,6 +668,81 @@ def arrange_track_ids(tracks: np.ndarray):
     return new_tracks
 
 
+def save_tracks_to_mot_format(save_file, tracks: np.ndarray | dict[Track]):
+    """MOT format is 1-based, including bbox. https://arxiv.org/abs/2003.09003"""
+    track_folder = save_file.parent / "gt"
+    track_folder.mkdir(parents=True, exist_ok=True)
+    with open(track_folder / "labels.txt", "w") as wf:
+        wf.write("fish")
+
+    track_file = track_folder / "gt.txt"
+    if isinstance(tracks, dict):
+        with open(track_file, "w") as file:
+            for track_id, track in tracks.items():
+                for det in track.coords:
+                    top_left_x = det.x - det.w / 2
+                    top_left_y = det.y - det.h / 2
+                    file.write(
+                        f"{det.frame_number},{track_id+1},{top_left_x+1},{top_left_y+1},{det.w},{det.h},1,1,1.0\n"
+                    )
+    if isinstance(tracks, np.ndarray):
+        with open(track_file, "w") as file:
+            for item in tracks:
+                file.write(
+                    f"{int(item[0])},{int(item[1])+1},{item[2]+1},{item[3]+1},{int(item[4])},{int(item[5])},1,1,1.0\n"
+                )
+    shutil.make_archive(save_file, "zip", save_file.parent, "gt")
+    shutil.rmtree(track_folder)
+
+
+def read_tracks_from_mot_format(track_file) -> np.ndarray:
+    tracks = []
+    with open(track_file, "r") as file:
+        for row in file:
+            items = row.split("\n")[0].split(",")
+            top_left_x, top_left_y, width, height = (
+                float(items[2]),
+                float(items[3]),
+                int(items[4]),
+                int(items[5]),
+            )
+            center_x = top_left_x + width / 2
+            center_y = top_left_y + height / 2
+            track = [
+                int(items[0]),
+                int(items[1]),
+                top_left_x,
+                top_left_y,
+                width,
+                height,
+                center_x,
+                center_y,
+            ]
+            tracks.append(track)
+    return tracks
+
+
+def read_tracks_cvat_txt_format(track_file) -> np.ndarray:
+    tracks = np.round(
+        np.loadtxt(track_file.as_posix(), skiprows=1, delimiter=",")
+    ).astype(np.int64)
+    centers_x = np.int64(np.round((tracks[:, 5] + tracks[:, 3]) / 2)).reshape(-1, 1)
+    centers_y = np.int64(np.round((tracks[:, 6] + tracks[:, 4]) / 2)).reshape(-1, 1)
+    width = np.int64(np.round(tracks[:, 5] - tracks[:, 3])).reshape(-1, 1)
+    height = np.int64(np.round(tracks[:, 6] - tracks[:, 4])).reshape(-1, 1)
+    return np.concatenate((tracks, centers_x, centers_y, width, height), axis=1)
+
+
+def save_tracks_cvat_txt_format(track_file: Path, tracks: np.ndarray):
+    np.savetxt(
+        track_file.as_posix(),
+        tracks[:, :7],
+        header="IDs,frames,outside,xtl,ytl,xbr,ybr",
+        delimiter=",",
+        fmt="%d",
+    )
+
+
 def save_tracks(track_file, tracks):
     with open(track_file, "w") as file:
         for track_id, track in tracks.items():
@@ -759,10 +785,10 @@ def get_iou(det1, det2) -> float:
     # https://stackoverflow.com/questions/25349178/calculating-percentage-of-bounding-box-overlap-for-image-detector-evaluation
 
     # determine the coordinates of the intersection rectangle
-    x_left = max(det1.x, det2.x)
-    y_top = max(det1.y, det2.y)
-    x_right = min(det1.x + det1.w, det2.x + det2.w)
-    y_bottom = min(det1.y + det1.h, det2.y + det2.h)
+    x_left = max(det1[0], det2[0])
+    y_top = max(det1[1], det2[1])
+    x_right = min(det1[2], det2[2])
+    y_bottom = min(det1[3], det2[3])
 
     if x_right < x_left or y_bottom < y_top:
         return 0.0
@@ -771,14 +797,10 @@ def get_iou(det1, det2) -> float:
     # axis-aligned bounding box
     intersection_area = (x_right - x_left) * (y_bottom - y_top)
 
-    # compute the area of both AABBs
-    bb1_area = det1.w * det1.h
-    bb2_area = det2.w * det2.h
+    area1 = (det1[2] - det1[0]) * (det1[3] - det1[1])
+    area2 = (det2[2] - det2[0]) * (det2[3] - det2[1])
 
-    # compute the intersection over union by taking the intersection
-    # area and dividing it by the sum of prediction + ground-truth
-    # areas - the interesection area
-    iou = intersection_area / float(bb1_area + bb2_area - intersection_area)
+    iou = intersection_area / float(area1 + area2 - intersection_area)
     assert iou >= 0.0
     assert iou <= 1.0
     return iou
