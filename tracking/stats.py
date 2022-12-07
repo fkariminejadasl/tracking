@@ -70,38 +70,7 @@ def make_array_from_tracks(tracks) -> np.ndarray:
     return np.array(tracks_array).astype(np.int64)
 
 
-def compare_with_gt_track(tracks_gt: np.ndarray, tracks: np.ndarray):
-    # false positives should be calculated
-    track_ids_gt = np.unique(tracks_gt[:, 0])
-    track_id_gt = track_ids_gt[0]
-
-    tp = fp = fn = tp_id = tn_id = fp_id = 0
-    all_track_ids = []
-    orig_track_id = -1
-    idxs = np.where(tracks_gt[:, 0] == track_id_gt)[0]
-    for idx in idxs:
-        frame_number = tracks_gt[idx, 1]
-        x_gt = tracks_gt[idx, 3]
-        y_gt = tracks_gt[idx, 4]
-        track_ids = _find_track_id_from_xyf_in_tracks_array(
-            tracks, frame_number, x=x_gt, y=y_gt
-        )
-        if track_ids[0] != -1:
-            # TODO some stats: thik about ids
-            if orig_track_id == -1:
-                orig_track_id = track_ids[0]
-            if orig_track_id in track_ids:
-                tp_id += 1
-            else:
-                fn_id += 1
-            tp += 1
-        else:
-            fn += 1
-    return tp, fp, fn, tp_id, tn_id, fp_id
-
-
 def get_gt_object_match(atracks, annos, track_id, frame_number, thres=20, min_iou=0.1):
-    # This function should replace _find_track_id_from_xyf_in_tracks_array.
     det_gt = annos[(annos[:, 0] == track_id) & (annos[:, 1] == frame_number)][0]
 
     candidates = atracks[
@@ -133,10 +102,54 @@ def get_gt_object_match(atracks, annos, track_id, frame_number, thres=20, min_io
     return det_gt, det
 
 
-def _find_track_id_from_xyf_in_tracks_array(tracks, frame_number, x_gt, y_gt, thres=4):
-    candidate_idxs = np.where(
-        (tracks[:, 1] == frame_number)
-        & (abs(tracks[:, 3] - x_gt) < thres)
-        & (abs(tracks[:, 4] - y_gt) < thres)
-    )[0]
-    return candidate_idxs
+def get_stats_for_a_frame(annos, atracks, frame_number):
+    tp = fp = fn = 0
+    gt_track_ids = np.unique(annos[annos[:, 1] == frame_number, 0])
+    matched_ids = []
+    for gt_track_id in gt_track_ids:
+        det1, det2 = get_gt_object_match(
+            atracks, annos, gt_track_id, frame_number, thres=20, min_iou=0.1
+        )
+        if det2 is None:
+            fn += 1
+        else:
+            tp += 1
+            matched_ids.append([det1[0], det2[0]])
+    matched_ids = np.array(matched_ids).astype(np.int64)
+    track_ids = np.unique(atracks[atracks[:, 1] == frame_number, 0])
+    diff_ids = set(track_ids).difference(set(matched_ids[:, 1]))
+    fp = len(diff_ids)
+
+    # gt_diff_ids = set(gt_track_ids).difference(set(matched_ids[:, 0]))
+    # print(f"matched ids tracks:\n{matched_ids}")
+    # print(f"diff ids tracks:\n{diff_ids}")
+    # print(f"diff ids gt:\n{gt_diff_ids}")
+    return tp, fp, fn
+
+
+def get_stats_for_a_track(annos, atracks, track_id):
+    tp = fp = fn = 0
+    frame_numbers = annos[annos[:, 0] == track_id, 1]
+    matched_ids = []
+    for frame_number in frame_numbers:
+        det1, det2 = get_gt_object_match(
+            atracks, annos, track_id, frame_number, thres=20, min_iou=0.1
+        )
+        if det2 is None:
+            fn += 1
+        else:
+            tp += 1
+            matched_ids.append([det1[0], det2[0], frame_number])
+    matched_ids = np.array(matched_ids).astype(np.int64)
+    # TODO compute id switch and main track id (max number of ids). Based on that
+    # compute fp and id switches
+
+    # track_ids = np.unique(atracks[atracks[:, 1] == frame_number, 0])
+    # diff_ids = set(track_ids).difference(set(matched_ids[:, 1]))
+    # fp = len(diff_ids)
+
+    # gt_diff_ids = set(gt_track_ids).difference(set(matched_ids[:, 0]))
+    print(f"matched ids tracks:\n{matched_ids}")
+    # print(f"diff ids tracks:\n{diff_ids}")
+    # print(f"diff ids gt:\n{gt_diff_ids}")
+    return tp, fp, fn, matched_ids

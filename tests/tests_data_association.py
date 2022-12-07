@@ -7,10 +7,18 @@ import numpy as np
 path = (Path(__file__).parents[1]).as_posix()
 sys.path.insert(0, path)
 
-from tracking.data_association import (get_iou, read_tracks_cvat_txt_format,
-                                       save_tracks_cvat_txt_format)
-from tracking.stats import (get_gt_object_match, make_array_from_tracks,
-                            make_tracks_from_array)
+from tracking.data_association import (
+    get_iou,
+    read_tracks_cvat_txt_format,
+    save_tracks_cvat_txt_format,
+)
+from tracking.stats import (
+    get_gt_object_match,
+    make_array_from_tracks,
+    make_tracks_from_array,
+    get_stats_for_a_frame,
+    get_stats_for_a_track
+)
 
 data_path = Path(__file__).parent / "data"
 annos = read_tracks_cvat_txt_format(data_path / "test_gt.txt")
@@ -60,21 +68,58 @@ def test_get_gt_object_match():
     )
     assert det1[0] == 4
     assert det2[0] == 5
-    # (Detection(x=239.5, y=456.5, w=23, h=31, det_id=4, frame_number=-1, score=-1, camera_id=0),
-    # Detection(x=239.0, y=456.0, w=26, h=36, det_id=5, frame_number=-1, score=-1, camera_id=0))
 
     det1, det2 = get_gt_object_match(
         atracks, annos, track_id=28, frame_number=32, thres=20, min_iou=0.05
     )
     assert det1[0] == 28
     assert det2[0] == 1
-    # (Detection(x=783.0, y=434.5, w=44, h=21, det_id=28, frame_number=-1, score=-1, camera_id=0),
-    # Detection(x=798.0, y=430.0, w=16, h=10, det_id=1, frame_number=-1, score=-1, camera_id=0))
 
     det1, det2 = get_gt_object_match(
         atracks, annos, track_id=28, frame_number=32, thres=20, min_iou=0.2
     )
     assert det1[0] == 28
     assert det2 == None
-    # (Detection(x=783.0, y=434.5, w=44, h=21, det_id=28, frame_number=-1, score=-1, camera_id=0),
-    # None)
+
+
+def test_get_gt_object_match_frame0():
+    frame_number = 0
+    gt_track_ids = np.unique(annos[annos[:, 1] == frame_number, 0])
+    matched_ids = []
+    for gt_track_id in gt_track_ids:
+        det1, det2 = get_gt_object_match(
+            atracks, annos, gt_track_id, frame_number, thres=20, min_iou=0.1
+        )
+        if det2 is not None:
+            matched_ids.append([det1[0], det2[0]])
+    matched_ids = np.array(matched_ids).astype(np.int64)
+
+    desired = np.round(
+        np.loadtxt(data_path / "matched_ids_frame0.txt", skiprows=1, delimiter=",")
+    ).astype(np.int64)
+    np.testing.assert_equal(matched_ids, desired)
+
+
+def test_get_stats_for_a_frame():
+    tp, fp, fn = get_stats_for_a_frame(annos, atracks, 0)
+    np.testing.assert_equal((tp, fp, fn), (36, 5, 1))
+
+
+def test_get_stats_for_a_track():
+    desired = np.round(
+        np.loadtxt(data_path / "matched_ids_track7.txt", skiprows=1, delimiter=",")
+    ).astype(np.int64)
+    tp, fp, fn, matched_ids = get_stats_for_a_track(annos, atracks, 7)
+    np.testing.assert_equal(matched_ids, desired)
+
+    desired = np.round(
+        np.loadtxt(data_path / "matched_ids_track5.txt", skiprows=1, delimiter=",")
+    ).astype(np.int64)
+    tp, fp, fn, matched_ids = get_stats_for_a_track(annos, atracks, 5)
+    np.testing.assert_equal(matched_ids, desired)
+
+    desired = np.round(
+        np.loadtxt(data_path / "matched_ids_track28.txt", skiprows=1, delimiter=",")
+    ).astype(np.int64)
+    tp, fp, fn, matched_ids = get_stats_for_a_track(annos, atracks, 28)
+    np.testing.assert_equal(matched_ids, desired)
