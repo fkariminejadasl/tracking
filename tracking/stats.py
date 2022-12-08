@@ -141,15 +141,26 @@ def get_stats_for_a_track(annos, atracks, track_id):
             tp += 1
             matched_ids.append([det1[0], det2[0], frame_number])
     matched_ids = np.array(matched_ids).astype(np.int64)
-    # TODO compute id switch and main track id (max number of ids). Based on that
-    # compute fp and id switches
 
-    # track_ids = np.unique(atracks[atracks[:, 1] == frame_number, 0])
-    # diff_ids = set(track_ids).difference(set(matched_ids[:, 1]))
-    # fp = len(diff_ids)
+    track_ids = np.unique(np.sort(matched_ids[:, 1]))
+    freq, _ = np.histogram(
+        matched_ids[:, 1], bins=np.hstack((track_ids, track_ids[-1] + 1))
+    )
+    main_track_id = track_ids[freq == max(freq)][0]
+    no_switch_ids = len(matched_ids[matched_ids[:, 1] != main_track_id, 1])
 
-    # gt_diff_ids = set(gt_track_ids).difference(set(matched_ids[:, 0]))
-    print(f"matched ids tracks:\n{matched_ids}")
-    # print(f"diff ids tracks:\n{diff_ids}")
-    # print(f"diff ids gt:\n{gt_diff_ids}")
-    return tp, fp, fn, matched_ids
+    # here fn is calculated based on dominant track_id.
+    main_track_frame_numbers = atracks[atracks[:, 0] == main_track_id, 1]
+    matched_main_track_frame_numbers = matched_ids[
+        matched_ids[:, 1] == main_track_id, 2
+    ]
+    fp = len(set(main_track_frame_numbers).difference(matched_main_track_frame_numbers))
+    return tp, fp, fn, no_switch_ids, matched_ids
+
+
+def get_stats_for_tracks(annos, atracks):
+    stats = []
+    for track_id in np.unique(annos[:, 0]):
+        tp, fp, fn, sw, _ = get_stats_for_a_track(annos, atracks, track_id)
+        stats.append([track_id, tp, fp, fn, sw])
+    return np.array(stats).astype(np.int64)

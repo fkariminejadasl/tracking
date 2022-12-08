@@ -27,3 +27,9 @@ build-backend = "hatchling.build"
 [tool.black]
 line-length = 88
 #line-length = 120
+
+# https://docs.pytest.org/en/stable/how-to/mark.html
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')"
+]

@@ -5,3 +5,4 @@ tests/data/description.txt filter=lfs diff=lfs merge=lfs -text
 tests/data/matched_ids_track28.txt filter=lfs diff=lfs merge=lfs -text
 tests/data/matched_ids_track5.txt filter=lfs diff=lfs merge=lfs -text
 tests/data/matched_ids_track7.txt filter=lfs diff=lfs merge=lfs -text
+tests/data/track_stats.txt filter=lfs diff=lfs merge=lfs -text

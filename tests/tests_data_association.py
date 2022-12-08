@@ -3,22 +3,16 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 path = (Path(__file__).parents[1]).as_posix()
 sys.path.insert(0, path)
 
-from tracking.data_association import (
-    get_iou,
-    read_tracks_cvat_txt_format,
-    save_tracks_cvat_txt_format,
-)
-from tracking.stats import (
-    get_gt_object_match,
-    make_array_from_tracks,
-    make_tracks_from_array,
-    get_stats_for_a_frame,
-    get_stats_for_a_track
-)
+from tracking.data_association import (get_iou, read_tracks_cvat_txt_format,
+                                       save_tracks_cvat_txt_format)
+from tracking.stats import (get_gt_object_match, get_stats_for_a_frame,
+                            get_stats_for_a_track, get_stats_for_tracks,
+                            make_array_from_tracks, make_tracks_from_array)
 
 data_path = Path(__file__).parent / "data"
 annos = read_tracks_cvat_txt_format(data_path / "test_gt.txt")
@@ -106,20 +100,36 @@ def test_get_stats_for_a_frame():
 
 
 def test_get_stats_for_a_track():
-    desired = np.round(
-        np.loadtxt(data_path / "matched_ids_track7.txt", skiprows=1, delimiter=",")
+    gt_track_id = 7
+    desired = np.loadtxt(
+        data_path / f"matched_ids_track{gt_track_id}.txt", skiprows=1, delimiter=","
     ).astype(np.int64)
-    tp, fp, fn, matched_ids = get_stats_for_a_track(annos, atracks, 7)
+    tp, fp, fn, sw, matched_ids = get_stats_for_a_track(annos, atracks, gt_track_id)
     np.testing.assert_equal(matched_ids, desired)
+    np.testing.assert_equal((tp, fp, fn, sw), (567, 0, 33, 0))
 
-    desired = np.round(
-        np.loadtxt(data_path / "matched_ids_track5.txt", skiprows=1, delimiter=",")
+    gt_track_id = 5
+    desired = np.loadtxt(
+        data_path / f"matched_ids_track{gt_track_id}.txt", skiprows=1, delimiter=","
     ).astype(np.int64)
-    tp, fp, fn, matched_ids = get_stats_for_a_track(annos, atracks, 5)
+    tp, fp, fn, sw, matched_ids = get_stats_for_a_track(annos, atracks, gt_track_id)
     np.testing.assert_equal(matched_ids, desired)
+    np.testing.assert_equal((tp, fp, fn, sw), (419, 0, 181, 49))
 
-    desired = np.round(
-        np.loadtxt(data_path / "matched_ids_track28.txt", skiprows=1, delimiter=",")
+    gt_track_id = 28
+    desired = np.loadtxt(
+        data_path / f"matched_ids_track{gt_track_id}.txt", skiprows=1, delimiter=","
     ).astype(np.int64)
-    tp, fp, fn, matched_ids = get_stats_for_a_track(annos, atracks, 28)
+    tp, fp, fn, sw, matched_ids = get_stats_for_a_track(annos, atracks, gt_track_id)
     np.testing.assert_equal(matched_ids, desired)
+    np.testing.assert_equal((tp, fp, fn, sw), (341, 0, 258, 193))
+    assert tp + fn == len(annos[annos[:, 0] == gt_track_id])
+
+
+@pytest.mark.slow
+def test_get_stats_for_tracks():
+    desired = np.loadtxt(
+        data_path / "track_stats.txt", skiprows=1, delimiter=","
+    ).astype(np.int64)
+    stats = get_stats_for_tracks(annos, atracks)
+    np.testing.assert_equal(stats, desired)
