@@ -8,19 +8,13 @@ import pytest
 path = (Path(__file__).parents[1]).as_posix()
 sys.path.insert(0, path)
 
-from tracking.data_association import (
-    get_iou,
-    read_tracks_cvat_txt_format,
-    save_tracks_cvat_txt_format,
-)
-from tracking.stats import (
-    get_gt_object_match,
-    get_stats_for_a_frame,
-    get_stats_for_a_track,
-    get_stats_for_tracks,
-    make_array_from_tracks,
-    make_tracks_from_array,
-)
+from tracking.data_association import (get_iou, read_tracks_cvat_txt_format,
+                                       read_tracks_from_mot_format,
+                                       save_tracks_cvat_txt_format,
+                                       save_tracks_to_mot_format)
+from tracking.stats import (get_gt_object_match, get_stats_for_a_frame,
+                            get_stats_for_a_track, get_stats_for_tracks,
+                            make_array_from_tracks, make_tracks_from_array)
 
 data_path = Path(__file__).parent / "data"
 annos = read_tracks_cvat_txt_format(data_path / "tracks_gt.txt")
@@ -44,16 +38,21 @@ def test_read_tracks_cvat_txt_format():
 
     with tempfile.NamedTemporaryFile() as tmp:
         track_file = tmp.name
-        print(track_file)
         save_tracks_cvat_txt_format(Path(track_file), atracks)
         atracks_new = read_tracks_cvat_txt_format(Path(track_file))
-        np.testing.assert_equal(atracks_new[800, :3], atracks[800, :3])
-        np.testing.assert_almost_equal(
-            atracks_new[800, 3:], atracks[800, 3:], decimal=0
-        )
+        np.testing.assert_equal(atracks_new[:, :3], atracks[:, :3])
+        np.testing.assert_almost_equal(atracks_new[:, 3:], atracks[:, 3:], decimal=0)
 
-    np.testing.assert_equal(tracks_array[800, :3], atracks[800, :3])
-    np.testing.assert_almost_equal(tracks_array[800, 3:], atracks[800, 3:], decimal=0)
+    np.testing.assert_equal(tracks_array[:, :3], atracks[:, :3])
+    np.testing.assert_almost_equal(tracks_array[:, 3:], atracks[:, 3:], decimal=0)
+
+
+def test_read_tracks_from_mot_format():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        save_tracks_to_mot_format(Path(tmp_dir) / "tmp.txt", atracks, make_zip=False)
+        atracks_new = read_tracks_from_mot_format(Path(tmp_dir) / "gt/gt.txt")
+        np.testing.assert_equal(atracks_new[:, :3], atracks[:, :3])
+        np.testing.assert_almost_equal(atracks_new[:, 3:], atracks[:, 3:], decimal=0)
 
 
 def test_make_tracks_from_array_and_reverse():

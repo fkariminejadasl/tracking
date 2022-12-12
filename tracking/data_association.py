@@ -668,8 +668,13 @@ def arrange_track_ids(tracks: np.ndarray):
     return new_tracks
 
 
-def save_tracks_to_mot_format(save_file: Path, tracks: np.ndarray | dict[Track]):
-    """MOT format is 1-based, including bbox. https://arxiv.org/abs/2003.09003"""
+def save_tracks_to_mot_format(
+    save_file: Path, tracks: np.ndarray | dict[Track], make_zip: bool = True
+):
+    """MOT format is 1-based, including bbox. https://arxiv.org/abs/2003.09003
+    mot format: frame_id, track_id, xtl, ytl, w, h, score, class, visibility
+    array format: track_id, frame_id, outside, xtl, ytl, xbr, ybr, xc, yc, w, h
+    """
     track_folder = save_file.parent / "gt"
     track_folder.mkdir(parents=True, exist_ok=True)
     with open(track_folder / "labels.txt", "w") as wf:
@@ -691,21 +696,23 @@ def save_tracks_to_mot_format(save_file: Path, tracks: np.ndarray | dict[Track])
                 file.write(
                     f"{int(item[1])+1},{int(item[0])+1},{item[3]+1},{item[4]+1},{int(item[9])},{int(item[10])},1,1,1.0\n"
                 )
-    shutil.make_archive(save_file, "zip", save_file.parent, "gt")
-    shutil.rmtree(track_folder)
+    if make_zip:
+        shutil.make_archive(save_file, "zip", save_file.parent, "gt")
+        shutil.rmtree(track_folder)
 
 
 def read_tracks_from_mot_format(track_file: Path) -> np.ndarray:
     """
-    return: frame_id, track_id, outside, xtl, ytl, xbr, ybr, xc, yc, w, h
+    mot format: frame_id, track_id, xtl, ytl, w, h, score, class, visibility
+    array format: track_id, frame_id, outside, xtl, ytl, xbr, ybr, xc, yc, w, h
     """
     tracks = []
     with open(track_file, "r") as file:
         for row in file:
             items = row.split("\n")[0].split(",")
             top_left_x, top_left_y, width, height = (
-                float(items[2]),
-                float(items[3]),
+                float(items[2]) - 1,
+                float(items[3]) - 1,
                 int(items[4]),
                 int(items[5]),
             )
@@ -714,8 +721,9 @@ def read_tracks_from_mot_format(track_file: Path) -> np.ndarray:
             bottom_right_x = top_left_x + width
             bottom_right_y = top_left_y + height
             track = [
-                int(items[0]),
-                int(items[1]),
+                int(items[1]) - 1,
+                int(items[0]) - 1,
+                0,
                 top_left_x,
                 top_left_y,
                 bottom_right_x,
@@ -726,12 +734,12 @@ def read_tracks_from_mot_format(track_file: Path) -> np.ndarray:
                 height,
             ]
             tracks.append(track)
-    return tracks
+    return np.array(tracks).astype(np.int64)
 
 
 def read_tracks_cvat_txt_format(track_file: Path) -> np.ndarray:
     """
-    return: frame_id, track_id, outside, xtl, ytl, xbr, ybr, xc, yc, w, h
+    array format: track_id, frame_id, outside, xtl, ytl, xbr, ybr, xc, yc, w, h
     """
     tracks = np.round(np.loadtxt(track_file, skiprows=1, delimiter=",")).astype(
         np.int64

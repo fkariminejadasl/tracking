@@ -3,12 +3,9 @@ import matplotlib.patches as patches
 import numpy as np
 from matplotlib import pyplot as plt
 
-from tracking.data_association import (
-    Point,
-    get_detections,
-    get_frame_numbers_of_track,
-    get_video_parameters,
-)
+from tracking.data_association import (Point, get_detections,
+                                       get_frame_numbers_of_track,
+                                       get_video_parameters)
 
 
 def _create_output_video(

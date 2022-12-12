@@ -1,6 +1,7 @@
 import numpy as np
 
-from tracking.data_association import Detection, Prediction, Status, Track, get_iou
+from tracking.data_association import (Detection, Prediction, Status, Track,
+                                       get_iou)
 
 
 def _get_dets_from_indices_of_array(idxs, annos: np.ndarray):
