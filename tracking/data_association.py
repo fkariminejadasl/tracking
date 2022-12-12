@@ -668,7 +668,7 @@ def arrange_track_ids(tracks: np.ndarray):
     return new_tracks
 
 
-def save_tracks_to_mot_format(save_file, tracks: np.ndarray | dict[Track]):
+def save_tracks_to_mot_format(save_file: Path, tracks: np.ndarray | dict[Track]):
     """MOT format is 1-based, including bbox. https://arxiv.org/abs/2003.09003"""
     track_folder = save_file.parent / "gt"
     track_folder.mkdir(parents=True, exist_ok=True)
@@ -695,7 +695,10 @@ def save_tracks_to_mot_format(save_file, tracks: np.ndarray | dict[Track]):
     shutil.rmtree(track_folder)
 
 
-def read_tracks_from_mot_format(track_file) -> np.ndarray:
+def read_tracks_from_mot_format(track_file: Path) -> np.ndarray:
+    """
+    return: frame_id, track_id, outside, xtl, ytl, xbr, ybr, xc, yc, w, h
+    """
     tracks = []
     with open(track_file, "r") as file:
         for row in file:
@@ -708,24 +711,31 @@ def read_tracks_from_mot_format(track_file) -> np.ndarray:
             )
             center_x = top_left_x + width / 2
             center_y = top_left_y + height / 2
+            bottom_right_x = top_left_x + width
+            bottom_right_y = top_left_y + height
             track = [
                 int(items[0]),
                 int(items[1]),
                 top_left_x,
                 top_left_y,
-                width,
-                height,
+                bottom_right_x,
+                bottom_right_y,
                 center_x,
                 center_y,
+                width,
+                height,
             ]
             tracks.append(track)
     return tracks
 
 
-def read_tracks_cvat_txt_format(track_file) -> np.ndarray:
-    tracks = np.round(
-        np.loadtxt(track_file.as_posix(), skiprows=1, delimiter=",")
-    ).astype(np.int64)
+def read_tracks_cvat_txt_format(track_file: Path) -> np.ndarray:
+    """
+    return: frame_id, track_id, outside, xtl, ytl, xbr, ybr, xc, yc, w, h
+    """
+    tracks = np.round(np.loadtxt(track_file, skiprows=1, delimiter=",")).astype(
+        np.int64
+    )
     centers_x = np.int64(np.round((tracks[:, 5] + tracks[:, 3]) / 2)).reshape(-1, 1)
     centers_y = np.int64(np.round((tracks[:, 6] + tracks[:, 4]) / 2)).reshape(-1, 1)
     width = np.int64(np.round(tracks[:, 5] - tracks[:, 3])).reshape(-1, 1)
@@ -735,7 +745,7 @@ def read_tracks_cvat_txt_format(track_file) -> np.ndarray:
 
 def save_tracks_cvat_txt_format(track_file: Path, tracks: np.ndarray):
     np.savetxt(
-        track_file.as_posix(),
+        track_file,
         tracks[:, :7],
         header="IDs,frames,outside,xtl,ytl,xbr,ybr",
         delimiter=",",
@@ -743,21 +753,21 @@ def save_tracks_cvat_txt_format(track_file: Path, tracks: np.ndarray):
     )
 
 
-def save_tracks(track_file, tracks):
-    with open(track_file, "w") as file:
-        for track_id, track in tracks.items():
-            for det in track.coords:
+def save_tracks(track_file: Path, tracks: np.ndarray | dict[Track]):
+    if isinstance(tracks, dict):
+        with open(track_file, "w") as file:
+            for track_id, track in tracks.items():
+                for det in track.coords:
+                    file.write(
+                        f"{track_id},{det.frame_number},{det.det_id},{det.x},{det.y},{det.w},{det.h},{det.score:.2f},{track.status.value}\n"
+                    )
+
+    if isinstance(tracks, np.ndarray):
+        with open(track_file, "w") as file:
+            for track in tracks:
                 file.write(
-                    f"{track_id},{det.frame_number},{det.det_id},{det.x},{det.y},{det.w},{det.h},{det.score:.2f},{track.status.value}\n"
+                    f"{track[0]},{track[1]},{track[2]},{track[3]},{track[4]},{track[5]},{track[6]},{track[7]:.2f},{track[8]}\n"
                 )
-
-
-def write_tracks(track_file, tracks):
-    with open(track_file, "w") as file:
-        for track in tracks:
-            file.write(
-                f"{track[0]},{track[1]},{track[2]},{track[3]},{track[4]},{track[5]},{track[6]},{track[7]:.2f},{track[8]}\n"
-            )
 
 
 def read_tracks(track_file):
