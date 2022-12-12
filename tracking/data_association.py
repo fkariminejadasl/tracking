@@ -689,7 +689,7 @@ def save_tracks_to_mot_format(save_file, tracks: np.ndarray | dict[Track]):
         with open(track_file, "w") as file:
             for item in tracks:
                 file.write(
-                    f"{int(item[0])},{int(item[1])+1},{item[2]+1},{item[3]+1},{int(item[4])},{int(item[5])},1,1,1.0\n"
+                    f"{int(item[1])+1},{int(item[0])+1},{item[3]+1},{item[4]+1},{int(item[9])},{int(item[10])},1,1,1.0\n"
                 )
     shutil.make_archive(save_file, "zip", save_file.parent, "gt")
     shutil.rmtree(track_folder)
