@@ -1,7 +1,6 @@
 import numpy as np
 
-from tracking.data_association import (Detection, Prediction, Status, Track,
-                                       get_iou)
+from tracking.data_association import Detection, Prediction, Status, Track, get_iou
 
 
 def _get_dets_from_indices_of_array(idxs, annos: np.ndarray):
@@ -142,12 +141,13 @@ def get_stats_for_a_track(annos, atracks, track_id):
             matched_ids.append([det1[0], det2[0], frame_number])
     matched_ids = np.array(matched_ids).astype(np.int64)
 
-    track_ids = np.unique(np.sort(matched_ids[:, 1]))
+    unique_ids = np.unique(np.sort(matched_ids[:, 1]))
     freq, _ = np.histogram(
-        matched_ids[:, 1], bins=np.hstack((track_ids, track_ids[-1] + 1))
+        matched_ids[:, 1], bins=np.hstack((unique_ids, unique_ids[-1] + 1))
     )
-    main_track_id = track_ids[freq == max(freq)][0]
+    main_track_id = unique_ids[freq == max(freq)][0]
     no_switch_ids = len(matched_ids[matched_ids[:, 1] != main_track_id, 1])
+    no_unique_ids = len(unique_ids)
 
     # here fn is calculated based on dominant track_id.
     main_track_frame_numbers = atracks[atracks[:, 0] == main_track_id, 1]
@@ -155,12 +155,12 @@ def get_stats_for_a_track(annos, atracks, track_id):
         matched_ids[:, 1] == main_track_id, 2
     ]
     fp = len(set(main_track_frame_numbers).difference(matched_main_track_frame_numbers))
-    return tp, fp, fn, no_switch_ids, matched_ids
+    return tp, fp, fn, no_switch_ids, no_unique_ids, matched_ids
 
 
 def get_stats_for_tracks(annos, atracks):
     stats = []
     for track_id in np.unique(annos[:, 0]):
-        tp, fp, fn, sw, _ = get_stats_for_a_track(annos, atracks, track_id)
-        stats.append([track_id, tp, fp, fn, sw])
+        tp, fp, fn, sw, uid, _ = get_stats_for_a_track(annos, atracks, track_id)
+        stats.append([track_id, tp, fp, fn, sw, uid])
     return np.array(stats).astype(np.int64)

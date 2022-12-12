@@ -15,8 +15,8 @@ from tracking.stats import (get_gt_object_match, get_stats_for_a_frame,
                             make_array_from_tracks, make_tracks_from_array)
 
 data_path = Path(__file__).parent / "data"
-annos = read_tracks_cvat_txt_format(data_path / "test_gt.txt")
-atracks = read_tracks_cvat_txt_format(data_path / "test.txt")
+annos = read_tracks_cvat_txt_format(data_path / "tracks_gt.txt")
+atracks = read_tracks_cvat_txt_format(data_path / "tracks.txt")
 
 
 def test_get_iou():
@@ -104,27 +104,33 @@ def test_get_stats_for_a_track():
     desired = np.loadtxt(
         data_path / f"matched_ids_track{gt_track_id}.txt", skiprows=1, delimiter=","
     ).astype(np.int64)
-    tp, fp, fn, sw, matched_ids = get_stats_for_a_track(annos, atracks, gt_track_id)
+    tp, fp, fn, sw, uid, matched_ids = get_stats_for_a_track(annos, atracks, gt_track_id)
     np.testing.assert_equal(matched_ids, desired)
-    np.testing.assert_equal((tp, fp, fn, sw), (567, 0, 33, 0))
+    np.testing.assert_equal((tp, fp, fn, sw, uid), (567, 0, 33, 0, 1))
 
     gt_track_id = 5
     desired = np.loadtxt(
         data_path / f"matched_ids_track{gt_track_id}.txt", skiprows=1, delimiter=","
     ).astype(np.int64)
-    tp, fp, fn, sw, matched_ids = get_stats_for_a_track(annos, atracks, gt_track_id)
+    tp, fp, fn, sw, uid, matched_ids = get_stats_for_a_track(annos, atracks, gt_track_id)
     np.testing.assert_equal(matched_ids, desired)
-    np.testing.assert_equal((tp, fp, fn, sw), (419, 0, 181, 49))
+    np.testing.assert_equal((tp, fp, fn, sw, uid), (419, 0, 181, 49, 3))
 
     gt_track_id = 28
     desired = np.loadtxt(
         data_path / f"matched_ids_track{gt_track_id}.txt", skiprows=1, delimiter=","
     ).astype(np.int64)
-    tp, fp, fn, sw, matched_ids = get_stats_for_a_track(annos, atracks, gt_track_id)
+    tp, fp, fn, sw, uid, matched_ids = get_stats_for_a_track(annos, atracks, gt_track_id)
     np.testing.assert_equal(matched_ids, desired)
-    np.testing.assert_equal((tp, fp, fn, sw), (341, 0, 258, 193))
+    np.testing.assert_equal((tp, fp, fn, sw, uid), (341, 0, 258, 193, 14))
     assert tp + fn == len(annos[annos[:, 0] == gt_track_id])
 
+def test_get_stats_for_a_track_after_iou_bug():
+    atracks = read_tracks_cvat_txt_format(data_path / "tracks_iou_bug.txt")
+    gt_track_id = 28
+    tp, fp, fn, sw, uid, _ = get_stats_for_a_track(annos, atracks, gt_track_id)
+    np.testing.assert_equal((tp, fp, fn, sw, uid), (371, 0, 228, 255, 13))
+    assert tp + fn == len(annos[annos[:, 0] == gt_track_id])
 
 @pytest.mark.slow
 def test_get_stats_for_tracks():
