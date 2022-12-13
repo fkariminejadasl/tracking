@@ -8,13 +8,29 @@ import pytest
 path = (Path(__file__).parents[1]).as_posix()
 sys.path.insert(0, path)
 
-from tracking.data_association import (get_iou, read_tracks_cvat_txt_format,
-                                       read_tracks_from_mot_format,
-                                       save_tracks_cvat_txt_format,
-                                       save_tracks_to_mot_format)
-from tracking.stats import (get_gt_object_match, get_stats_for_a_frame,
-                            get_stats_for_a_track, get_stats_for_tracks,
-                            make_array_from_tracks, make_tracks_from_array)
+from tracking.data_association import (
+    get_iou,
+    read_tracks_cvat_txt_format,
+    read_tracks_from_mot_format,
+    save_tracks_cvat_txt_format,
+    save_tracks_to_mot_format,
+    get_detections,
+    get_detections_array,
+    clean_detections,
+    make_array_from_dets,
+    make_dets_from_array,
+    match_detections,
+    is_bbox_in_bbox,
+)
+
+from tracking.stats import (
+    get_gt_object_match,
+    get_stats_for_a_frame,
+    get_stats_for_a_track,
+    get_stats_for_tracks,
+    make_array_from_tracks,
+    make_tracks_from_array,
+)
 
 data_path = Path(__file__).parent / "data"
 annos = read_tracks_cvat_txt_format(data_path / "tracks_gt.txt")
@@ -32,6 +48,15 @@ def test_get_iou():
     np.testing.assert_equal(get_iou(det1, det2), 0.0)
 
 
+def test_is_bbox_in_bbox():
+    adets = get_detections_array(
+        data_path / "04_07_22_G_2_rect_valid_2.txt", 2098, 1220
+    )
+    assert is_bbox_in_bbox(adets[5,3:7],adets[1,3:7]) == True
+    assert is_bbox_in_bbox(adets[1,3:7],adets[5,3:7]) == False
+    assert is_bbox_in_bbox(adets[1,3:7],adets[8,3:7]) == False
+
+
 def test_read_tracks_cvat_txt_format():
     tracks = make_tracks_from_array(atracks)
     tracks_array = make_array_from_tracks(tracks)
@@ -40,10 +65,10 @@ def test_read_tracks_cvat_txt_format():
         track_file = tmp.name
         save_tracks_cvat_txt_format(Path(track_file), atracks)
         atracks_new = read_tracks_cvat_txt_format(Path(track_file))
-        np.testing.assert_equal(atracks_new[:, :3], atracks[:, :3])
+        np.testing.assert_equal(atracks_new[:, :2], atracks[:, :2])
         np.testing.assert_almost_equal(atracks_new[:, 3:], atracks[:, 3:], decimal=0)
 
-    np.testing.assert_equal(tracks_array[:, :3], atracks[:, :3])
+    np.testing.assert_equal(tracks_array[:, :2], atracks[:, :2])
     np.testing.assert_almost_equal(tracks_array[:, 3:], atracks[:, 3:], decimal=0)
 
 
@@ -51,7 +76,7 @@ def test_read_tracks_from_mot_format():
     with tempfile.TemporaryDirectory() as tmp_dir:
         save_tracks_to_mot_format(Path(tmp_dir) / "tmp.txt", atracks, make_zip=False)
         atracks_new = read_tracks_from_mot_format(Path(tmp_dir) / "gt/gt.txt")
-        np.testing.assert_equal(atracks_new[:, :3], atracks[:, :3])
+        np.testing.assert_equal(atracks_new[:, :2], atracks[:, :2])
         np.testing.assert_almost_equal(atracks_new[:, 3:], atracks[:, 3:], decimal=0)
 
 
@@ -59,8 +84,8 @@ def test_make_tracks_from_array_and_reverse():
     tracks = make_tracks_from_array(annos)
     tracks_array = make_array_from_tracks(tracks)
 
-    np.testing.assert_equal(tracks_array[21567, :3], annos[21567, :3])
-    np.testing.assert_almost_equal(tracks_array[21567, 3:], annos[21567, 3:], decimal=0)
+    np.testing.assert_equal(tracks_array[:, :2], annos[:, :2])
+    np.testing.assert_almost_equal(tracks_array[:, 3:], annos[:, 3:], decimal=0)
 
 
 def test_get_gt_object_match():
@@ -154,3 +179,47 @@ def test_get_stats_for_tracks():
     ).astype(np.int64)
     stats = get_stats_for_tracks(annos, atracks)
     np.testing.assert_equal(stats, desired)
+
+
+def test_make_array_from_dets_reverse():
+    dets = get_detections(data_path / "04_07_22_G_2_rect_valid_2.txt", 2098, 1220)
+    dets_array = get_detections_array(
+        data_path / "04_07_22_G_2_rect_valid_2.txt", 2098, 1220
+    )
+    actual = make_array_from_dets(dets)
+    np.testing.assert_equal(actual, dets_array)
+
+    actual = make_dets_from_array(dets_array)
+    assert actual[10].x == dets[10].x
+    assert actual[10].y == dets[10].y
+    assert actual[10].w == dets[10].w
+    assert actual[10].h == dets[10].h
+    assert actual[10].frame_number == dets[10].frame_number
+    assert actual[10].det_id == dets[10].det_id
+
+
+def test_clean_detections():
+    dets_array = get_detections_array(
+        data_path / "04_07_22_G_2_rect_valid_2.txt", 2098, 1220
+    )
+    cleaned_dets = clean_detections(dets_array)
+    assert len(cleaned_dets) == len(dets_array) - 2
+    assert 0 not in list(cleaned_dets[:, 0])
+    assert 1 not in list(cleaned_dets[:, 0])
+
+
+def test_match_ddetections():
+    desired = np.loadtxt(data_path/"matched_ids_dets.txt", skiprows=1, delimiter=',').astype(np.int64)
+    adets1 = get_detections_array(
+        data_path / "04_07_22_G_2_rect_valid_2.txt", 2098, 1220
+    )
+    adets2 = get_detections_array(
+        data_path / "04_07_22_G_2_rect_valid_3.txt", 2098, 1220
+    )
+    _, _, matched_ids = match_detections(adets1, adets2)
+    idxs1, idxs2, matched_ids_cleaned = match_detections(clean_detections(adets1), clean_detections(adets2))
+    assert len(matched_ids) == 33
+    np.testing.assert_equal(matched_ids_cleaned, desired)
+    assert matched_ids_cleaned[0,0] == clean_detections(adets1)[idxs1[0],0]
+    assert matched_ids_cleaned[0,1] == clean_detections(adets2)[idxs2[0],0]
+

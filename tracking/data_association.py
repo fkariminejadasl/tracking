@@ -128,10 +128,10 @@ def get_detections_with_disp(
 
 
 def get_detections(
-    det_path, width: int, height: int, camera_id: int = 1
+    det_file: Path, width: int, height: int, camera_id: int = 1
 ) -> list[Detection]:
-    frame_number = int(det_path.stem.split("_")[-1])
-    detections = np.loadtxt(det_path)
+    frame_number = int(det_file.stem.split("_")[-1])
+    detections = np.loadtxt(det_file)
     return [
         Detection(
             x=int(round(det[1] * width)),
@@ -145,6 +145,149 @@ def get_detections(
         )
         for det_id, det in enumerate(detections)
     ]
+
+
+def _tl_br_from_cen_wh(center_x, center_y, bbox_w, bbox_h) -> tuple:
+    return (
+        int(round(center_x - bbox_w / 2)),
+        int(round(center_y - bbox_h / 2)),
+        int(round(center_x + bbox_w / 2)),
+        int(round(center_y + bbox_h / 2)),
+    )
+
+
+def get_detections_array(det_file: Path, width: int, height: int) -> list[np.ndarray]:
+    frame_number = int(det_file.stem.split("_")[-1])
+    detections = np.loadtxt(det_file)
+    dets_array = []
+    for det_id, det in enumerate(detections):
+        center_x = int(round(det[1] * width))
+        center_y = int(round(det[2] * height))
+        bbox_width = int(round(det[3] * width))
+        bbox_height = int(round(det[4] * height))
+        x_tl, y_tl, x_br, y_br = _tl_br_from_cen_wh(
+            center_x, center_y, bbox_width, bbox_height
+        )
+
+        item = [
+            det_id,
+            frame_number - 1,
+            0,
+            x_tl,
+            y_tl,
+            x_br,
+            y_br,
+            center_x,
+            center_y,
+            bbox_width,
+            bbox_height,
+        ]
+        dets_array.append(item)
+    return np.array(dets_array).astype(np.int64)
+
+
+def make_array_from_dets(dets: list[Detection]):
+    # array format: det_id, frame_id, outside, xtl, ytl, xbr, ybr, xc, yc, w, h
+    dets_array = []
+    for det in dets:
+        x_tl, y_tl, x_br, y_br = _tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
+        item = [
+            det.det_id,
+            det.frame_number - 1,
+            0,
+            x_tl,  # top left
+            y_tl,
+            x_br,  # bottom right
+            y_br,
+            int(round(det.x)),  # center
+            int(round(det.y)),
+            det.w,
+            det.h,
+        ]
+        dets_array.append(item)
+    return np.array(dets_array).astype(np.int64)
+
+
+def make_dets_from_array(dets_array: np.ndarray) -> list[Detection]:
+    # array format: det_id, frame_id, outside, xtl, ytl, xbr, ybr, xc, yc, w, h
+    dets = []
+    for det in dets_array:
+        item = Detection(
+            x=det[7],
+            y=det[8],
+            w=det[9],
+            h=det[10],
+            det_id=det[0],
+            frame_number=det[1] + 1,
+        )
+        dets.append(item)
+    return dets
+
+
+def _find_dets_around_a_det(det: np.ndarray, dets: np.ndarray, thres=20):
+    candidates = dets[
+        ((abs(dets[:, 3] - det[3]) < thres) & (abs(dets[:, 4] - det[4]) < thres))
+        | ((abs(dets[:, 5] - det[5]) < thres) & (abs(dets[:, 6] - det[6]) < thres))
+    ]
+    return candidates
+
+
+def clean_detections(dets: np.ndarray, ratio_thres=2.5, thres=20, inters_thres=0.85):
+    remove_idxs = []
+    for idx, det in enumerate(dets):
+        # remove based on shape of the bbox
+        if det[9] / det[10] > ratio_thres:
+            remove_idxs.append(idx)
+
+        # remove if other detection if one detection is within the other detection
+        candidates = _find_dets_around_a_det(det, dets, thres)
+        idx_det = np.where(candidates[:, 0] == det[0])[0][0]
+        candidates = np.delete(candidates, idx_det, axis=0)
+        for item in candidates:
+            if is_bbox_in_bbox(det[3:7], item[3:7], inters_thres):
+                rem_idx = np.where(dets[:, 0] == item[0])[0][0]
+                remove_idxs.append(rem_idx)
+    dets = np.delete(dets, remove_idxs, axis=0)
+    return dets
+
+
+def match_detection(det1, dets2, thres=20, min_iou=0.1):
+    candidates = _find_dets_around_a_det(det1, dets2, thres)
+    if len(candidates) == 0:
+        return None
+    ious = []
+    for det in candidates:
+        ious.append(get_iou(det1[3:7], det[3:7]))
+    ious = np.array(ious)
+
+    # remove the occluded detections
+    if len(ious[ious > 0]) > 1:
+        return None
+
+    iou_max = max(ious)
+    if iou_max < min_iou:
+        return None
+    idx = np.where(ious == iou_max)[0][0]
+    return candidates[idx]
+
+
+def _get_indices(dets, det_ids):
+    idxs = []
+    for det_id in det_ids:
+        idxs.append(np.where(dets[:, 0] == det_id)[0][0])
+    return np.array(idxs)
+
+
+def match_detections(dets1: np.ndarray, dets2: np.ndarray):
+    matched_ids = []
+    for det1 in dets1:
+        det2 = match_detection(det1, dets2)
+        if det2 is not None:
+            matched_ids.append([det1[0], det2[0]])
+    matched_ids = np.array(matched_ids).astype(np.int64)
+    idxs1 = _get_indices(dets1, matched_ids[:, 0])
+    idxs2 = _get_indices(dets2, matched_ids[:, 1])
+    return idxs1, idxs2, matched_ids
 
 
 @dataclass
@@ -193,7 +336,7 @@ def match_two_detection_sets_with_disps(dets1, dets2):
     dist = np.zeros((len(dets1), len(dets2)), dtype=np.float32)
     for i, det1 in enumerate(dets1):
         for j, det2 in enumerate(dets2):
-            iou_loss = 1 - get_iou(det1, det2)
+            iou_loss = 1 - get_iou(_get_tl_and_br(det1), _get_tl_and_br(det2))
             loc_loss = np.linalg.norm([det2.x - det1.x, det2.y - det1.y])
             disp_loss = 0
             # if det1.disp.val != -1 and len(det2.disp_candidates) > 0:
@@ -587,6 +730,11 @@ def compute_tracks(
             if track.status != Status.Stoped
         ]
         pred_ids, ids = match_two_detection_sets(pred_dets, dets)
+        ## TODO: bug somewhere
+        # pred_dets_array = make_array_from_dets(pred_dets)
+        # dets_cleaned = clean_detections(make_array_from_dets(dets))
+        # dets = make_dets_from_array(dets_cleaned)
+        # pred_ids, ids, _ = match_detections(pred_dets_array, dets_cleaned)
 
         # track maches
         tracks, common_flow, new_track_id = _track_matches(
@@ -612,28 +760,26 @@ def compute_tracks(
 
 
 def _rm_det_chang_track_id(tracks: np.ndarray, frame_number: int, track_id: int):
-    latest_track_id = np.unique(np.sort(tracks[:, 1]))[-1]
-    idx1 = np.where((tracks[:, 0] == frame_number) & (tracks[:, 1] == track_id))[0][0]
-    idxs = np.where((tracks[:, 0] > frame_number) & (tracks[:, 1] == track_id))[0]
+    latest_track_id = np.unique(np.sort(tracks[:, 0]))[-1]
+    idx1 = np.where((tracks[:, 1] == frame_number) & (tracks[:, 0] == track_id))[0][0]
+    idxs = np.where((tracks[:, 1] > frame_number) & (tracks[:, 0] == track_id))[0]
     if len(idxs) != 0:
-        tracks[idxs, 1] = latest_track_id + 1
+        tracks[idxs, 0] = latest_track_id + 1
     tracks = np.delete(tracks, idx1, axis=0)
     return tracks
 
 
 def remove_detect_change_track_id_per_frame(tracks: np.ndarray, frame_number: int):
-    frame_tracks = tracks[tracks[:, 0] == frame_number].copy()
+    frame_tracks = tracks[tracks[:, 1] == frame_number].copy()
     track_ids_remove = []
     for i in range(len(frame_tracks)):
         for j in range(i + 1, len(frame_tracks)):
             item1 = frame_tracks[i]
             item2 = frame_tracks[j]
-            det1 = Detection(item1[6], item1[7], item1[4], item1[5], item1[1])
-            det2 = Detection(item2[6], item2[7], item2[4], item2[5], item2[1])
-            iou = get_iou(det1, det2)
+            iou = get_iou(item1[3:7], item2[3:7])
             if iou > 0:
-                track_ids_remove.append(item1[1])
-                track_ids_remove.append(item2[1])
+                track_ids_remove.append(item1[0])
+                track_ids_remove.append(item2[0])
 
     track_ids_remove = list(set(track_ids_remove))
     for track_id in track_ids_remove:
@@ -642,16 +788,16 @@ def remove_detect_change_track_id_per_frame(tracks: np.ndarray, frame_number: in
 
 
 def remove_detects_change_track_ids(tracks: np.ndarray):
-    frame_numbers = np.unique(np.sort(tracks[:, 0]))
+    frame_numbers = np.unique(np.sort(tracks[:, 1]))
     for frame_number in frame_numbers:
         tracks = remove_detect_change_track_id_per_frame(tracks, frame_number)
     return tracks
 
 
 def remove_short_tracks(tracks: np.ndarray, min_track_length: int = 50):
-    track_ids = np.unique(np.sort(tracks[:, 1]))
+    track_ids = np.unique(np.sort(tracks[:, 0]))
     for track_id in track_ids:
-        idxs = np.where(tracks[:, 1] == track_id)[0]
+        idxs = np.where(tracks[:, 0] == track_id)[0]
         if len(idxs) < min_track_length:
             tracks = np.delete(tracks, idxs, axis=0)
     return tracks
@@ -659,12 +805,12 @@ def remove_short_tracks(tracks: np.ndarray, min_track_length: int = 50):
 
 def arrange_track_ids(tracks: np.ndarray):
     new_tracks = tracks.copy()
-    track_ids = np.unique(np.sort(tracks[:, 1]))
+    track_ids = np.unique(np.sort(tracks[:, 0]))
     old_to_new_ids = {
         track_id: new_track_id for new_track_id, track_id in enumerate(track_ids)
     }
     for track_id in track_ids:
-        new_tracks[tracks[:, 1] == track_id, 1] = old_to_new_ids[track_id]
+        new_tracks[tracks[:, 0] == track_id, 0] = old_to_new_ids[track_id]
     return new_tracks
 
 
@@ -799,6 +945,7 @@ def read_tracks(track_file):
 
 
 def get_iou(det1, det2) -> float:
+    # det1,2: (x_topleft,y_topleft, x_bottomright, y_bottomright)
     # copied and modified from
     # https://stackoverflow.com/questions/25349178/calculating-percentage-of-bounding-box-overlap-for-image-detector-evaluation
 
@@ -822,6 +969,33 @@ def get_iou(det1, det2) -> float:
     assert iou >= 0.0
     assert iou <= 1.0
     return iou
+
+
+def is_bbox_in_bbox(det1, det2, inters_thres=0.85) -> float:
+    # det1,2: (x_topleft,y_topleft, x_bottomright, y_bottomright)
+
+    # determine the coordinates of the intersection rectangle
+    x_left = max(det1[0], det2[0])
+    y_top = max(det1[1], det2[1])
+    x_right = min(det1[2], det2[2])
+    y_bottom = min(det1[3], det2[3])
+
+    if x_right < x_left or y_bottom < y_top:
+        return False
+
+    # The intersection of two axis-aligned bounding boxes is always an
+    # axis-aligned bounding box
+    intersection_area = (x_right - x_left) * (y_bottom - y_top)
+
+    area1 = (det1[2] - det1[0]) * (det1[3] - det1[1])
+    area2 = (det2[2] - det2[0]) * (det2[3] - det2[1])
+
+    inters_ratio1 = intersection_area / float(area1)
+    inters_ratio2 = intersection_area / float(area2)
+    if (inters_ratio1 >= inters_ratio2) & (inters_ratio1 > inters_thres):
+        return True
+    else:
+        return False
 
 
 def find_detection_in_track_by_frame_number(track, frame_number):

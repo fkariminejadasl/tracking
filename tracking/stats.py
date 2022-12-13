@@ -1,7 +1,6 @@
 import numpy as np
 
-from tracking.data_association import (Detection, Prediction, Status, Track,
-                                       get_iou)
+from tracking.data_association import Detection, Prediction, Status, Track, get_iou
 
 
 def _get_dets_from_indices_of_array(idxs, annos: np.ndarray):
@@ -50,24 +49,26 @@ def make_tracks_from_array(annos: np.ndarray):
 
 
 def make_array_from_tracks(tracks) -> np.ndarray:
+    # # array format: track_id, frame_id, outside, xtl, ytl, xbr, ybr, xc, yc, w, h
     tracks_array = []
     for track_id, track in tracks.items():
-        for coord in track.coords:
+        for det in track.coords:
             item = [
                 track_id,
-                coord.frame_number - 1,  # my frame_number starts from 1
+                det.frame_number - 1,  # my frame_number starts from 1
                 0,
-                int(round(coord.x - coord.w / 2)),  # top left
-                int(round(coord.y - coord.h / 2)),
-                int(round(coord.x + coord.w / 2)),  # bottom right
-                int(round(coord.y + coord.h / 2)),
-                int(round(coord.x)),  # center
-                int(round(coord.y)),
-                coord.w,
-                coord.h,
+                int(round(det.x - det.w / 2)),  # top left
+                int(round(det.y - det.h / 2)),
+                int(round(det.x + det.w / 2)),  # bottom right
+                int(round(det.y + det.h / 2)),
+                int(round(det.x)),  # center
+                int(round(det.y)),
+                det.w,
+                det.h,
             ]
             tracks_array.append(item)
     return np.array(tracks_array).astype(np.int64)
+
 
 
 def get_gt_object_match(atracks, annos, track_id, frame_number, thres=20, min_iou=0.1):
