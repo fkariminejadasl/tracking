@@ -8,29 +8,20 @@ import pytest
 path = (Path(__file__).parents[1]).as_posix()
 sys.path.insert(0, path)
 
-from tracking.data_association import (
-    clean_detections,
-    compute_tracks,
-    get_detections,
-    get_detections_array,
-    get_iou,
-    is_bbox_in_bbox,
-    make_array_from_dets,
-    make_array_from_tracks,
-    make_dets_from_array,
-    make_tracks_from_array,
-    match_detections,
-    read_tracks_cvat_txt_format,
-    read_tracks_from_mot_format,
-    save_tracks_cvat_txt_format,
-    save_tracks_to_mot_format,
-)
-from tracking.stats import (
-    get_gt_object_match,
-    get_stats_for_a_frame,
-    get_stats_for_a_track,
-    get_stats_for_tracks,
-)
+from tracking.data_association import (clean_detections, compute_tracks,
+                                       get_detections, get_detections_array,
+                                       get_iou, is_bbox_in_bbox,
+                                       make_array_from_dets,
+                                       make_array_from_tracks,
+                                       make_dets_from_array,
+                                       make_tracks_from_array,
+                                       match_detections,
+                                       read_tracks_cvat_txt_format,
+                                       read_tracks_from_mot_format,
+                                       save_tracks_cvat_txt_format,
+                                       save_tracks_to_mot_format)
+from tracking.stats import (get_gt_object_match, get_stats_for_a_frame,
+                            get_stats_for_a_track, get_stats_for_tracks)
 
 data_path = Path(__file__).parent / "data"
 annos = read_tracks_cvat_txt_format(data_path / "tracks_gt.txt")
@@ -229,6 +220,23 @@ def test_match_ddetections():
     np.testing.assert_equal(matched_ids_cleaned, desired)
     assert matched_ids_cleaned[0, 0] == clean_detections(adets1)[idxs1[0], 0]
     assert matched_ids_cleaned[0, 1] == clean_detections(adets2)[idxs2[0], 0]
+
+
+def test_match_ddetections2():
+    adets1 = get_detections_array(
+        data_path / "04_07_22_G_2_rect_valid_1.txt", im_width, im_height
+    )
+    adets2 = get_detections_array(
+        data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height
+    )
+    _, _, matched_ids = match_detections(adets1, adets2)
+    idxs1, idxs2, matched_ids_cleaned = match_detections(
+        clean_detections(adets1), clean_detections(adets2)
+    )
+    assert matched_ids_cleaned[0, 0] == clean_detections(adets1)[idxs1[0], 0]
+    assert matched_ids_cleaned[0, 1] == clean_detections(adets2)[idxs2[0], 0]
+    assert matched_ids_cleaned[-1, 0] == clean_detections(adets1)[idxs1[-1], 0]
+    assert matched_ids_cleaned[-1, 1] == clean_detections(adets2)[idxs2[-1], 0]
 
 
 def test_compute_track():

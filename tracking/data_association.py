@@ -411,13 +411,11 @@ def _connect_idxs_to_detection_ids(dets):
     return idxs_to_det_ids, det_ids_to_idxs
 
 
-def _make_a_new_track(
-    coords: list[Detection], flow: Point, new_track_id, status
-) -> Track:
+def _make_a_new_track(coords: list[Detection], new_track_id) -> Track:
     color = tuple(np.random.rand(3).astype(np.float16))
     predicted_loc = Prediction(
-        x=flow.x + coords[-1].x,
-        y=flow.y + coords[-1].y,
+        x=coords[-1].x,
+        y=coords[-1].y,
         w=coords[-1].w,
         h=coords[-1].h,
         track_id=new_track_id,
@@ -428,17 +426,9 @@ def _make_a_new_track(
         coords=coords,
         predicted_loc=predicted_loc,
         color=color,
-        status=status,
+        status=Status.NewTrack,
     )
     return track
-
-
-def _get_common_flow(flows):
-    common_flow = Point(
-        x=np.average(np.array([flow.x for flow in flows])),
-        y=np.average(np.array([flow.y for flow in flows])),
-    )
-    return common_flow
 
 
 def _make_pred_loc_from_det(det, track_id: int = -1):
@@ -461,26 +451,23 @@ def _update_pred_loc(predicted_loc, flow):
 
 
 def _initialize_track_frame1(dets):
-    common_flow = Point(0, 0)
     new_track_id = 0
     tracks = {}
     ids = range(len(dets))
     for id in ids:
         coords = [dets[id]]
 
-        tracks[new_track_id] = _make_a_new_track(
-            coords, common_flow, new_track_id, Status.NewTrack
-        )
+        tracks[new_track_id] = _make_a_new_track(coords, new_track_id)
         new_track_id += 1
-    return tracks, new_track_id, common_flow
+    return tracks, new_track_id
 
 
 def initialize_tracks(det_folder: Path, filename_fixpart: str, width: int, height: int):
     frame_number1 = 1
     det_path = det_folder / f"{filename_fixpart}_{frame_number1}.txt"
     dets = get_detections(det_path, width, height)
-    tracks, new_track_id, common_flow = _initialize_track_frame1(dets)
-    return tracks, new_track_id, common_flow
+    tracks, new_track_id = _initialize_track_frame1(dets)
+    return tracks, new_track_id
 
 
 def _assign_unique_disp(tracks, frame_number):
@@ -519,7 +506,7 @@ def initialize_tracks_with_disps(
         height,
         camera_id,
     )
-    tracks, new_track_id, common_flow = _initialize_track_frame1(dets)
+    tracks, new_track_id = _initialize_track_frame1(dets)
 
     # assign a unique disparity: heuristics
     tracks = _assign_unique_disp(tracks, frame_number)
@@ -528,34 +515,28 @@ def initialize_tracks_with_disps(
     for _, track in tracks.items():
         track.predicted_loc.disp = track.disp
 
-    return tracks, new_track_id, common_flow
+    return tracks, new_track_id
 
 
-def _track_predicted_unmatched(pred_dets, pred_ids, tracks, common_flow):
+def _track_predicted_unmatched(pred_dets, pred_ids, tracks):
     diff_ids = set(range(len(pred_dets))).difference(set(pred_ids))
     for id in diff_ids:
         current_track_id = pred_dets[id].track_id
         track = tracks[current_track_id]
-        track.predicted_loc = _update_pred_loc(track.predicted_loc, common_flow)
+        track.predicted_loc = _update_pred_loc(track.predicted_loc, Point(0, 0))  # TODO
         track.status = Status.Untracked
     return tracks
 
 
-def _track_current_unmatched(
-    dets, ids, frame_number, tracks, new_track_id, common_flow
-):
+def _track_current_unmatched(dets, ids, frame_number, tracks, new_track_id):
     diff_ids = set(range(len(dets))).difference(set(ids))
     for id in diff_ids:
-        tracks[new_track_id] = _make_a_new_track(
-            [dets[id]], common_flow, new_track_id, Status.NewTrack
-        )
+        tracks[new_track_id] = _make_a_new_track([dets[id]], new_track_id)
         new_track_id += 1
     return tracks, new_track_id
 
 
-def _track_matches(
-    pred_ids, ids, pred_dets, dets, tracks, frame_number, common_flow, new_track_id
-):
+def _track_matches(pred_ids, ids, pred_dets, dets, tracks, frame_number, new_track_id):
     flows = [Point(x=0.0, y=0.0)]
     for id1, id2 in zip(pred_ids, ids):
         current_track_id = pred_dets[id1].track_id
@@ -579,18 +560,21 @@ def _track_matches(
                 predicted_loc = _make_pred_loc_from_det(
                     track.coords[-1], current_track_id
                 )
-                track.predicted_loc = _update_pred_loc(predicted_loc, flow)
+                track.predicted_loc = _update_pred_loc(
+                    predicted_loc, Point(0, 0)
+                )  # flow) # TODO
                 track.status = Status.Tracked
             else:
-                track.predicted_loc = _update_pred_loc(track.predicted_loc, common_flow)
+                track.predicted_loc = _update_pred_loc(
+                    track.predicted_loc, Point(0, 0)
+                )  # common_flow) # TODO
                 track.status = Status.Untracked
                 # # bug resolve: but generates many tracklets
                 # tracks[new_track_id] = _make_a_new_track(
-                #     [dets[id2]], common_flow, new_track_id, Status.NewTrack
+                #     [dets[id2]], new_track_id
                 # )
                 # new_track_id += 1
-    common_flow = _get_common_flow(flows)
-    return tracks, common_flow, new_track_id
+    return tracks, new_track_id
 
 
 def compute_tracks_with_disps(
@@ -603,7 +587,7 @@ def compute_tracks_with_disps(
     height: int,
     total_no_frames: int = 680,
 ):
-    tracks, new_track_id, common_flow = initialize_tracks_with_disps(
+    tracks, new_track_id = initialize_tracks_with_disps(
         det_folder_cam1,
         filename_fixpart_cam1,
         det_folder_cam2,
@@ -633,23 +617,22 @@ def compute_tracks_with_disps(
         pred_ids, ids = match_two_detection_sets_with_disps(pred_dets, dets)
 
         # track maches
-        tracks, common_flow, new_track_id = _track_matches(
+        tracks, new_track_id = _track_matches(
             pred_ids,
             ids,
             pred_dets,
             dets,
             tracks,
             frame_number,
-            common_flow,
             new_track_id,
         )
 
         # unmatched tracks: predicted
-        tracks = _track_predicted_unmatched(pred_dets, pred_ids, tracks, common_flow)
+        tracks = _track_predicted_unmatched(pred_dets, pred_ids, tracks)
 
         # unmatched tracks: current
         tracks, new_track_id = _track_current_unmatched(
-            dets, ids, frame_number, tracks, new_track_id, common_flow
+            dets, ids, frame_number, tracks, new_track_id
         )
 
         # assign a unique disparity: heuristics
@@ -670,7 +653,7 @@ def compute_tracks(
     height: int,
     total_no_frames: int,
 ):
-    tracks, new_track_id, common_flow = initialize_tracks(
+    tracks, new_track_id = initialize_tracks(
         det_folder, filename_fixpart, width, height
     )
 
@@ -692,23 +675,22 @@ def compute_tracks(
         # pred_ids, ids, _ = match_detections(pred_dets_array, dets_cleaned)
 
         # track maches
-        tracks, common_flow, new_track_id = _track_matches(
+        tracks, new_track_id = _track_matches(
             pred_ids,
             ids,
             pred_dets,
             dets,
             tracks,
             frame_number,
-            common_flow,
             new_track_id,
         )
 
         # unmatched tracks: predicted
-        tracks = _track_predicted_unmatched(pred_dets, pred_ids, tracks, common_flow)
+        tracks = _track_predicted_unmatched(pred_dets, pred_ids, tracks)
 
         # unmatched tracks: current
         tracks, new_track_id = _track_current_unmatched(
-            dets, ids, frame_number, tracks, new_track_id, common_flow
+            dets, ids, frame_number, tracks, new_track_id
         )
 
     return tracks

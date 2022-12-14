@@ -3,12 +3,9 @@ import matplotlib.patches as patches
 import numpy as np
 from matplotlib import pyplot as plt
 
-from tracking.data_association import (
-    Point,
-    get_detections,
-    get_frame_numbers_of_track,
-    get_video_parameters,
-)
+from tracking.data_association import (Point, get_detections,
+                                       get_frame_numbers_of_track,
+                                       get_video_parameters)
 
 
 def _create_output_video(
@@ -469,6 +466,26 @@ def get_stereo_frames(frame_number, vc1, vc2):
     _, frame_c1 = vc1.read()
     _, frame_c2 = vc2.read()
     return frame_c1, frame_c2
+
+
+def plot_two_tracks_stats(s1, s2):
+    _, axs = plt.subplots(2, 3)
+    axs[0, 0].plot(s1[:, 0], s1[:, 1], "-*", label="s1")
+    axs[0, 0].plot(s1[:, 0], s2[:, 1], "-*", label="s2")
+    axs[0, 1].plot(s1[:, 0], s1[:, 2], "-*")
+    axs[0, 1].plot(s1[:, 0], s2[:, 2], "-*")
+    axs[0, 2].plot(s1[:, 0], s1[:, 3], "-*")
+    axs[0, 2].plot(s1[:, 0], s2[:, 3], "-*")
+    axs[1, 0].plot(s1[:, 0], s1[:, 4], "-*")
+    axs[1, 0].plot(s1[:, 0], s2[:, 4], "-*")
+    axs[1, 1].plot(s1[:, 0], s1[:, 5], "-*")
+    axs[1, 1].plot(s1[:, 0], s2[:, 5], "-*")
+    axs[0, 0].legend()
+    axs[0, 0].set_title("tp")
+    axs[0, 1].set_title("fp")
+    axs[0, 2].set_title("fn")
+    axs[1, 0].set_title("sw")
+    axs[1, 1].set_title("uid")
 
 
 ### Maybe removed
