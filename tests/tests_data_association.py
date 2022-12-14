@@ -8,18 +8,29 @@ import pytest
 path = (Path(__file__).parents[1]).as_posix()
 sys.path.insert(0, path)
 
-from tracking.data_association import (clean_detections, compute_tracks,
-                                       get_detections, get_detections_array,
-                                       get_iou, is_bbox_in_bbox,
-                                       make_array_from_dets,
-                                       make_dets_from_array, match_detections,
-                                       read_tracks_cvat_txt_format,
-                                       read_tracks_from_mot_format,
-                                       save_tracks_cvat_txt_format,
-                                       save_tracks_to_mot_format)
-from tracking.stats import (get_gt_object_match, get_stats_for_a_frame,
-                            get_stats_for_a_track, get_stats_for_tracks,
-                            make_array_from_tracks, make_tracks_from_array)
+from tracking.data_association import (
+    clean_detections,
+    compute_tracks,
+    get_detections,
+    get_detections_array,
+    get_iou,
+    is_bbox_in_bbox,
+    make_array_from_dets,
+    make_array_from_tracks,
+    make_dets_from_array,
+    make_tracks_from_array,
+    match_detections,
+    read_tracks_cvat_txt_format,
+    read_tracks_from_mot_format,
+    save_tracks_cvat_txt_format,
+    save_tracks_to_mot_format,
+)
+from tracking.stats import (
+    get_gt_object_match,
+    get_stats_for_a_frame,
+    get_stats_for_a_track,
+    get_stats_for_tracks,
+)
 
 data_path = Path(__file__).parent / "data"
 annos = read_tracks_cvat_txt_format(data_path / "tracks_gt.txt")
@@ -158,7 +169,7 @@ def test_get_stats_for_a_track_after_iou_bug():
     atracks = read_tracks_cvat_txt_format(data_path / "tracks_iou_bug.txt")
     gt_track_id = 28
     tp, fp, fn, sw, uid, _ = get_stats_for_a_track(annos, atracks, gt_track_id)
-    np.testing.assert_equal((tp, fp, fn, sw, uid), (371, 0, 228, 255, 13))
+    np.testing.assert_equal((tp, fp, fn, sw, uid), (346, 0, 253, 199, 14))
     assert tp + fn == len(annos[annos[:, 0] == gt_track_id])
 
 
@@ -231,4 +242,4 @@ def test_compute_track():
     ).astype(np.int64)
     desired = atracks[atracks[:, 1] < 3]
 
-    np.testing.assert_equal(tracks_array, desired)
+    np.testing.assert_equal(tracks_array[:, :7], desired)
