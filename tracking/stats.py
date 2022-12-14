@@ -1,6 +1,7 @@
 import numpy as np
 
-from tracking.data_association import Detection, Prediction, Status, Track, get_iou
+from tracking.data_association import (Detection, Prediction, Status, Track,
+                                       get_iou)
 
 
 def _get_dets_from_indices_of_array(idxs, annos: np.ndarray):
@@ -68,7 +69,6 @@ def make_array_from_tracks(tracks) -> np.ndarray:
             ]
             tracks_array.append(item)
     return np.array(tracks_array).astype(np.int64)
-
 
 
 def get_gt_object_match(atracks, annos, track_id, frame_number, thres=20, min_iou=0.1):

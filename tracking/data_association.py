@@ -311,27 +311,6 @@ class Track:
     disp: DispWithProb = DispWithProb()
 
 
-# def match_two_detection_sets_with_disps(dets1, dets2):
-#     ignored_inds = []
-#     if isinstance(dets1[0], DetectionWithDisp):
-#         for det in dets2:
-#             if len(det.disp_candidates)==0:
-#                 ignored_inds.append(det.det_id)
-#     dist = np.zeros((len(dets1), len(dets2)-len(ignored_inds)), dtype=np.float32)
-#     for det1 in dets1:
-#         for det2 in dets2:
-#             iou_loss = 1 - get_iou(det1, det2)
-#             loc_loss = np.linalg.norm([det2.x - det1.x, det2.y - det1.y])
-#             disp_loss = 0
-#             # if det1.disp.val != -1 and len(det2.disp_candidates) > 0:
-#             #     disp_loss = min(
-#             #         [abs(disp2 - det1.disp.val) for disp2 in det2.disp_candidates]
-#             #     )
-#             # else:
-#             #     disp_loss = 0
-#             dist[i, j] = iou_loss + disp_loss
-#     row_ind, col_ind = linear_sum_assignment(dist)
-#     return row_ind, col_ind
 def match_two_detection_sets_with_disps(dets1, dets2):
     dist = np.zeros((len(dets1), len(dets2)), dtype=np.float32)
     for i, det1 in enumerate(dets1):
