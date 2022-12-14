@@ -518,12 +518,25 @@ def initialize_tracks_with_disps(
     return tracks, new_track_id
 
 
+def _get_predicted_flow(track, current_frame_number):
+    flow = Point(0, 0)
+    if len(track.coords) > 1:
+        num_missing_frames = current_frame_number - track.coords[-1].frame_number
+        flow = Point(
+            x=(track.coords[-1].x - track.coords[-2].x) * num_missing_frames,
+            y=(track.coords[-1].y - track.coords[-2].y) * num_missing_frames,
+        )
+    return flow
+
+
 def _track_predicted_unmatched(pred_dets, pred_ids, tracks):
     diff_ids = set(range(len(pred_dets))).difference(set(pred_ids))
     for id in diff_ids:
         current_track_id = pred_dets[id].track_id
         track = tracks[current_track_id]
-        track.predicted_loc = _update_pred_loc(track.predicted_loc, Point(0, 0))  # TODO
+        # current_frame_number = pred_dets[id].frame_number
+        flow = Point(0, 0)  # _get_predicted_flow(track, current_frame_number) # TODO
+        track.predicted_loc = _update_pred_loc(track.predicted_loc, flow)
         track.status = Status.Untracked
     return tracks
 
@@ -536,13 +549,14 @@ def _track_current_unmatched(dets, ids, frame_number, tracks, new_track_id):
     return tracks, new_track_id
 
 
-def _track_matches(pred_ids, ids, pred_dets, dets, tracks, frame_number, new_track_id):
-    flows = [Point(x=0.0, y=0.0)]
+def _track_matches(
+    pred_ids, ids, pred_dets, dets, tracks, current_frame_number, new_track_id
+):
     for id1, id2 in zip(pred_ids, ids):
         current_track_id = pred_dets[id1].track_id
         track = tracks[current_track_id]
         # kill tracks that are not tracked for a while
-        if frame_number - track.coords[-1].frame_number > stopped_track_length:
+        if current_frame_number - track.coords[-1].frame_number > stopped_track_length:
             track.status = Status.Stoped
         else:
             dist = np.linalg.norm(
@@ -550,24 +564,18 @@ def _track_matches(pred_ids, ids, pred_dets, dets, tracks, frame_number, new_tra
             )
             if dist < accepted_flow_length:
                 track.coords.append(dets[id2])
-                flow = Point(
-                    x=track.coords[-1].x - track.coords[-2].x,
-                    y=track.coords[-1].y - track.coords[-2].y,
-                )
-                flow_length = np.linalg.norm([flow.x, flow.y])
-                if flow_length < accepted_flow_length:
-                    flows.append(flow)
                 predicted_loc = _make_pred_loc_from_det(
                     track.coords[-1], current_track_id
                 )
-                track.predicted_loc = _update_pred_loc(
-                    predicted_loc, Point(0, 0)
-                )  # flow) # TODO
+
+                flow = _get_predicted_flow(track, current_frame_number)
+                track.predicted_loc = _update_pred_loc(predicted_loc, flow)
                 track.status = Status.Tracked
             else:
-                track.predicted_loc = _update_pred_loc(
-                    track.predicted_loc, Point(0, 0)
-                )  # common_flow) # TODO
+                flow = Point(
+                    0, 0
+                )  # _get_predicted_flow(track, current_frame_number) # TODO
+                track.predicted_loc = _update_pred_loc(track.predicted_loc, flow)
                 track.status = Status.Untracked
                 # # bug resolve: but generates many tracklets
                 # tracks[new_track_id] = _make_a_new_track(
