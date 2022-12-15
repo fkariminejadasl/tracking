@@ -345,6 +345,8 @@ def match_detections(dets1: np.ndarray, dets2: np.ndarray):
         if det2 is not None:
             matched_ids.append([det1[0], det2[0]])
     matched_ids = np.array(matched_ids).astype(np.int64)
+    if len(matched_ids.shape) == 1:
+        return None, None, None
     idxs1 = _get_indices(dets1, matched_ids[:, 0])
     idxs2 = _get_indices(dets2, matched_ids[:, 1])
     return idxs1, idxs2, matched_ids
@@ -523,8 +525,8 @@ def _get_predicted_flow(track, current_frame_number):
     if len(track.coords) > 1:
         num_missing_frames = current_frame_number - track.coords[-1].frame_number
         flow = Point(
-            x=(track.coords[-1].x - track.coords[-2].x) * num_missing_frames,
-            y=(track.coords[-1].y - track.coords[-2].y) * num_missing_frames,
+            x=(track.coords[-1].x - track.coords[-2].x) * num_missing_frames // 2,
+            y=(track.coords[-1].y - track.coords[-2].y) * num_missing_frames // 2,
         )
     return flow
 
@@ -534,9 +536,7 @@ def _track_predicted_unmatched(pred_dets, pred_ids, tracks):
     for id in diff_ids:
         current_track_id = pred_dets[id].track_id
         track = tracks[current_track_id]
-        # current_frame_number = pred_dets[id].frame_number
-        flow = Point(0, 0)  # _get_predicted_flow(track, current_frame_number) # TODO
-        track.predicted_loc = _update_pred_loc(track.predicted_loc, flow)
+        track.predicted_loc = _update_pred_loc(track.predicted_loc, flow=Point(0, 0))
         track.status = Status.Untracked
     return tracks
 
@@ -572,10 +572,9 @@ def _track_matches(
                 track.predicted_loc = _update_pred_loc(predicted_loc, flow)
                 track.status = Status.Tracked
             else:
-                flow = Point(
-                    0, 0
-                )  # _get_predicted_flow(track, current_frame_number) # TODO
-                track.predicted_loc = _update_pred_loc(track.predicted_loc, flow)
+                track.predicted_loc = _update_pred_loc(
+                    track.predicted_loc, flow=Point(0, 0)
+                )
                 track.status = Status.Untracked
                 # # bug resolve: but generates many tracklets
                 # tracks[new_track_id] = _make_a_new_track(
@@ -676,11 +675,19 @@ def compute_tracks(
             if track.status != Status.Stoped
         ]
         pred_ids, ids = match_two_detection_sets(pred_dets, dets)
+        # print(frame_number)
+        # print(pred_ids.shape, ids.shape)
+        # print(np.vstack((pred_ids, ids)).T)
         ## TODO: bug somewhere
         # pred_dets_array = make_array_from_dets(pred_dets)
-        # dets_cleaned = clean_detections(make_array_from_dets(dets))
+        # dets_cleaned = make_array_from_dets(
+        #     dets
+        # )  # clean_detections(make_array_from_dets(dets))
         # dets = make_dets_from_array(dets_cleaned)
         # pred_ids, ids, _ = match_detections(pred_dets_array, dets_cleaned)
+
+        if ids is None:
+            return tracks
 
         # track maches
         tracks, new_track_id = _track_matches(
@@ -701,6 +708,10 @@ def compute_tracks(
             dets, ids, frame_number, tracks, new_track_id
         )
 
+        if frame_number in [46, 47]:
+            print(tracks[35].coords[-1])
+            print(tracks[35].predicted_loc)
+            print("=====")
     return tracks
 
 
