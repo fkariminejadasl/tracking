@@ -60,9 +60,8 @@ def crop_video(
         output_video_file, vc, out_width, out_height
     )
 
-    for frame_number in range(1, total_no_frames + 1):
-        vc.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
-        _, frame = vc.read()
+    for frame_number in range(0, total_no_frames):
+        frame = get_frame(frame_number, vc)
 
         out = _write_frame_in_video(
             frame, out, frame_number, top_left, out_width, out_height
@@ -101,11 +100,10 @@ def visualize_detections_in_video(
         output_video_file, vc, out_width, out_height
     )
 
-    for frame_number in range(1, total_no_frames + 1):
-        vc.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
-        _, frame = vc.read()
+    for frame_number in range(0, total_no_frames):
+        frame = get_frame(frame_number, vc)
 
-        det_path = det_folder / f"{filename_fixpart}_{frame_number}.txt"
+        det_path = det_folder / f"{filename_fixpart}_{frame_number+1}.txt"
         dets = get_detections(det_path, frame_number, width, height)
 
         for coord in dets:
@@ -144,11 +142,10 @@ def draw_matches(frame1, frame2, matches1, matches2):
     plt.show(block=False)
 
 
-def visualize_tracks_on_a_frame(tracks, vc, frame_number=1):
-    vc.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
-    _, frame1 = vc.read()
+def visualize_tracks_on_a_frame(tracks, vc, frame_number=0):
+    frame = get_frame(frame_number, vc)
     plt.figure()
-    plt.imshow(frame1[..., ::-1])
+    plt.imshow(frame[..., ::-1])
     for _, track in tracks.items():
         plt.plot(
             [det.x for det in track.coords],
@@ -236,9 +233,8 @@ def visualize_tracks_in_video(
             output_video_file, vc, out_width, out_height, fps
         )
 
-    for frame_number in range(1, total_no_frames + 1):
-        vc.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
-        _, frame = vc.read()
+    for frame_number in range(0, total_no_frames):
+        frame = get_frame(frame_number, vc)
 
         for track_id, track in tracks.items():
             frame_numbers = get_frame_numbers_of_track(track)
@@ -302,7 +298,7 @@ def visualize_matches_in_video(
             output_video_file, vc1, out_width, out_height, fps
         )
     font_scale = 1
-    for frame_number in range(1, total_no_frames + 1):
+    for frame_number in range(0, total_no_frames):
         frame1, frame2 = get_stereo_frames(frame_number, vc1, vc2)
 
         for track_id1, value in all_matches.items():
@@ -455,14 +451,14 @@ def show_detections_in_stereo(frame1, frame2, dets1, dets2, image_width):
 
 
 def get_frame(frame_number, vc):
-    vc.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
+    vc.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
     _, frame = vc.read()
     return frame
 
 
 def get_stereo_frames(frame_number, vc1, vc2):
-    vc1.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
-    vc2.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
+    vc1.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
+    vc2.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
     _, frame_c1 = vc1.read()
     _, frame_c2 = vc2.read()
     return frame_c1, frame_c2

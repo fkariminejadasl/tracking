@@ -52,7 +52,7 @@ class DispWithProb:
     prob: float = 0.0
     count: int = 0
     current_frame_number: int = 0
-    frame_number: int = 0
+    frame_number: int = -1
 
 
 @dataclass
@@ -126,7 +126,7 @@ def get_detections_with_disp(
     camera_id2 = 2
     if camera_id == 2:
         camera_id2 = 1
-    frame_number = int(det_path_cam1.stem.split("_")[-1])
+    frame_number = int(det_path_cam1.stem.split("_")[-1]) - 1
     assert frame_number == int(det_path_cam2.stem.split("_")[-1]), "not a stereo pair"
     dets_cam1 = get_detections(det_path_cam1, width, height, camera_id=camera_id)
     dets_cam2 = get_detections(det_path_cam2, width, height, camera_id=camera_id2)
@@ -152,7 +152,7 @@ def get_detections_with_disp(
 def get_detections(
     det_file: Path, width: int, height: int, camera_id: int = 1
 ) -> list[Detection]:
-    frame_number = int(det_file.stem.split("_")[-1])
+    frame_number = int(det_file.stem.split("_")[-1]) - 1
     detections = np.loadtxt(det_file)
     return [
         Detection(
@@ -179,7 +179,7 @@ def _tl_br_from_cen_wh(center_x, center_y, bbox_w, bbox_h) -> tuple:
 
 
 def get_detections_array(det_file: Path, width: int, height: int) -> list[np.ndarray]:
-    frame_number = int(det_file.stem.split("_")[-1])
+    frame_number = int(det_file.stem.split("_")[-1]) - 1
     detections = np.loadtxt(det_file)
     dets_array = []
     for det_id, det in enumerate(detections):
@@ -193,7 +193,7 @@ def get_detections_array(det_file: Path, width: int, height: int) -> list[np.nda
 
         item = [
             det_id,
-            frame_number - 1,
+            frame_number,
             0,
             x_tl,
             y_tl,
@@ -215,7 +215,7 @@ def make_array_from_dets(dets: list[Detection]):
         x_tl, y_tl, x_br, y_br = _tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
         item = [
             det.det_id,
-            det.frame_number - 1,
+            det.frame_number,
             0,
             x_tl,  # top left
             y_tl,
@@ -238,7 +238,7 @@ def make_array_from_tracks(tracks) -> np.ndarray:
             x_tl, y_tl, x_br, y_br = _tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
             item = [
                 track_id,
-                det.frame_number - 1,  # my frame_number starts from 1
+                det.frame_number,
                 det.det_id,
                 x_tl,  # top left
                 y_tl,
@@ -263,7 +263,7 @@ def make_dets_from_array(dets_array: np.ndarray) -> list[Detection]:
             w=det[9],
             h=det[10],
             det_id=det[0],
-            frame_number=det[1] + 1,
+            frame_number=det[1],
         )
         dets.append(item)
     return dets
@@ -279,7 +279,7 @@ def _get_dets_from_indices_of_array(idxs, annos: np.ndarray):
             w=anno[9],
             h=anno[10],
             det_id=anno[0],
-            frame_number=anno[1] + 1,  # my frame_number starts from 1
+            frame_number=anno[1],
         )
         dets_anno.append(det)
     return dets_anno
@@ -466,8 +466,8 @@ def _initialize_track_frame1(dets):
 
 
 def initialize_tracks(det_folder: Path, filename_fixpart: str, width: int, height: int):
-    frame_number1 = 1
-    det_path = det_folder / f"{filename_fixpart}_{frame_number1}.txt"
+    frame_number = 0
+    det_path = det_folder / f"{filename_fixpart}_{frame_number + 1}.txt"
     dets = get_detections(det_path, width, height)
     tracks, new_track_id = _initialize_track_frame1(dets)
     return tracks, new_track_id
@@ -499,9 +499,9 @@ def initialize_tracks_with_disps(
     width: int,
     height: int,
 ):
-    frame_number = 1
-    det_path_cam1 = det_folder_cam1 / f"{filename_fixpart_cam1}_{frame_number}.txt"
-    det_path_cam2 = det_folder_cam2 / f"{filename_fixpart_cam2}_{frame_number}.txt"
+    frame_number = 0
+    det_path_cam1 = det_folder_cam1 / f"{filename_fixpart_cam1}_{frame_number + 1}.txt"
+    det_path_cam2 = det_folder_cam2 / f"{filename_fixpart_cam2}_{frame_number + 1}.txt"
     dets = get_detections_with_disp(
         det_path_cam1,
         det_path_cam2,
@@ -606,9 +606,13 @@ def compute_tracks_with_disps(
     )
     # start track
     # ===========
-    for frame_number in range(2, total_no_frames + 1):
-        det_path_cam1 = det_folder_cam1 / f"{filename_fixpart_cam1}_{frame_number}.txt"
-        det_path_cam2 = det_folder_cam2 / f"{filename_fixpart_cam2}_{frame_number}.txt"
+    for frame_number in range(1, total_no_frames):
+        det_path_cam1 = (
+            det_folder_cam1 / f"{filename_fixpart_cam1}_{frame_number+1}.txt"
+        )
+        det_path_cam2 = (
+            det_folder_cam2 / f"{filename_fixpart_cam2}_{frame_number+1}.txt"
+        )
         dets = get_detections_with_disp(
             det_path_cam1,
             det_path_cam2,
@@ -667,8 +671,8 @@ def compute_tracks(
 
     # start track
     # ===========
-    for frame_number in range(2, total_no_frames + 1):
-        det_path = det_folder / f"{filename_fixpart}_{frame_number}.txt"
+    for frame_number in range(1, total_no_frames):
+        det_path = det_folder / f"{filename_fixpart}_{frame_number + 1}.txt"
         dets = get_detections(det_path, width, height, camera_id)
         pred_dets = [
             track.predicted_loc
@@ -709,10 +713,10 @@ def compute_tracks(
             dets, ids, frame_number, tracks, new_track_id
         )
 
-        if frame_number in [46, 47]:
-            print(tracks[35].coords[-1])
-            print(tracks[35].predicted_loc)
-            print("=====")
+        # if frame_number in [45, 46]:
+        #     print(tracks[35].coords[-1])
+        #     print(tracks[35].predicted_loc)
+        #     print("=====")
     return tracks
 
 
@@ -791,7 +795,7 @@ def save_tracks_to_mot_format(
                     top_left_x = det.x - det.w / 2
                     top_left_y = det.y - det.h / 2
                     file.write(
-                        f"{det.frame_number},{track_id+1},{top_left_x+1},{top_left_y+1},{det.w},{det.h},1,1,1.0\n"
+                        f"{det.frame_number+1},{track_id+1},{top_left_x+1},{top_left_y+1},{det.w},{det.h},1,1,1.0\n"
                     )
     if isinstance(tracks, np.ndarray):
         with open(track_file, "w") as file:
