@@ -47,28 +47,6 @@ class Point:
 
 
 @dataclass
-class DispWithProb:
-    val: int = -1
-    prob: float = 0.0
-    count: int = 0
-    current_frame_number: int = 0
-    frame_number: int = -1
-
-
-@dataclass
-class DetectionWithDisp:
-    x: int
-    y: int
-    w: int
-    h: int
-    det_id: int
-    disp_candidates: list[int]
-    frame_number: int = -1
-    score: np.float16 = -1
-    camera_id: int = 0
-
-
-@dataclass
 class Detection:
     x: int
     y: int
@@ -81,72 +59,25 @@ class Detection:
     track_id: int = -1
 
 
-@dataclass
-class Prediction:
-    x: int
-    y: int
-    w: int
-    h: int
-    track_id: int
-    det_id: int
-    frame_number: int
-    disp: DispWithProb = DispWithProb()
+def _copy_detection(det: Detection):
+    return Detection(
+        x=det.x,
+        y=det.y,
+        w=det.w,
+        h=det.h,
+        track_id=det.track_id,
+        det_id=det.det_id,
+        frame_number=det.frame_number,
+        score=det.score,
+        camera_id=det.camera_id,
+    )
 
 
 @dataclass
 class Track:
     coords: list[Detection]
-    predicted_loc: Detection
     color: tuple
     status: Status
-    disp: DispWithProb = DispWithProb()
-
-
-def _compute_disp_candidates(det1, dets2) -> list[int]:
-    disp_candidates = []
-    for det2 in dets2:
-        disp = abs(det1.x - det2.x)
-        rectification_error = abs(det1.y - det2.y)
-        if (
-            rectification_error < accepted_rect_error
-            and disp < largest_disparity
-            and disp > smallest_disparity
-        ):
-            disp_candidates.append(disp)
-    return disp_candidates
-
-
-def get_detections_with_disp(
-    det_path_cam1,
-    det_path_cam2,
-    width: int,
-    height: int,
-    camera_id: int = 1,
-) -> list[DetectionWithDisp]:
-    camera_id2 = 2
-    if camera_id == 2:
-        camera_id2 = 1
-    frame_number = int(det_path_cam1.stem.split("_")[-1]) - 1
-    assert frame_number == int(det_path_cam2.stem.split("_")[-1]), "not a stereo pair"
-    dets_cam1 = get_detections(det_path_cam1, width, height, camera_id=camera_id)
-    dets_cam2 = get_detections(det_path_cam2, width, height, camera_id=camera_id2)
-    detections = []
-    for det in dets_cam1:
-        disp_candidates = _compute_disp_candidates(det, dets_cam2)
-        detection = DetectionWithDisp(
-            x=det.x,
-            y=det.y,
-            w=det.w,
-            h=det.h,
-            frame_number=frame_number,
-            det_id=det.det_id,
-            score=det.score,
-            camera_id=det.camera_id,
-            disp_candidates=disp_candidates,
-        )
-        detections.append(detection)
-
-    return detections
 
 
 def get_detections(
@@ -297,14 +228,9 @@ def make_tracks_from_array(annos: np.ndarray):
     tracks_anno = {}
     track_ids = np.unique(annos[:, 0])
     for track_id in track_ids:
-        dummy_prediction = Prediction(
-            -1, -1, -1, -1, track_id=track_id, det_id=-1, frame_number=-1
-        )
         coords = _get_track_coords_from_array(annos, track_id)
         color = tuple(np.random.rand(3).astype(np.float16))
-        tracks_anno[track_id] = Track(
-            coords, dummy_prediction, color=color, status=Status.Tracked
-        )
+        tracks_anno[track_id] = Track(coords, color=color, status=Status.Tracked)
     return tracks_anno
 
 
@@ -376,24 +302,6 @@ def match_detections(dets1: np.ndarray, dets2: np.ndarray):
     return idxs1, idxs2, matched_ids
 
 
-def match_two_detection_sets_with_disps(dets1, dets2):
-    dist = np.zeros((len(dets1), len(dets2)), dtype=np.float32)
-    for i, det1 in enumerate(dets1):
-        for j, det2 in enumerate(dets2):
-            iou_loss = 1 - get_iou(_get_tl_and_br(det1), _get_tl_and_br(det2))
-            loc_loss = np.linalg.norm([det2.x - det1.x, det2.y - det1.y])
-            disp_loss = 0
-            # if det1.disp.val != -1 and len(det2.disp_candidates) > 0:
-            #     disp_loss = min(
-            #         [abs(disp2 - det1.disp.val) for disp2 in det2.disp_candidates]
-            #     )
-            # else:
-            #     disp_loss = 0
-            dist[i, j] = iou_loss + disp_loss
-    row_ind, col_ind = linear_sum_assignment(dist)
-    return row_ind, col_ind
-
-
 def _get_tl_and_br(det: Detection) -> tuple:
     return det.x - det.w / 2, det.y - det.h / 2, det.x + det.w / 2, det.y + det.h / 2
 
@@ -402,7 +310,6 @@ def match_two_detection_sets(dets1, dets2):
     dist = np.zeros((len(dets1), len(dets2)), dtype=np.float32)
     for i, det1 in enumerate(dets1):
         for j, det2 in enumerate(dets2):
-
             iou_loss = 1 - get_iou(_get_tl_and_br(det1), _get_tl_and_br(det2))
             loc_loss = np.linalg.norm([det2.x - det1.x, det2.y - det1.y])
             dist[i, j] = iou_loss + loc_loss
@@ -416,43 +323,16 @@ def _connect_idxs_to_detection_ids(dets):
     return idxs_to_det_ids, det_ids_to_idxs
 
 
-def _make_a_new_track(coords: list[Detection], new_track_id) -> Track:
+def _make_a_new_track(det: Detection, new_track_id) -> Track:
     color = tuple(np.random.rand(3).astype(np.float16))
-    predicted_loc = Detection(
-        x=coords[-1].x,
-        y=coords[-1].y,
-        w=coords[-1].w,
-        h=coords[-1].h,
-        track_id=new_track_id,
-        det_id=coords[-1].det_id,
-        frame_number=coords[-1].frame_number,
-    )
+    det.track_id = new_track_id
+
     track = Track(
-        coords=coords,
-        predicted_loc=predicted_loc,
+        coords=[det],
         color=color,
         status=Status.NewTrack,
     )
     return track
-
-
-def _make_pred_loc_from_det(det, track_id: int = -1):
-    return Prediction(
-        det.x, det.y, det.w, det.h, track_id, det.det_id, det.frame_number
-    )
-
-
-def _update_pred_loc(predicted_loc, flow):
-    updated_predicted_loc = Detection(
-        x=predicted_loc.x + flow.x,
-        y=predicted_loc.y + flow.y,
-        w=predicted_loc.w,
-        h=predicted_loc.h,
-        track_id=predicted_loc.track_id,
-        det_id=predicted_loc.det_id,
-        frame_number=predicted_loc.frame_number,
-    )
-    return updated_predicted_loc
 
 
 def _initialize_track_frame1(dets):
@@ -460,10 +340,7 @@ def _initialize_track_frame1(dets):
     tracks = {}
     ids = range(len(dets))
     for id in ids:
-        dets[id].track_id = new_track_id
-        coords = [dets[id]]
-
-        tracks[new_track_id] = _make_a_new_track(coords, new_track_id)
+        tracks[new_track_id] = _make_a_new_track(dets[id], new_track_id)
         new_track_id += 1
     return tracks, new_track_id
 
@@ -473,54 +350,6 @@ def initialize_tracks(det_folder: Path, filename_fixpart: str, width: int, heigh
     det_path = det_folder / f"{filename_fixpart}_{frame_number + 1}.txt"
     dets = get_detections(det_path, width, height)
     tracks, new_track_id = _initialize_track_frame1(dets)
-    return tracks, new_track_id
-
-
-def _assign_unique_disp(tracks, frame_number):
-    for track_id, track in tracks.items():
-        coord = track.coords[-1]
-        if (len(coord.disp_candidates) == 1) and (frame_number == coord.frame_number):
-            disp = DispWithProb(
-                coord.disp_candidates[0],
-                1.0,
-                track.disp.count + 1,
-                frame_number,
-                coord.frame_number,
-            )
-            track.disp = disp
-        if frame_number != coord.frame_number:
-            track.disp.current_frame_number = frame_number
-    return tracks
-
-
-def initialize_tracks_with_disps(
-    det_folder_cam1: Path,
-    filename_fixpart_cam1: str,
-    det_folder_cam2: Path,
-    filename_fixpart_cam2: str,
-    camera_id: int,
-    width: int,
-    height: int,
-):
-    frame_number = 0
-    det_path_cam1 = det_folder_cam1 / f"{filename_fixpart_cam1}_{frame_number + 1}.txt"
-    det_path_cam2 = det_folder_cam2 / f"{filename_fixpart_cam2}_{frame_number + 1}.txt"
-    dets = get_detections_with_disp(
-        det_path_cam1,
-        det_path_cam2,
-        width,
-        height,
-        camera_id,
-    )
-    tracks, new_track_id = _initialize_track_frame1(dets)
-
-    # assign a unique disparity: heuristics
-    tracks = _assign_unique_disp(tracks, frame_number)
-
-    # assign disparities to predictions
-    for _, track in tracks.items():
-        track.predicted_loc.disp = track.disp
-
     return tracks, new_track_id
 
 
@@ -540,7 +369,6 @@ def _track_predicted_unmatched(pred_dets, pred_ids, tracks):
     for id in diff_ids:
         current_track_id = pred_dets[id].track_id
         track = tracks[current_track_id]
-        track.predicted_loc = _update_pred_loc(track.predicted_loc, flow=Point(0, 0))
         track.status = Status.Untracked
     return tracks
 
@@ -548,7 +376,7 @@ def _track_predicted_unmatched(pred_dets, pred_ids, tracks):
 def _track_current_unmatched(dets, ids, frame_number, tracks, new_track_id):
     diff_ids = set(range(len(dets))).difference(set(ids))
     for id in diff_ids:
-        tracks[new_track_id] = _make_a_new_track([dets[id]], new_track_id)
+        tracks[new_track_id] = _make_a_new_track(dets[id], new_track_id)
         new_track_id += 1
     return tracks, new_track_id
 
@@ -569,96 +397,28 @@ def _track_matches(
             if dist < accepted_flow_length:
                 dets[id2].track_id = current_track_id
                 track.coords.append(dets[id2])
-                predicted_loc = _make_pred_loc_from_det(
-                    track.coords[-1], current_track_id
-                )
-
-                flow = _get_predicted_flow(track, current_frame_number)
-                track.predicted_loc = _update_pred_loc(predicted_loc, flow)
                 track.status = Status.Tracked
             else:
-                track.predicted_loc = _update_pred_loc(
-                    track.predicted_loc, flow=Point(0, 0)
-                )
                 track.status = Status.Untracked
                 # # bug resolve: but generates many tracklets
                 # tracks[new_track_id] = _make_a_new_track(
-                #     [dets[id2]], new_track_id
+                #     dets[id2], new_track_id
                 # )
                 # new_track_id += 1
     return tracks, new_track_id
 
 
-def compute_tracks_with_disps(
-    det_folder_cam1: Path,
-    filename_fixpart_cam1: str,
-    det_folder_cam2: Path,
-    filename_fixpart_cam2: str,
-    camera_id: int,
-    width: int,
-    height: int,
-    total_no_frames: int = 680,
-):
-    tracks, new_track_id = initialize_tracks_with_disps(
-        det_folder_cam1,
-        filename_fixpart_cam1,
-        det_folder_cam2,
-        filename_fixpart_cam2,
-        camera_id,
-        width,
-        height,
-    )
-    # start track
-    # ===========
-    for frame_number in range(1, total_no_frames):
-        det_path_cam1 = (
-            det_folder_cam1 / f"{filename_fixpart_cam1}_{frame_number+1}.txt"
-        )
-        det_path_cam2 = (
-            det_folder_cam2 / f"{filename_fixpart_cam2}_{frame_number+1}.txt"
-        )
-        dets = get_detections_with_disp(
-            det_path_cam1,
-            det_path_cam2,
-            width,
-            height,
-            camera_id,
-        )
-
-        pred_dets = [
-            track.predicted_loc
-            for _, track in tracks.items()
-            if track.status != Status.Stoped
-        ]
-        pred_ids, ids = match_two_detection_sets_with_disps(pred_dets, dets)
-
-        # track maches
-        tracks, new_track_id = _track_matches(
-            pred_ids,
-            ids,
-            pred_dets,
-            dets,
-            tracks,
-            frame_number,
-            new_track_id,
-        )
-
-        # unmatched tracks: predicted
-        tracks = _track_predicted_unmatched(pred_dets, pred_ids, tracks)
-
-        # unmatched tracks: current
-        tracks, new_track_id = _track_current_unmatched(
-            dets, ids, frame_number, tracks, new_track_id
-        )
-
-        # assign a unique disparity: heuristics
-        tracks = _assign_unique_disp(tracks, frame_number)
-
-        # assign disparities to predictions
-        for _, track in tracks.items():
-            track.predicted_loc.disp = track.disp
-
-    return tracks
+def _get_predicted_locations(tracks, current_frame_number):
+    pred_dets = []
+    for _, track in tracks.items():
+        if track.status != Status.Stoped:
+            # flow = _get_predicted_flow(track, current_frame_number)
+            # pred_det = track.coords[-1]
+            # pred_det.frame_number = current_frame_number
+            # pred_det = _update_pred_loc(pred_det, flow)
+            # pred_dets.append(pred_det)
+            pred_dets.append(track.coords[-1])
+    return pred_dets
 
 
 def compute_tracks(
@@ -678,11 +438,7 @@ def compute_tracks(
     for frame_number in range(1, total_no_frames):
         det_path = det_folder / f"{filename_fixpart}_{frame_number + 1}.txt"
         dets = get_detections(det_path, width, height, camera_id)
-        pred_dets = [
-            track.predicted_loc
-            for _, track in tracks.items()
-            if track.status != Status.Stoped
-        ]
+        pred_dets = _get_predicted_locations(tracks, frame_number)
         pred_ids, ids = match_two_detection_sets(pred_dets, dets)
         # print(frame_number)
         # print(pred_ids.shape, ids.shape)
@@ -988,3 +744,233 @@ def find_track_id_by_coord_and_frame_number(tracks, x, y, frame_number, toleranc
         if det:
             if (abs(det.x - x) < tolerance) & (abs(det.y - y) < tolerance):
                 return track_id
+
+
+# TODO: move somewhere else
+# ==========================
+@dataclass
+class DetectionWithDisp:
+    x: int
+    y: int
+    w: int
+    h: int
+    det_id: int
+    disp_candidates: list[int]
+    frame_number: int = -1
+    score: np.float16 = -1
+    camera_id: int = 0
+
+
+@dataclass
+class DispWithProb:
+    val: int = -1
+    prob: float = 0.0
+    count: int = 0
+    current_frame_number: int = 0
+    frame_number: int = -1
+
+
+@dataclass
+class Prediction:
+    x: int
+    y: int
+    w: int
+    h: int
+    track_id: int
+    det_id: int
+    frame_number: int
+    disp: DispWithProb = DispWithProb()
+
+
+@dataclass
+class Track2:
+    coords: list[Detection]
+    predicted_loc: Detection
+    color: tuple
+    status: Status
+    disp: DispWithProb = DispWithProb()
+
+
+def _compute_disp_candidates(det1, dets2) -> list[int]:
+    disp_candidates = []
+    for det2 in dets2:
+        disp = abs(det1.x - det2.x)
+        rectification_error = abs(det1.y - det2.y)
+        if (
+            rectification_error < accepted_rect_error
+            and disp < largest_disparity
+            and disp > smallest_disparity
+        ):
+            disp_candidates.append(disp)
+    return disp_candidates
+
+
+def get_detections_with_disp(
+    det_path_cam1,
+    det_path_cam2,
+    width: int,
+    height: int,
+    camera_id: int = 1,
+) -> list[DetectionWithDisp]:
+    camera_id2 = 2
+    if camera_id == 2:
+        camera_id2 = 1
+    frame_number = int(det_path_cam1.stem.split("_")[-1]) - 1
+    assert frame_number == int(det_path_cam2.stem.split("_")[-1]), "not a stereo pair"
+    dets_cam1 = get_detections(det_path_cam1, width, height, camera_id=camera_id)
+    dets_cam2 = get_detections(det_path_cam2, width, height, camera_id=camera_id2)
+    detections = []
+    for det in dets_cam1:
+        disp_candidates = _compute_disp_candidates(det, dets_cam2)
+        detection = DetectionWithDisp(
+            x=det.x,
+            y=det.y,
+            w=det.w,
+            h=det.h,
+            frame_number=frame_number,
+            det_id=det.det_id,
+            score=det.score,
+            camera_id=det.camera_id,
+            disp_candidates=disp_candidates,
+        )
+        detections.append(detection)
+
+    return detections
+
+
+def match_two_detection_sets_with_disps(dets1, dets2):
+    dist = np.zeros((len(dets1), len(dets2)), dtype=np.float32)
+    for i, det1 in enumerate(dets1):
+        for j, det2 in enumerate(dets2):
+            iou_loss = 1 - get_iou(_get_tl_and_br(det1), _get_tl_and_br(det2))
+            loc_loss = np.linalg.norm([det2.x - det1.x, det2.y - det1.y])
+            disp_loss = 0
+            # if det1.disp.val != -1 and len(det2.disp_candidates) > 0:
+            #     disp_loss = min(
+            #         [abs(disp2 - det1.disp.val) for disp2 in det2.disp_candidates]
+            #     )
+            # else:
+            #     disp_loss = 0
+            dist[i, j] = iou_loss + disp_loss
+    row_ind, col_ind = linear_sum_assignment(dist)
+    return row_ind, col_ind
+
+
+def _assign_unique_disp(tracks, frame_number):
+    for track_id, track in tracks.items():
+        coord = track.coords[-1]
+        if (len(coord.disp_candidates) == 1) and (frame_number == coord.frame_number):
+            disp = DispWithProb(
+                coord.disp_candidates[0],
+                1.0,
+                track.disp.count + 1,
+                frame_number,
+                coord.frame_number,
+            )
+            track.disp = disp
+        if frame_number != coord.frame_number:
+            track.disp.current_frame_number = frame_number
+    return tracks
+
+
+def initialize_tracks_with_disps(
+    det_folder_cam1: Path,
+    filename_fixpart_cam1: str,
+    det_folder_cam2: Path,
+    filename_fixpart_cam2: str,
+    camera_id: int,
+    width: int,
+    height: int,
+):
+    frame_number = 0
+    det_path_cam1 = det_folder_cam1 / f"{filename_fixpart_cam1}_{frame_number + 1}.txt"
+    det_path_cam2 = det_folder_cam2 / f"{filename_fixpart_cam2}_{frame_number + 1}.txt"
+    dets = get_detections_with_disp(
+        det_path_cam1,
+        det_path_cam2,
+        width,
+        height,
+        camera_id,
+    )
+    tracks, new_track_id = _initialize_track_frame1(dets)
+
+    # assign a unique disparity: heuristics
+    tracks = _assign_unique_disp(tracks, frame_number)
+
+    # assign disparities to predictions
+    for _, track in tracks.items():
+        track.predicted_loc.disp = track.disp
+
+    return tracks, new_track_id
+
+
+def compute_tracks_with_disps(
+    det_folder_cam1: Path,
+    filename_fixpart_cam1: str,
+    det_folder_cam2: Path,
+    filename_fixpart_cam2: str,
+    camera_id: int,
+    width: int,
+    height: int,
+    total_no_frames: int = 680,
+):
+    tracks, new_track_id = initialize_tracks_with_disps(
+        det_folder_cam1,
+        filename_fixpart_cam1,
+        det_folder_cam2,
+        filename_fixpart_cam2,
+        camera_id,
+        width,
+        height,
+    )
+    # start track
+    # ===========
+    for frame_number in range(1, total_no_frames):
+        det_path_cam1 = (
+            det_folder_cam1 / f"{filename_fixpart_cam1}_{frame_number+1}.txt"
+        )
+        det_path_cam2 = (
+            det_folder_cam2 / f"{filename_fixpart_cam2}_{frame_number+1}.txt"
+        )
+        dets = get_detections_with_disp(
+            det_path_cam1,
+            det_path_cam2,
+            width,
+            height,
+            camera_id,
+        )
+
+        pred_dets = [
+            track.predicted_loc
+            for _, track in tracks.items()
+            if track.status != Status.Stoped
+        ]
+        pred_ids, ids = match_two_detection_sets_with_disps(pred_dets, dets)
+
+        # track maches
+        tracks, new_track_id = _track_matches(
+            pred_ids,
+            ids,
+            pred_dets,
+            dets,
+            tracks,
+            frame_number,
+            new_track_id,
+        )
+
+        # unmatched tracks: predicted
+        tracks = _track_predicted_unmatched(pred_dets, pred_ids, tracks)
+
+        # unmatched tracks: current
+        tracks, new_track_id = _track_current_unmatched(
+            dets, ids, frame_number, tracks, new_track_id
+        )
+
+        # assign a unique disparity: heuristics
+        tracks = _assign_unique_disp(tracks, frame_number)
+
+        # assign disparities to predictions
+        for _, track in tracks.items():
+            track.predicted_loc.disp = track.disp
+
+    return tracks
