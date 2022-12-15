@@ -47,32 +47,6 @@ class Point:
 
 
 @dataclass
-class Detection:
-    x: int
-    y: int
-    w: int
-    h: int
-    det_id: int
-    frame_number: int = -1
-    score: np.float16 = -1
-    camera_id: int = 0
-
-
-def _compute_disp_candidates(det1, dets2) -> list[int]:
-    disp_candidates = []
-    for det2 in dets2:
-        disp = abs(det1.x - det2.x)
-        rectification_error = abs(det1.y - det2.y)
-        if (
-            rectification_error < accepted_rect_error
-            and disp < largest_disparity
-            and disp > smallest_disparity
-        ):
-            disp_candidates.append(disp)
-    return disp_candidates
-
-
-@dataclass
 class DispWithProb:
     val: int = -1
     prob: float = 0.0
@@ -92,6 +66,54 @@ class DetectionWithDisp:
     frame_number: int = -1
     score: np.float16 = -1
     camera_id: int = 0
+
+
+@dataclass
+class Detection:
+    x: int
+    y: int
+    w: int
+    h: int
+    det_id: int
+    frame_number: int = -1
+    score: np.float16 = -1
+    camera_id: int = 0
+    # track_id: int = -1
+
+
+@dataclass
+class Prediction:
+    x: int
+    y: int
+    w: int
+    h: int
+    track_id: int
+    det_id: int
+    frame_number: int
+    disp: DispWithProb = DispWithProb()
+
+
+@dataclass
+class Track:
+    coords: list[Detection]
+    predicted_loc: Prediction
+    color: tuple
+    status: Status
+    disp: DispWithProb = DispWithProb()
+
+
+def _compute_disp_candidates(det1, dets2) -> list[int]:
+    disp_candidates = []
+    for det2 in dets2:
+        disp = abs(det1.x - det2.x)
+        rectification_error = abs(det1.y - det2.y)
+        if (
+            rectification_error < accepted_rect_error
+            and disp < largest_disparity
+            and disp > smallest_disparity
+        ):
+            disp_candidates.append(disp)
+    return disp_candidates
 
 
 def get_detections_with_disp(
@@ -350,27 +372,6 @@ def match_detections(dets1: np.ndarray, dets2: np.ndarray):
     idxs1 = _get_indices(dets1, matched_ids[:, 0])
     idxs2 = _get_indices(dets2, matched_ids[:, 1])
     return idxs1, idxs2, matched_ids
-
-
-@dataclass
-class Prediction:
-    x: int
-    y: int
-    w: int
-    h: int
-    track_id: int
-    det_id: int
-    frame_number: int
-    disp: DispWithProb = DispWithProb()
-
-
-@dataclass
-class Track:
-    coords: list[Detection]
-    predicted_loc: Prediction
-    color: tuple
-    status: Status
-    disp: DispWithProb = DispWithProb()
 
 
 def match_two_detection_sets_with_disps(dets1, dets2):

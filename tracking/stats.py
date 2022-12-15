@@ -73,7 +73,7 @@ def get_stats_for_a_track(annos, atracks, track_id):
         else:
             tp += 1
             matched_ids.append([det1[0], det2[0], frame_number])
-    if len(matched_ids)==0:
+    if len(matched_ids) == 0:
         return tp, -1, fn, -1, -1, matched_ids
     matched_ids = np.array(matched_ids).astype(np.int64)
 
