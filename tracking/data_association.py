@@ -78,7 +78,7 @@ class Detection:
     frame_number: int = -1
     score: np.float16 = -1
     camera_id: int = 0
-    # track_id: int = -1
+    track_id: int = -1
 
 
 @dataclass
@@ -96,7 +96,7 @@ class Prediction:
 @dataclass
 class Track:
     coords: list[Detection]
-    predicted_loc: Prediction
+    predicted_loc: Detection
     color: tuple
     status: Status
     disp: DispWithProb = DispWithProb()
@@ -192,9 +192,9 @@ def get_detections_array(det_file: Path, width: int, height: int) -> list[np.nda
         )
 
         item = [
-            det_id,
+            -1,
             frame_number,
-            0,
+            det_id,
             x_tl,
             y_tl,
             x_br,
@@ -209,14 +209,14 @@ def get_detections_array(det_file: Path, width: int, height: int) -> list[np.nda
 
 
 def make_array_from_dets(dets: list[Detection]):
-    # array format: det_id, frame_id, outside, xtl, ytl, xbr, ybr, xc, yc, w, h
+    # array format: track_id, frame_id, det_id, xtl, ytl, xbr, ybr, xc, yc, w, h
     dets_array = []
     for det in dets:
         x_tl, y_tl, x_br, y_br = _tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
         item = [
-            det.det_id,
+            det.track_id,
             det.frame_number,
-            0,
+            det.det_id,
             x_tl,  # top left
             y_tl,
             x_br,  # bottom right
@@ -231,7 +231,7 @@ def make_array_from_dets(dets: list[Detection]):
 
 
 def make_array_from_tracks(tracks) -> np.ndarray:
-    # # array format: track_id, frame_id, outside, xtl, ytl, xbr, ybr, xc, yc, w, h
+    # # array format: track_id, frame_id, det_id, xtl, ytl, xbr, ybr, xc, yc, w, h
     tracks_array = []
     for track_id, track in tracks.items():
         for det in track.coords:
@@ -254,7 +254,7 @@ def make_array_from_tracks(tracks) -> np.ndarray:
 
 
 def make_dets_from_array(dets_array: np.ndarray) -> list[Detection]:
-    # array format: det_id, frame_id, outside, xtl, ytl, xbr, ybr, xc, yc, w, h
+    # array format: track_id, frame_id, det_id, xtl, ytl, xbr, ybr, xc, yc, w, h
     dets = []
     for det in dets_array:
         item = Detection(
@@ -262,8 +262,9 @@ def make_dets_from_array(dets_array: np.ndarray) -> list[Detection]:
             y=det[8],
             w=det[9],
             h=det[10],
-            det_id=det[0],
+            det_id=det[2],
             frame_number=det[1],
+            track_id=det[0],
         )
         dets.append(item)
     return dets
@@ -278,8 +279,9 @@ def _get_dets_from_indices_of_array(idxs, annos: np.ndarray):
             y=anno[8],
             w=anno[9],
             h=anno[10],
-            det_id=anno[0],
+            det_id=anno[2],
             frame_number=anno[1],
+            track_id=anno[1],
         )
         dets_anno.append(det)
     return dets_anno
@@ -323,11 +325,11 @@ def clean_detections(dets: np.ndarray, ratio_thres=2.5, thres=20, inters_thres=0
 
         # remove if other detection if one detection is within the other detection
         candidates = _find_dets_around_a_det(det, dets, thres)
-        idx_det = np.where(candidates[:, 0] == det[0])[0][0]
+        idx_det = np.where(candidates[:, 2] == det[2])[0][0]
         candidates = np.delete(candidates, idx_det, axis=0)
         for item in candidates:
             if is_bbox_in_bbox(det[3:7], item[3:7], inters_thres):
-                rem_idx = np.where(dets[:, 0] == item[0])[0][0]
+                rem_idx = np.where(dets[:, 2] == item[2])[0][0]
                 remove_idxs.append(rem_idx)
     dets = np.delete(dets, remove_idxs, axis=0)
     return dets
@@ -353,10 +355,10 @@ def match_detection(det1, dets2, thres=20, min_iou=0.1):
     return candidates[idx]
 
 
-def _get_indices(dets, det_ids):
+def _get_indices(dets: np.ndarray, det_ids):
     idxs = []
     for det_id in det_ids:
-        idxs.append(np.where(dets[:, 0] == det_id)[0][0])
+        idxs.append(np.where(dets[:, 2] == det_id)[0][0])
     return np.array(idxs)
 
 
@@ -365,7 +367,7 @@ def match_detections(dets1: np.ndarray, dets2: np.ndarray):
     for det1 in dets1:
         det2 = match_detection(det1, dets2)
         if det2 is not None:
-            matched_ids.append([det1[0], det2[0]])
+            matched_ids.append([det1[2], det2[2]])
     matched_ids = np.array(matched_ids).astype(np.int64)
     if len(matched_ids.shape) == 1:
         return None, None, None
@@ -416,7 +418,7 @@ def _connect_idxs_to_detection_ids(dets):
 
 def _make_a_new_track(coords: list[Detection], new_track_id) -> Track:
     color = tuple(np.random.rand(3).astype(np.float16))
-    predicted_loc = Prediction(
+    predicted_loc = Detection(
         x=coords[-1].x,
         y=coords[-1].y,
         w=coords[-1].w,
@@ -441,7 +443,7 @@ def _make_pred_loc_from_det(det, track_id: int = -1):
 
 
 def _update_pred_loc(predicted_loc, flow):
-    updated_predicted_loc = Prediction(
+    updated_predicted_loc = Detection(
         x=predicted_loc.x + flow.x,
         y=predicted_loc.y + flow.y,
         w=predicted_loc.w,
@@ -458,6 +460,7 @@ def _initialize_track_frame1(dets):
     tracks = {}
     ids = range(len(dets))
     for id in ids:
+        dets[id].track_id = new_track_id
         coords = [dets[id]]
 
         tracks[new_track_id] = _make_a_new_track(coords, new_track_id)
@@ -564,6 +567,7 @@ def _track_matches(
                 [pred_dets[id1].x - dets[id2].x, pred_dets[id1].y - dets[id2].y]
             )
             if dist < accepted_flow_length:
+                dets[id2].track_id = current_track_id
                 track.coords.append(dets[id2])
                 predicted_loc = _make_pred_loc_from_det(
                     track.coords[-1], current_track_id
@@ -780,7 +784,7 @@ def save_tracks_to_mot_format(
 ):
     """MOT format is 1-based, including bbox. https://arxiv.org/abs/2003.09003
     mot format: frame_id, track_id, xtl, ytl, w, h, score, class, visibility
-    array format: track_id, frame_id, outside, xtl, ytl, xbr, ybr, xc, yc, w, h
+    array format: track_id, frame_number, det_id, xtl, ytl, xbr, ybr, xc, yc, w, h
     """
     track_folder = save_file.parent / "gt"
     track_folder.mkdir(parents=True, exist_ok=True)
@@ -811,7 +815,7 @@ def save_tracks_to_mot_format(
 def read_tracks_from_mot_format(track_file: Path) -> np.ndarray:
     """
     mot format: frame_id, track_id, xtl, ytl, w, h, score, class, visibility
-    array format: track_id, frame_id, outside, xtl, ytl, xbr, ybr, xc, yc, w, h
+    array format: track_id, frame_id, det_id, xtl, ytl, xbr, ybr, xc, yc, w, h
     """
     tracks = []
     with open(track_file, "r") as file:
@@ -846,7 +850,7 @@ def read_tracks_from_mot_format(track_file: Path) -> np.ndarray:
 
 def read_tracks_cvat_txt_format(track_file: Path) -> np.ndarray:
     """
-    array format: track_id, frame_id, outside, xtl, ytl, xbr, ybr, xc, yc, w, h
+    array format: track_id, frame_number, det_id, xtl, ytl, xbr, ybr, xc, yc, w, h
     """
     tracks = np.round(np.loadtxt(track_file, skiprows=1, delimiter=",")).astype(
         np.int64
@@ -862,7 +866,7 @@ def save_tracks_cvat_txt_format(track_file: Path, tracks: np.ndarray):
     np.savetxt(
         track_file,
         tracks[:, :7],
-        header="IDs,frames,outside,xtl,ytl,xbr,ybr",
+        header="track_id,frame_number,det_id,xtl,ytl,xbr,ybr",
         delimiter=",",
         fmt="%d",
     )

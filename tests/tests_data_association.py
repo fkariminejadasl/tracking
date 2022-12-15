@@ -218,8 +218,8 @@ def test_match_ddetections():
     )
     assert len(matched_ids) == 33
     np.testing.assert_equal(matched_ids_cleaned, desired)
-    assert matched_ids_cleaned[0, 0] == clean_detections(adets1)[idxs1[0], 0]
-    assert matched_ids_cleaned[0, 1] == clean_detections(adets2)[idxs2[0], 0]
+    assert matched_ids_cleaned[0, 0] == clean_detections(adets1)[idxs1[0], 2]
+    assert matched_ids_cleaned[0, 1] == clean_detections(adets2)[idxs2[0], 2]
 
 
 def test_match_ddetections2():
@@ -233,10 +233,10 @@ def test_match_ddetections2():
     idxs1, idxs2, matched_ids_cleaned = match_detections(
         clean_detections(adets1), clean_detections(adets2)
     )
-    assert matched_ids_cleaned[0, 0] == clean_detections(adets1)[idxs1[0], 0]
-    assert matched_ids_cleaned[0, 1] == clean_detections(adets2)[idxs2[0], 0]
-    assert matched_ids_cleaned[-1, 0] == clean_detections(adets1)[idxs1[-1], 0]
-    assert matched_ids_cleaned[-1, 1] == clean_detections(adets2)[idxs2[-1], 0]
+    assert matched_ids_cleaned[0, 0] == clean_detections(adets1)[idxs1[0], 2]
+    assert matched_ids_cleaned[0, 1] == clean_detections(adets2)[idxs2[0], 2]
+    assert matched_ids_cleaned[-1, 0] == clean_detections(adets1)[idxs1[-1], 2]
+    assert matched_ids_cleaned[-1, 1] == clean_detections(adets2)[idxs2[-1], 2]
 
 
 def test_compute_track():
