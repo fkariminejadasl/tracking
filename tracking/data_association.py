@@ -349,6 +349,7 @@ def initialize_tracks(det_folder: Path, filename_fixpart: str, width: int, heigh
     frame_number = 0
     det_path = det_folder / f"{filename_fixpart}_{frame_number + 1}.txt"
     dets = get_detections(det_path, width, height)
+    # dets = make_dets_from_array(clean_detections(get_detections_array(det_path, width, height)))
     tracks, new_track_id = _initialize_track_frame1(dets)
     return tracks, new_track_id
 
@@ -382,30 +383,56 @@ def _track_current_unmatched(dets, ids, frame_number, tracks, new_track_id):
 
 
 def _track_matches(
-    pred_ids, ids, pred_dets, dets, tracks, current_frame_number, new_track_id
+    pred_dets,
+    dets,
+    tracks,
+    current_frame_number,
 ):
-    for id1, id2 in zip(pred_ids, ids):
-        current_track_id = pred_dets[id1].track_id
+    pred_ids, ids = match_two_detection_sets(pred_dets, dets)
+    # pred_ids, ids = match_two_detection_sets(pred_dets, dets)
+    # print(frame_number)
+    # print(pred_ids.shape, ids.shape)
+    # print(np.vstack((pred_ids, ids)).T)
+    ## TODO: bug somewhere
+    # pred_dets_array = make_array_from_dets(pred_dets)
+    # dets_cleaned = make_array_from_dets(
+    #     dets
+    # )  # clean_detections(make_array_from_dets(dets))
+    # dets = make_dets_from_array(dets_cleaned)
+    # pred_ids, ids, _ = match_detections(pred_dets_array, dets_cleaned)
+    
+    if ids is None:
+        return tracks, pred_ids, []
+
+    unmatched_pred_ids = []
+    unmatched_ids = []
+    for pred_id, id in zip(pred_ids, ids):
+        current_track_id = pred_dets[pred_id].track_id
         track = tracks[current_track_id]
         # kill tracks that are not tracked for a while
         if current_frame_number - track.coords[-1].frame_number > stopped_track_length:
             track.status = Status.Stoped
         else:
             dist = np.linalg.norm(
-                [pred_dets[id1].x - dets[id2].x, pred_dets[id1].y - dets[id2].y]
+                [pred_dets[pred_id].x - dets[id].x, pred_dets[pred_id].y - dets[id].y]
             )
             if dist < accepted_flow_length:
-                dets[id2].track_id = current_track_id
-                track.coords.append(dets[id2])
+                dets[id].track_id = current_track_id
+                track.coords.append(dets[id])
                 track.status = Status.Tracked
+
             else:
-                track.status = Status.Untracked
-                # # bug resolve: but generates many tracklets
+                unmatched_pred_ids.append(pred_id)
+                unmatched_ids.append(id)
+                # track.status = Status.Untracked
+                # # # bug resolve: but generates many tracklets
                 # tracks[new_track_id] = _make_a_new_track(
                 #     dets[id2], new_track_id
                 # )
                 # new_track_id += 1
-    return tracks, new_track_id
+    matched_pred_ids = set(pred_ids).difference(set(unmatched_pred_ids))
+    matched_ids = set(ids).difference(set(unmatched_ids))
+    return tracks, matched_pred_ids, matched_ids
 
 
 def _get_predicted_locations(tracks, current_frame_number):
@@ -438,31 +465,15 @@ def compute_tracks(
     for frame_number in range(1, total_no_frames):
         det_path = det_folder / f"{filename_fixpart}_{frame_number + 1}.txt"
         dets = get_detections(det_path, width, height, camera_id)
+        # dets = make_dets_from_array(clean_detections(get_detections_array(det_path, width, height)))
         pred_dets = _get_predicted_locations(tracks, frame_number)
-        pred_ids, ids = match_two_detection_sets(pred_dets, dets)
-        # print(frame_number)
-        # print(pred_ids.shape, ids.shape)
-        # print(np.vstack((pred_ids, ids)).T)
-        ## TODO: bug somewhere
-        # pred_dets_array = make_array_from_dets(pred_dets)
-        # dets_cleaned = make_array_from_dets(
-        #     dets
-        # )  # clean_detections(make_array_from_dets(dets))
-        # dets = make_dets_from_array(dets_cleaned)
-        # pred_ids, ids, _ = match_detections(pred_dets_array, dets_cleaned)
-
-        if ids is None:
-            return tracks
-
+        
         # track maches
-        tracks, new_track_id = _track_matches(
-            pred_ids,
-            ids,
+        tracks, pred_ids, ids = _track_matches(
             pred_dets,
             dets,
             tracks,
             frame_number,
-            new_track_id,
         )
 
         # unmatched tracks: predicted

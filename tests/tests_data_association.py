@@ -8,20 +8,29 @@ import pytest
 path = (Path(__file__).parents[1]).as_posix()
 sys.path.insert(0, path)
 
-from tracking.data_association import (clean_detections, compute_tracks,
-                                       get_detections, get_detections_array,
-                                       get_iou, is_bbox_in_bbox,
-                                       make_array_from_dets,
-                                       make_array_from_tracks,
-                                       make_dets_from_array,
-                                       make_tracks_from_array,
-                                       match_detections,
-                                       read_tracks_cvat_txt_format,
-                                       read_tracks_from_mot_format,
-                                       save_tracks_cvat_txt_format,
-                                       save_tracks_to_mot_format)
-from tracking.stats import (get_gt_object_match, get_stats_for_a_frame,
-                            get_stats_for_a_track, get_stats_for_tracks)
+from tracking.data_association import (
+    clean_detections,
+    compute_tracks,
+    get_detections,
+    get_detections_array,
+    get_iou,
+    is_bbox_in_bbox,
+    make_array_from_dets,
+    make_array_from_tracks,
+    make_dets_from_array,
+    make_tracks_from_array,
+    match_detections,
+    read_tracks_cvat_txt_format,
+    read_tracks_from_mot_format,
+    save_tracks_cvat_txt_format,
+    save_tracks_to_mot_format,
+)
+from tracking.stats import (
+    get_gt_object_match,
+    get_stats_for_a_frame,
+    get_stats_for_a_track,
+    get_stats_for_tracks,
+)
 
 data_path = Path(__file__).parent / "data"
 annos = read_tracks_cvat_txt_format(data_path / "tracks_gt.txt")
@@ -169,8 +178,12 @@ def test_get_stats_for_tracks():
     desired = np.loadtxt(
         data_path / "track_stats.txt", skiprows=1, delimiter=","
     ).astype(np.int64)
-    stats = get_stats_for_tracks(annos, atracks)
-    np.testing.assert_equal(stats, desired)
+    track_stats = get_stats_for_tracks(annos, atracks)
+    np.testing.assert_equal(track_stats, desired)
+    for gt_track_id in range(40):
+        tp = track_stats[gt_track_id, 1]
+        fn = track_stats[gt_track_id, 3]
+        assert tp + fn == len(annos[annos[:, 0] == gt_track_id])
 
 
 def test_make_array_from_dets_reverse():
@@ -251,3 +264,58 @@ def test_compute_track():
     desired = atracks[atracks[:, 1] < 3]
 
     np.testing.assert_equal(tracks_array[:, :7], desired)
+
+
+@pytest.mark.temp
+def test_compute_track_no_prediction():
+    tracks = compute_tracks(
+        data_path, "04_07_22_G_2_rect_valid", 2, im_width, im_height, 3
+    )
+    tracks_array = make_array_from_tracks(tracks)
+
+    atracks = np.loadtxt(
+        data_path / "tracks_no_prediction.txt", skiprows=1, delimiter=","
+    ).astype(np.int64)
+    desired = atracks[atracks[:, 1] < 3]
+
+    np.testing.assert_equal(tracks_array[:, :7], desired)
+
+@pytest.mark.temp
+def test_get_stats_for_a_track_after_no_prediction():
+    atracks = read_tracks_cvat_txt_format(data_path / "tracks_no_prediction.txt")
+    track_stats = get_stats_for_tracks(annos, atracks)
+    desired = np.loadtxt(
+        data_path / "track_stats_no_prediction.txt", skiprows=1, delimiter=","
+    ).astype(np.int64)
+    np.testing.assert_equal(track_stats, desired)
+    for gt_track_id in range(40):
+        tp = track_stats[gt_track_id, 1]
+        fn = track_stats[gt_track_id, 3]
+        assert tp + fn == len(annos[annos[:, 0] == gt_track_id])
+
+@pytest.mark.temp
+def test_compute_track_no_prediction():
+    tracks = compute_tracks(
+        data_path, "04_07_22_G_2_rect_valid", 2, im_width, im_height, 3
+    )
+    tracks_array = make_array_from_tracks(tracks)
+
+    atracks = np.loadtxt(
+        data_path / "tracks_new_tracks.txt", skiprows=1, delimiter=","
+    ).astype(np.int64)
+    desired = atracks[atracks[:, 1] < 3]
+
+    np.testing.assert_equal(tracks_array[:, :7], desired)
+
+@pytest.mark.temp
+def test_get_stats_for_a_track_after_no_prediction():
+    atracks = read_tracks_cvat_txt_format(data_path / "tracks_new_tracks.txt")
+    track_stats = get_stats_for_tracks(annos, atracks)
+    desired = np.loadtxt(
+        data_path / "track_stats_new_tracks.txt", skiprows=1, delimiter=","
+    ).astype(np.int64)
+    np.testing.assert_equal(track_stats, desired)
+    for gt_track_id in range(40):
+        tp = track_stats[gt_track_id, 1]
+        fn = track_stats[gt_track_id, 3]
+        assert tp + fn == len(annos[annos[:, 0] == gt_track_id])
