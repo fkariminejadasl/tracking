@@ -240,7 +240,7 @@ def _find_dets_around_a_det(det: np.ndarray, dets: np.ndarray, thres=20):
     candidates = dets[
         ((abs(dets[:, 3] - det[3]) < thres) & (abs(dets[:, 4] - det[4]) < thres))
         | ((abs(dets[:, 5] - det[5]) < thres) & (abs(dets[:, 6] - det[6]) < thres))
-    ]
+    ].copy()
     return candidates
 
 
@@ -255,9 +255,15 @@ def clean_detections(dets: np.ndarray, ratio_thres=2.5, thres=20, inters_thres=0
         candidates = _find_dets_around_a_det(det, dets, thres)
         idx_det = np.where(candidates[:, 2] == det[2])[0][0]
         candidates = np.delete(candidates, idx_det, axis=0)
+        # for item in candidates:
+        #     if is_bbox_in_bbox(det[3:7], item[3:7], inters_thres):
+        #         rem_idx = np.where(dets[:, 2] == item[2])[0][0]
+        #         remove_idxs.append(rem_idx)
         for item in candidates:
-            if is_bbox_in_bbox(det[3:7], item[3:7], inters_thres):
+            if get_iou(det[3:7], item[3:7]) > 0:
                 rem_idx = np.where(dets[:, 2] == item[2])[0][0]
+                remove_idxs.append(rem_idx)
+                rem_idx = np.where(dets[:, 2] == det[2])[0][0]
                 remove_idxs.append(rem_idx)
     dets = np.delete(dets, remove_idxs, axis=0)
     return dets
@@ -273,11 +279,12 @@ def match_detection(det1, dets2, thres=20, min_iou=0.1):
     ious = np.array(ious)
 
     # remove the occluded detections
-    if len(ious[ious > 0]) > 1:
-        return None
+    # TODO: maybe return inactive
+    # if len(ious[ious > 0]) > 1:
+    #     return None
 
     iou_max = max(ious)
-    if iou_max < min_iou:
+    if iou_max <= min_iou:
         return None
     idx = np.where(ious == iou_max)[0][0]
     return candidates[idx]
@@ -393,17 +400,11 @@ def _track_matches(
     current_frame_number,
 ):
     pred_ids, ids = match_two_detection_sets(pred_dets, dets)
-    # pred_ids, ids = match_two_detection_sets(pred_dets, dets)
-    # print(frame_number)
-    # print(pred_ids.shape, ids.shape)
-    # print(np.vstack((pred_ids, ids)).T)
+
     ## TODO: bug somewhere
-    # pred_dets_array = make_array_from_dets(pred_dets)
-    # dets_cleaned = make_array_from_dets(
-    #     dets
-    # )  # clean_detections(make_array_from_dets(dets))
-    # dets = make_dets_from_array(dets_cleaned)
-    # pred_ids, ids, _ = match_detections(pred_dets_array, dets_cleaned)
+    # pred_ids, ids, _ = match_detections(
+    #     make_array_from_dets(pred_dets), make_array_from_dets(dets)
+    # )
 
     if ids is None:
         return tracks, pred_ids, []
@@ -478,7 +479,9 @@ def compute_tracks(
     for frame_number in range(1, total_no_frames):
         det_path = det_folder / f"{filename_fixpart}_{frame_number + 1}.txt"
         # dets = get_detections(det_path, width, height, camera_id)
-        dets = make_dets_from_array(clean_detections(get_detections_array(det_path, width, height)))
+        dets = make_dets_from_array(
+            clean_detections(get_detections_array(det_path, width, height))
+        )
         pred_dets = _get_predicted_locations(tracks, frame_number)
 
         # track maches
@@ -496,12 +499,7 @@ def compute_tracks(
         tracks, new_track_id = _track_current_unmatched(
             dets, ids, frame_number, tracks, new_track_id
         )
-
-        # if frame_number in [45, 46]:
-        #     print(tracks[35].coords[-1])
-        #     print(tracks[35].predicted_loc)
-        #     print("=====")
-    tracks = _reindex_tracks(_remove_short_tracks(tracks))
+    # tracks = _reindex_tracks(_remove_short_tracks(tracks))
     return tracks
 
 
@@ -690,16 +688,16 @@ def read_tracks(track_file):
     return tracks
 
 
-def get_iou(det1, det2) -> float:
-    # det1,2: (x_topleft,y_topleft, x_bottomright, y_bottomright)
+def get_iou(bbox1, bbox2) -> float:
+    # bbox1,2: (x_topleft,y_topleft, x_bottomright, y_bottomright)
     # copied and modified from
     # https://stackoverflow.com/questions/25349178/calculating-percentage-of-bounding-box-overlap-for-image-detector-evaluation
 
     # determine the coordinates of the intersection rectangle
-    x_left = max(det1[0], det2[0])
-    y_top = max(det1[1], det2[1])
-    x_right = min(det1[2], det2[2])
-    y_bottom = min(det1[3], det2[3])
+    x_left = max(bbox1[0], bbox2[0])
+    y_top = max(bbox1[1], bbox2[1])
+    x_right = min(bbox1[2], bbox2[2])
+    y_bottom = min(bbox1[3], bbox2[3])
 
     if x_right < x_left or y_bottom < y_top:
         return 0.0
@@ -708,8 +706,8 @@ def get_iou(det1, det2) -> float:
     # axis-aligned bounding box
     intersection_area = (x_right - x_left) * (y_bottom - y_top)
 
-    area1 = (det1[2] - det1[0]) * (det1[3] - det1[1])
-    area2 = (det2[2] - det2[0]) * (det2[3] - det2[1])
+    area1 = (bbox1[2] - bbox1[0]) * (bbox1[3] - bbox1[1])
+    area2 = (bbox2[2] - bbox2[0]) * (bbox2[3] - bbox2[1])
 
     iou = intersection_area / float(area1 + area2 - intersection_area)
     assert iou >= 0.0

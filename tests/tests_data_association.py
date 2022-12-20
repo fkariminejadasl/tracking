@@ -173,19 +173,6 @@ def test_get_stats_for_a_track_after_iou_bug():
     assert tp + fn == len(annos[annos[:, 0] == gt_track_id])
 
 
-@pytest.mark.slow
-def test_get_stats_for_tracks():
-    desired = np.loadtxt(
-        data_path / "track_stats.txt", skiprows=1, delimiter=","
-    ).astype(np.int64)
-    track_stats = get_stats_for_tracks(annos, atracks)
-    np.testing.assert_equal(track_stats, desired)
-    for gt_track_id in range(40):
-        tp = track_stats[gt_track_id, 1]
-        fn = track_stats[gt_track_id, 3]
-        assert tp + fn == len(annos[annos[:, 0] == gt_track_id])
-
-
 def test_make_array_from_dets_reverse():
     dets = get_detections(
         data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height
@@ -210,9 +197,10 @@ def test_clean_detections():
         data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height
     )
     cleaned_dets = clean_detections(dets_array)
-    assert len(cleaned_dets) == len(dets_array) - 2
-    assert 0 not in list(cleaned_dets[:, 0])
-    assert 1 not in list(cleaned_dets[:, 0])
+    removed_det_ids = [0, 2, 12, 25, 1, 5, 8, 10, 6]
+    assert len(cleaned_dets) == len(dets_array) - len(removed_det_ids)
+    for det_id in removed_det_ids:
+        assert det_id not in list(cleaned_dets[:, 0])
 
 
 def test_match_ddetections():
@@ -229,7 +217,7 @@ def test_match_ddetections():
     idxs1, idxs2, matched_ids_cleaned = match_detections(
         clean_detections(adets1), clean_detections(adets2)
     )
-    assert len(matched_ids) == 33
+    assert len(matched_ids) == 39
     np.testing.assert_equal(matched_ids_cleaned, desired)
     assert matched_ids_cleaned[0, 0] == clean_detections(adets1)[idxs1[0], 2]
     assert matched_ids_cleaned[0, 1] == clean_detections(adets2)[idxs2[0], 2]
@@ -252,33 +240,18 @@ def test_match_ddetections2():
     assert matched_ids_cleaned[-1, 1] == clean_detections(adets2)[idxs2[-1], 2]
 
 
-def test_compute_track():
-    tracks = compute_tracks(
-        data_path, "04_07_22_G_2_rect_valid", 2, im_width, im_height, 3
-    )
-    tracks_array = make_array_from_tracks(tracks)
-
-    atracks = np.loadtxt(
-        data_path / "tracks_iou_bug.txt", skiprows=1, delimiter=","
+@pytest.mark.slow
+def test_get_stats_for_tracks():
+    desired = np.loadtxt(
+        data_path / "track_stats.txt", skiprows=1, delimiter=","
     ).astype(np.int64)
-    desired = atracks[atracks[:, 1] < 3]
+    track_stats = get_stats_for_tracks(annos, atracks)
+    np.testing.assert_equal(track_stats, desired)
+    for gt_track_id in range(40):
+        tp = track_stats[gt_track_id, 1]
+        fn = track_stats[gt_track_id, 3]
+        assert tp + fn == len(annos[annos[:, 0] == gt_track_id])
 
-    np.testing.assert_equal(tracks_array[:, :7], desired)
-
-
-@pytest.mark.temp
-def test_compute_track_no_prediction():
-    tracks = compute_tracks(
-        data_path, "04_07_22_G_2_rect_valid", 2, im_width, im_height, 3
-    )
-    tracks_array = make_array_from_tracks(tracks)
-
-    atracks = np.loadtxt(
-        data_path / "tracks_no_prediction.txt", skiprows=1, delimiter=","
-    ).astype(np.int64)
-    desired = atracks[atracks[:, 1] < 3]
-
-    np.testing.assert_equal(tracks_array[:, :7], desired)
 
 @pytest.mark.temp
 def test_get_stats_for_a_track_after_no_prediction():
@@ -293,22 +266,9 @@ def test_get_stats_for_a_track_after_no_prediction():
         fn = track_stats[gt_track_id, 3]
         assert tp + fn == len(annos[annos[:, 0] == gt_track_id])
 
-@pytest.mark.temp
-def test_compute_track_no_prediction():
-    tracks = compute_tracks(
-        data_path, "04_07_22_G_2_rect_valid", 2, im_width, im_height, 3
-    )
-    tracks_array = make_array_from_tracks(tracks)
-
-    atracks = np.loadtxt(
-        data_path / "tracks_new_tracks.txt", skiprows=1, delimiter=","
-    ).astype(np.int64)
-    desired = atracks[atracks[:, 1] < 3]
-
-    np.testing.assert_equal(tracks_array[:, :7], desired)
 
 @pytest.mark.temp
-def test_get_stats_for_a_track_after_no_prediction():
+def test_get_stats_for_a_track_after_new_tracks():
     atracks = read_tracks_cvat_txt_format(data_path / "tracks_new_tracks.txt")
     track_stats = get_stats_for_tracks(annos, atracks)
     desired = np.loadtxt(
@@ -319,3 +279,32 @@ def test_get_stats_for_a_track_after_no_prediction():
         tp = track_stats[gt_track_id, 1]
         fn = track_stats[gt_track_id, 3]
         assert tp + fn == len(annos[annos[:, 0] == gt_track_id])
+
+
+@pytest.mark.temp
+def test_get_stats_for_a_track_after_remove_occlusions():
+    atracks = read_tracks_cvat_txt_format(data_path / "tracks_remove_occlusions.txt")
+    track_stats = get_stats_for_tracks(annos, atracks)
+    desired = np.loadtxt(
+        data_path / "track_stats_remove_occlusions.txt", skiprows=1, delimiter=","
+    ).astype(np.int64)
+    np.testing.assert_equal(track_stats, desired)
+    for gt_track_id in range(40):
+        tp = track_stats[gt_track_id, 1]
+        fn = track_stats[gt_track_id, 3]
+        assert tp + fn == len(annos[annos[:, 0] == gt_track_id])
+
+
+@pytest.mark.failed
+def test_compute_track():
+    tracks = compute_tracks(
+        data_path, "04_07_22_G_2_rect_valid", 2, im_width, im_height, 3
+    )
+    tracks_array = make_array_from_tracks(tracks)
+
+    atracks = np.loadtxt(
+        data_path / "tracks_iou_bug.txt", skiprows=1, delimiter=","
+    ).astype(np.int64)
+    desired = atracks[atracks[:, 1] < 3]
+
+    np.testing.assert_equal(tracks_array[:, :7], desired)

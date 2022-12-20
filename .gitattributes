@@ -14,3 +14,13 @@ tests/data/04_07_22_G_2_rect_valid_2.txt filter=lfs diff=lfs merge=lfs -text
 tests/data/04_07_22_G_2_rect_valid_3.txt filter=lfs diff=lfs merge=lfs -text
 tests/data/matched_ids_dets.txt filter=lfs diff=lfs merge=lfs -text
 tests/data/04_07_22_G_2_rect_valid_1.txt filter=lfs diff=lfs merge=lfs -text
+tests/data/tracks_new_tracks.txt filter=lfs diff=lfs merge=lfs -text
+tests/data/tracks_reindex_remove_short.txt filter=lfs diff=lfs merge=lfs -text
+tests/data/tracks_remove_bad_detections.txt filter=lfs diff=lfs merge=lfs -text
+tests/data/tracks_remove_occlusions.txt filter=lfs diff=lfs merge=lfs -text
+tests/data/track_stats_reindex_remove_short.txt filter=lfs diff=lfs merge=lfs -text
+tests/data/track_stats_remove_bad_detections.txt filter=lfs diff=lfs merge=lfs -text
+tests/data/track_stats_remove_occlusions.txt filter=lfs diff=lfs merge=lfs -text
+tests/data/tracks_no_prediction.txt filter=lfs diff=lfs merge=lfs -text
+tests/data/track_stats_new_tracks.txt filter=lfs diff=lfs merge=lfs -text
+tests/data/track_stats_no_prediction.txt filter=lfs diff=lfs merge=lfs -text

@@ -3,9 +3,12 @@ import matplotlib.patches as patches
 import numpy as np
 from matplotlib import pyplot as plt
 
-from tracking.data_association import (Point, get_detections,
-                                       get_frame_numbers_of_track,
-                                       get_video_parameters)
+from tracking.data_association import (
+    Point,
+    get_detections,
+    get_frame_numbers_of_track,
+    get_video_parameters,
+)
 
 
 def _create_output_video(
@@ -423,7 +426,7 @@ def _draw_detections_epipolar_lines(dets, ax, image_width, draw_text=True):
         ax.add_patch(rect)
 
 
-def _draw_detections_and_flows(dets, ax):
+def _draw_detections_and_flows(dets, ax, color="r"):
     for det in dets:
         ax.text(
             det.x - det.w // 2,
@@ -437,7 +440,7 @@ def _draw_detections_and_flows(dets, ax):
             det.w,
             det.h,
             linewidth=1,
-            edgecolor="r",
+            edgecolor=color,
             facecolor="none",
         )
         ax.add_patch(rect)
