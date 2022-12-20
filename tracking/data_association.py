@@ -11,6 +11,8 @@ np.random.seed(1000)
 
 accepted_flow_length = 10
 stopped_track_length = 50
+min_track_length = 10
+
 accepted_rect_error = 3
 smallest_disparity = 250
 largest_disparity = 650
@@ -349,7 +351,9 @@ def initialize_tracks(det_folder: Path, filename_fixpart: str, width: int, heigh
     frame_number = 0
     det_path = det_folder / f"{filename_fixpart}_{frame_number + 1}.txt"
     dets = get_detections(det_path, width, height)
-    # dets = make_dets_from_array(clean_detections(get_detections_array(det_path, width, height)))
+    # dets = make_dets_from_array(
+    #     clean_detections(get_detections_array(det_path, width, height))
+    # )
     tracks, new_track_id = _initialize_track_frame1(dets)
     return tracks, new_track_id
 
@@ -400,7 +404,7 @@ def _track_matches(
     # )  # clean_detections(make_array_from_dets(dets))
     # dets = make_dets_from_array(dets_cleaned)
     # pred_ids, ids, _ = match_detections(pred_dets_array, dets_cleaned)
-    
+
     if ids is None:
         return tracks, pred_ids, []
 
@@ -424,12 +428,6 @@ def _track_matches(
             else:
                 unmatched_pred_ids.append(pred_id)
                 unmatched_ids.append(id)
-                # track.status = Status.Untracked
-                # # # bug resolve: but generates many tracklets
-                # tracks[new_track_id] = _make_a_new_track(
-                #     dets[id2], new_track_id
-                # )
-                # new_track_id += 1
     matched_pred_ids = set(pred_ids).difference(set(unmatched_pred_ids))
     matched_ids = set(ids).difference(set(unmatched_ids))
     return tracks, matched_pred_ids, matched_ids
@@ -446,6 +444,21 @@ def _get_predicted_locations(tracks, current_frame_number):
             # pred_dets.append(pred_det)
             pred_dets.append(track.coords[-1])
     return pred_dets
+
+
+def _remove_short_tracks(tracks):
+    new_tracks = {}
+    for track_id, track in tracks.items():
+        if len(track.coords) > min_track_length:
+            new_tracks[track_id] = track
+    return new_tracks
+
+
+def _reindex_tracks(tracks):
+    new_tracks = {}
+    for new_id, (_, track) in enumerate(tracks.items()):
+        new_tracks[new_id] = track
+    return new_tracks
 
 
 def compute_tracks(
@@ -467,7 +480,7 @@ def compute_tracks(
         dets = get_detections(det_path, width, height, camera_id)
         # dets = make_dets_from_array(clean_detections(get_detections_array(det_path, width, height)))
         pred_dets = _get_predicted_locations(tracks, frame_number)
-        
+
         # track maches
         tracks, pred_ids, ids = _track_matches(
             pred_dets,
@@ -488,6 +501,7 @@ def compute_tracks(
         #     print(tracks[35].coords[-1])
         #     print(tracks[35].predicted_loc)
         #     print("=====")
+    tracks = _reindex_tracks(_remove_short_tracks(tracks))
     return tracks
 
 
