@@ -72,23 +72,6 @@ def crop_video(
     out.release()
 
 
-def draw_detections_in_a_frame(frame, dets):
-    for det in dets:
-        w2 = int(det.w / 2)
-        h2 = int(det.h / 2)
-        color = (0, 0, 255)
-        cv2.rectangle(
-            frame,
-            (int(det.x) - w2, int(det.y) - h2),
-            (int(det.x) + w2, int(det.y) + h2),
-            color=color,
-            thickness=1,
-        )
-    plt.figure()
-    plt.imshow(frame[..., ::-1])
-    plt.show(block=False)
-
-
 def visualize_detections_in_video(
     filename_fixpart,
     det_folder,
@@ -426,7 +409,7 @@ def _draw_detections_epipolar_lines(dets, ax, image_width, draw_text=True):
         ax.add_patch(rect)
 
 
-def _draw_detections_and_flows(dets, ax, color="r"):
+def _draw_detections(dets, ax, color="r"):
     for det in dets:
         ax.text(
             det.x - det.w // 2,
@@ -444,6 +427,12 @@ def _draw_detections_and_flows(dets, ax, color="r"):
             facecolor="none",
         )
         ax.add_patch(rect)
+
+
+def draw_detections_in_image(dets, image, color="r"):
+    _, ax = plt.subplots(1, 1)
+    _show_one_frame(ax, image)
+    _draw_detections(dets, ax, color=color)
 
 
 def show_detections_in_stereo(frame1, frame2, dets1, dets2, image_width):

@@ -75,11 +75,24 @@ def _copy_detection(det: Detection):
     )
 
 
+def _copy_detections(dets: list[Detection]):
+    new_dets = []
+    for det in dets:
+        new_det = _copy_detection(det)
+        new_dets.append(new_det)
+    return new_dets
+
+
 @dataclass
 class Track:
     coords: list[Detection]
     color: tuple
     status: Status
+
+
+def _copy_track(track: Track):
+    new_dets = _copy_detections(track.coords)
+    return Track(coords=new_dets, color=track.color, status=track.status)
 
 
 def get_detections(
@@ -236,6 +249,11 @@ def make_tracks_from_array(annos: np.ndarray):
     return tracks_anno
 
 
+def clean_detections_by_score(dets: list[Detection], thres=0.5):
+    cleaned_dets = [det for det in dets if det.score > thres]
+    return cleaned_dets
+
+
 def _find_dets_around_a_det(det: np.ndarray, dets: np.ndarray, thres=20):
     candidates = dets[
         ((abs(dets[:, 3] - det[3]) < thres) & (abs(dets[:, 4] - det[4]) < thres))
@@ -248,28 +266,36 @@ def clean_detections(dets: np.ndarray, ratio_thres=2.5, thres=20, inters_thres=0
     remove_idxs = []
     for idx, det in enumerate(dets):
         # remove based on shape of the bbox
-        if det[9] / det[10] > ratio_thres:
-            remove_idxs.append(idx)
+        # if det[9] / det[10] > ratio_thres:
+        #     remove_idxs.append(idx)
 
-        # remove if other detection if one detection is within the other detection
         candidates = _find_dets_around_a_det(det, dets, thres)
         idx_det = np.where(candidates[:, 2] == det[2])[0][0]
         candidates = np.delete(candidates, idx_det, axis=0)
+        # # remove if other detection if one detection is within the other detection
         # for item in candidates:
         #     if is_bbox_in_bbox(det[3:7], item[3:7], inters_thres):
         #         rem_idx = np.where(dets[:, 2] == item[2])[0][0]
         #         remove_idxs.append(rem_idx)
+        # remove overlapping detections
         for item in candidates:
             if get_iou(det[3:7], item[3:7]) > 0:
                 rem_idx = np.where(dets[:, 2] == item[2])[0][0]
                 remove_idxs.append(rem_idx)
                 rem_idx = np.where(dets[:, 2] == det[2])[0][0]
                 remove_idxs.append(rem_idx)
-    dets = np.delete(dets, remove_idxs, axis=0)
+    cleaned_dets = np.delete(dets, remove_idxs, axis=0)
+    return cleaned_dets
+
+
+def get_cleaned_detections(det_path: Path, width, height) -> list[Detection]:
+    dets = get_detections(det_path, width, height)
+    dets = clean_detections_by_score(dets)
+    dets = make_dets_from_array(clean_detections(make_array_from_dets(dets)))
     return dets
 
 
-def match_detection(det1, dets2, thres=20, min_iou=0.1):
+def match_detection(det1, dets2, thres=100, min_iou=0):
     candidates = _find_dets_around_a_det(det1, dets2, thres)
     if len(candidates) == 0:
         return None
@@ -284,9 +310,18 @@ def match_detection(det1, dets2, thres=20, min_iou=0.1):
     #     return None
 
     iou_max = max(ious)
-    if iou_max <= min_iou:
+    if iou_max < min_iou:
         return None
+
     idx = np.where(ious == iou_max)[0][0]
+
+    # handle no intersections, evaluate based on location
+    if (iou_max == 0) & (len(ious) > 1):
+        dists = []
+        for det in candidates:
+            dists.append(np.linalg.norm(det1[7:9] - det[7:9]))
+        dists = np.array(dists)
+        idx = np.where(dists == min(dists))[0][0]
     return candidates[idx]
 
 
@@ -358,9 +393,8 @@ def initialize_tracks(det_folder: Path, filename_fixpart: str, width: int, heigh
     frame_number = 0
     det_path = det_folder / f"{filename_fixpart}_{frame_number + 1}.txt"
     # dets = get_detections(det_path, width, height)
-    dets = make_dets_from_array(
-        clean_detections(get_detections_array(det_path, width, height))
-    )
+    dets = get_cleaned_detections(det_path, width, height)
+
     tracks, new_track_id = _initialize_track_frame1(dets)
     return tracks, new_track_id
 
@@ -451,14 +485,22 @@ def _remove_short_tracks(tracks):
     new_tracks = {}
     for track_id, track in tracks.items():
         if len(track.coords) > min_track_length:
-            new_tracks[track_id] = track
+            new_tracks[track_id] = _copy_track(track)
     return new_tracks
+
+
+def _change_track_id(track: Track, new_id: int):
+    for det in track.coords:
+        det.track_id = new_id
+    return track
 
 
 def _reindex_tracks(tracks):
     new_tracks = {}
     for new_id, (_, track) in enumerate(tracks.items()):
-        new_tracks[new_id] = track
+        new_track = _copy_track(track)
+        new_track = _change_track_id(new_track, new_id)
+        new_tracks[new_id] = new_track
     return new_tracks
 
 
@@ -477,11 +519,13 @@ def compute_tracks(
     # start track
     # ===========
     for frame_number in range(1, total_no_frames):
+        # # track cleaning up
+        # if frame_number % 20 == 0:
+        #     tracks = _reindex_tracks(_remove_short_tracks(tracks))
+
         det_path = det_folder / f"{filename_fixpart}_{frame_number + 1}.txt"
         # dets = get_detections(det_path, width, height, camera_id)
-        dets = make_dets_from_array(
-            clean_detections(get_detections_array(det_path, width, height))
-        )
+        dets = get_cleaned_detections(det_path, width, height)
         pred_dets = _get_predicted_locations(tracks, frame_number)
 
         # track maches
