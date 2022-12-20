@@ -350,10 +350,10 @@ def _initialize_track_frame1(dets):
 def initialize_tracks(det_folder: Path, filename_fixpart: str, width: int, height: int):
     frame_number = 0
     det_path = det_folder / f"{filename_fixpart}_{frame_number + 1}.txt"
-    dets = get_detections(det_path, width, height)
-    # dets = make_dets_from_array(
-    #     clean_detections(get_detections_array(det_path, width, height))
-    # )
+    # dets = get_detections(det_path, width, height)
+    dets = make_dets_from_array(
+        clean_detections(get_detections_array(det_path, width, height))
+    )
     tracks, new_track_id = _initialize_track_frame1(dets)
     return tracks, new_track_id
 
@@ -477,8 +477,8 @@ def compute_tracks(
     # ===========
     for frame_number in range(1, total_no_frames):
         det_path = det_folder / f"{filename_fixpart}_{frame_number + 1}.txt"
-        dets = get_detections(det_path, width, height, camera_id)
-        # dets = make_dets_from_array(clean_detections(get_detections_array(det_path, width, height)))
+        # dets = get_detections(det_path, width, height, camera_id)
+        dets = make_dets_from_array(clean_detections(get_detections_array(det_path, width, height)))
         pred_dets = _get_predicted_locations(tracks, frame_number)
 
         # track maches
