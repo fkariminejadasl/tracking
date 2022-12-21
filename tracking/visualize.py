@@ -3,8 +3,13 @@ import matplotlib.patches as patches
 import numpy as np
 from matplotlib import pyplot as plt
 
-from tracking.data_association import (Detection, Point, get_detections,
-                                       get_frame_numbers_of_track)
+from tracking.data_association import (
+    Detection,
+    Point,
+    get_detections,
+    get_frame_numbers_of_track,
+    tl_br_from_cen_wh,
+)
 
 
 def get_video_parameters(vc: cv2.VideoCapture):
@@ -59,7 +64,7 @@ def _write_frame_in_video(frame, out, frame_number, top_left, out_width, out_hei
     return out
 
 
-def crop_video(
+def show_cropped_video(
     vc,
     output_video_file,
     top_left=Point(1300, 700),
@@ -79,7 +84,7 @@ def crop_video(
     out.release()
 
 
-def visualize_detections_in_video(
+def plot_detections_in_video(
     filename_fixpart,
     det_folder,
     vc,
@@ -99,20 +104,19 @@ def visualize_detections_in_video(
         det_path = det_folder / f"{filename_fixpart}_{frame_number+1}.txt"
         dets = get_detections(det_path, frame_number, width, height)
 
-        for coord in dets:
-            w2 = int(coord.w / 2)
-            h2 = int(coord.h / 2)
+        for det in dets:
+            x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
             cv2.rectangle(
                 frame,
-                (int(coord.x) - w2, int(coord.y) - h2),
-                (int(coord.x) + w2, int(coord.y) + h2),
+                (x_tl, y_tl),
+                (x_br, y_br),
                 color=color,
                 thickness=1,
             )
             # show as thick points
             # for i in range(6):
             #     for j in range(6):
-            #         frame[int(coord.y) + i, int(coord.x) + j, :] = np.array(color)
+            #         frame[int(det.y) + i, int(det.x) + j, :] = np.array(color)
         out = _write_frame_in_video(
             frame, out, frame_number, top_left, out_width, out_height
         )
@@ -126,7 +130,7 @@ def plot_frameid_y(tracks, status, legned=False):
         if track.status == status:
             ax.plot(
                 frame_numbers,
-                [coord.y for coord in track.coords],
+                [det.y for det in track.dets],
                 "*-",
                 color=track.color,
                 label=str(k),
@@ -144,7 +148,7 @@ def plot_frameid_y_for_stereo(tracks1, track1_ids, tracks2, track2_ids):
         frame_numbers = get_frame_numbers_of_track(track)
         ax1.plot(
             frame_numbers,
-            [coords.y for coords in track.coords],
+            [det.y for det in track.dets],
             "-*",
             color=track.color,
             label=f"track1: {track_id1}",
@@ -154,7 +158,7 @@ def plot_frameid_y_for_stereo(tracks1, track1_ids, tracks2, track2_ids):
         frame_numbers = get_frame_numbers_of_track(track)
         ax1.plot(
             frame_numbers,
-            [coords.y for coords in track.coords],
+            [det.y for det in track.dets],
             "-*",
             color=track.color,
             label=f"track2: {track_id2}",
@@ -163,7 +167,7 @@ def plot_frameid_y_for_stereo(tracks1, track1_ids, tracks2, track2_ids):
     plt.show(block=False)
 
 
-def visualize_tracks_in_video(
+def plot_tracks_in_video(
     tracks,
     vc,
     output_video_file,
@@ -193,18 +197,17 @@ def visualize_tracks_in_video(
                 color = tuple(int(round(c * 255)) for c in track.color)
                 color = (color[2], color[1], color[0])
                 idx = frame_numbers.index(frame_number)
-                coord = track.coords[idx]
-                w2 = int(coord.w / 2)
-                h2 = int(coord.h / 2)
+                det = track.dets[idx]
+                x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
                 cv2.rectangle(
                     frame,
-                    (int(coord.x) - w2, int(coord.y) - h2),
-                    (int(coord.x) + w2, int(coord.y) + h2),
+                    (x_tl, y_tl),
+                    (x_br, y_br),
                     color=color,
                     thickness=1,
                 )
                 if show_det_id:
-                    text = f"{track_id},{coord.det_id}"
+                    text = f"{track_id},{det.det_id}"
                 else:
                     text = f"{track_id}"
                 if black:
@@ -212,7 +215,7 @@ def visualize_tracks_in_video(
                 cv2.putText(
                     frame,
                     text,
-                    (int(coord.x) - w2, int(coord.y) - h2),
+                    (x_tl, y_tl),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.5,  # font scale
                     color,
@@ -226,7 +229,7 @@ def visualize_tracks_in_video(
     out.release()
 
 
-def visualize_matches_in_video(
+def plot_matches_in_video(
     all_matches,
     vc1,
     vc2,
@@ -254,27 +257,28 @@ def visualize_matches_in_video(
 
         for track_id1, value in all_matches.items():
             for track_id2, matches in value.items():
-                frame_numbers = [coord1.frame_number for coord1 in matches.coords1]
+                frame_numbers = [det1.frame_number for det1 in matches.dets1]
                 if frame_number in frame_numbers:
                     color = tuple(int(round(c * 255)) for c in matches.track1_color)
                     color = (color[2], color[1], color[0])
                     idx = frame_numbers.index(frame_number)
-                    coord = matches.coords1[idx]
-                    w2 = int(coord.w / 2)
-                    h2 = int(coord.h / 2)
+                    det = matches.dets1[idx]
                     text = f"{track_id1}"
 
+                    x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(
+                        det.x, det.y, det.w, det.h
+                    )
                     cv2.rectangle(
                         frame1,
-                        (int(coord.x) - w2, int(coord.y) - h2),
-                        (int(coord.x) + w2, int(coord.y) + h2),
+                        (x_tl, y_tl),
+                        (x_br, y_br),
                         color=color,
                         thickness=1,
                     )
                     cv2.putText(
                         frame1,
                         text,
-                        (int(coord.x) - w2, int(coord.y) - h2),
+                        (x_tl, y_tl),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         font_scale,  # font scale
                         (0, 0, 0),
@@ -292,21 +296,21 @@ def visualize_matches_in_video(
                         2,  # line type
                     )
 
-                    coord = matches.coords2[idx]
-                    w2 = int(coord.w / 2)
-                    h2 = int(coord.h / 2)
-
+                    det = matches.dets2[idx]
+                    x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(
+                        det.x, det.y, det.w, det.h
+                    )
                     cv2.rectangle(
                         frame2,
-                        (int(coord.x) - w2, int(coord.y) - h2),
-                        (int(coord.x) + w2, int(coord.y) + h2),
+                        (x_tl, y_tl),
+                        (x_br, y_br),
                         color=color,
                         thickness=1,
                     )
                     cv2.putText(
                         frame2,
                         text,
-                        (int(coord.x) - w2, int(coord.y) - h2),
+                        (x_tl, y_tl),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         font_scale,  # font scale
                         (0, 0, 0),
@@ -326,7 +330,7 @@ def visualize_matches_in_video(
     out.release()
 
 
-def superimpose_two_images(frame1, frame2):
+def show_superimposed_two_images(frame1, frame2):
     gray1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
     gray2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
     combined = np.zeros_like(frame1)
@@ -335,16 +339,16 @@ def superimpose_two_images(frame1, frame2):
     combined[..., 2] = gray2
 
     _, ax = plt.subplots(1, 1)
-    _show_one_frame(ax, combined)
+    show_one_frame(ax, combined)
 
 
-def _show_one_frame(ax, frame):
+def show_one_frame(ax, frame):
     ax.imshow(frame[..., ::-1])
     ax.axis("off")
     plt.subplots_adjust(top=1, bottom=0, right=1, left=0)
 
 
-def _show_two_frames(axes, frame1, frame2):
+def show_two_frames(axes, frame1, frame2):
     axes[0].imshow(frame1[..., ::-1])
     axes[1].imshow(frame2[..., ::-1])
     axes[0].axis("off")
@@ -352,19 +356,20 @@ def _show_two_frames(axes, frame1, frame2):
     plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
 
 
-def _draw_detections_epipolar_lines(dets, ax, image_width, draw_text=True):
+def _plot_detections_epipolar_lines(dets, ax, image_width, draw_text=True):
     for det in dets:
         ax.plot([0, image_width - 1], [det.y, det.y], "--r", linewidth=0.5, alpha=0.5)
+        x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
         if draw_text:
             ax.text(
-                det.x - det.w // 2,
-                det.y - det.h // 2,
+                x_tl,
+                y_tl,
                 str(f"{det.det_id},{det.score:.2f}"),
                 color="r",
                 fontsize=12,
             )
         rect = patches.Rectangle(
-            (det.x - det.w // 2, det.y - det.h // 2),
+            (x_tl, y_tl),
             det.w,
             det.h,
             linewidth=1,
@@ -386,17 +391,18 @@ def _get_text_value(det: Detection, text: str) -> str:
     return text_value
 
 
-def _draw_detections(dets: list[Detection], ax, color="r", text="det_id"):
+def _plot_detections(dets: list[Detection], ax, color="r", text="det_id"):
     for det in dets:
+        x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
         ax.text(
-            det.x - det.w // 2,
-            det.y - det.h // 2,
+            x_tl,
+            y_tl,
             _get_text_value(det, text),
             color="r",
             fontsize=12,
         )
         rect = patches.Rectangle(
-            (det.x - det.w // 2, det.y - det.h // 2),
+            (x_tl, y_tl),
             det.w,
             det.h,
             linewidth=1,
@@ -406,17 +412,17 @@ def _draw_detections(dets: list[Detection], ax, color="r", text="det_id"):
         ax.add_patch(rect)
 
 
-def draw_detections_in_image(dets, image, color="r"):
+def plot_detections_in_image(dets, image, color="r", text="det_id"):
     _, ax = plt.subplots(1, 1)
-    _show_one_frame(ax, image)
-    _draw_detections(dets, ax, color=color)
+    show_one_frame(ax, image)
+    _plot_detections(dets, ax, color=color, text=text)
 
 
-def show_detections_in_stereo(frame1, frame2, dets1, dets2, image_width):
+def plot_detections_in_stereo(frame1, frame2, dets1, dets2, image_width):
     _, axes = plt.subplots(1, 2)
-    _show_two_frames(axes, frame1, frame2)
-    _draw_detections_epipolar_lines(dets1, axes[0], image_width)
-    _draw_detections_epipolar_lines(dets2, axes[1], image_width)
+    show_two_frames(axes, frame1, frame2)
+    _plot_detections_epipolar_lines(dets1, axes[0], image_width)
+    _plot_detections_epipolar_lines(dets2, axes[1], image_width)
 
 
 def get_frame(frame_number, vc):

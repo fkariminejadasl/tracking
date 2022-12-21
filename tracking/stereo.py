@@ -14,8 +14,8 @@ class Matches:
     error: float
     l1_norm: float
     count: int
-    coords1: list[Detection]
-    coords2: list[Detection]
+    dets1: list[Detection]
+    dets2: list[Detection]
     track1_color: tuple
     track2_color: tuple
 
@@ -23,46 +23,42 @@ class Matches:
 def compute_possible_matches_for_a_track(track1, tracks2):
     possible_matches = {}
     for track_id2, track2 in tracks2.items():
-        if len(track2.coords) > accepted_track_length:
+        if len(track2.dets) > accepted_track_length:
             frame_numbers1 = get_frame_numbers_of_track(track1)
             frame_numbers2 = get_frame_numbers_of_track(track2)
             common_frames = set(frame_numbers1).intersection(set(frame_numbers2))
             error = 0
             count = 0
-            coords1 = []
-            coords2 = []
+            dets1 = []
+            dets2 = []
             if len(common_frames) > matched_track_length:
                 for frame_id in common_frames:
-                    coord1 = [
-                        coord
-                        for coord in track1.coords
-                        if coord.frame_number == frame_id
-                    ][0]
-                    coord2 = [
-                        coord
-                        for coord in track2.coords
-                        if coord.frame_number == frame_id
-                    ][0]
-                    l1_norm = abs(coord1.y - coord2.y)
+                    det1 = [det for det in track1.dets if det.frame_number == frame_id][
+                        0
+                    ]
+                    det2 = [det for det in track2.dets if det.frame_number == frame_id][
+                        0
+                    ]
+                    l1_norm = abs(det1.y - det2.y)
                     if l1_norm < accepted_error:
                         error += l1_norm
                         count += 1
-                        coords1.append(coord1)
-                        coords2.append(coord2)
+                        dets1.append(det1)
+                        dets2.append(det2)
                 if count != 0:
                     possible_matches[track_id2] = Matches(
                         error / count,
                         error,
                         count,
-                        coords1,
-                        coords2,
+                        dets1,
+                        dets2,
                         track1.color,
                         track2.color,
                     )
     matched_groups = {
         key: matches
         for key, matches in possible_matches.items()
-        if len(matches.coords1) > matched_track_length
+        if len(matches.dets1) > matched_track_length
         if matches.error < 1
     }
     return matched_groups
@@ -71,7 +67,7 @@ def compute_possible_matches_for_a_track(track1, tracks2):
 def compute_possible_matches(tracks1, tracks2):
     all_matches = {}
     for track_id1, track1 in tracks1.items():
-        if len(track1.coords) > accepted_track_length:
+        if len(track1.dets) > accepted_track_length:
             matched_groups = compute_possible_matches_for_a_track(track1, tracks2)
             if matched_groups:
                 all_matches[track_id1] = matched_groups
@@ -83,9 +79,9 @@ def save_matches(match_file, track_id1, matched_groups, cam_id):
     # inverse is true when first tracks2 and then tracks1
     with open(match_file, "a") as file:
         for track_id2, matches in matched_groups.items():
-            for coord1, coord2 in zip(matches.coords1, matches.coords2):
+            for det1, det2 in zip(matches.dets1, matches.dets2):
                 file.write(
-                    f"{track_id1},{track_id2},{coord1.frame_number},{cam_id},{coord1.x},{coord1.y},{coord2.x},{coord2.y}\n"
+                    f"{track_id1},{track_id2},{det1.frame_number},{cam_id},{det1.x},{det1.y},{det2.x},{det2.y}\n"
                 )
 
 

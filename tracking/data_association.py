@@ -17,6 +17,8 @@ min_track_length = 10
 # inters_thres = 0.85  # for bbox in behind the other bbox
 # min_iou = 0
 # flow_decay_rate = 0.5
+# ratio_thres = 2.5
+
 
 accepted_rect_error = 3
 smallest_disparity = 250
@@ -78,14 +80,14 @@ def _copy_detections(dets: list[Detection]):
 
 @dataclass
 class Track:
-    coords: list[Detection]
+    dets: list[Detection]
     color: tuple
     status: Status
 
 
 def _copy_track(track: Track):
-    new_dets = _copy_detections(track.coords)
-    return Track(coords=new_dets, color=track.color, status=track.status)
+    new_dets = _copy_detections(track.dets)
+    return Track(dets=new_dets, color=track.color, status=track.status)
 
 
 def get_detections(
@@ -108,7 +110,7 @@ def get_detections(
     ]
 
 
-def _tl_br_from_cen_wh(center_x, center_y, bbox_w, bbox_h) -> tuple:
+def tl_br_from_cen_wh(center_x, center_y, bbox_w, bbox_h) -> tuple:
     return (
         int(round(center_x - bbox_w / 2)),
         int(round(center_y - bbox_h / 2)),
@@ -126,7 +128,7 @@ def get_detections_array(det_file: Path, width: int, height: int) -> list[np.nda
         center_y = int(round(det[2] * height))
         bbox_width = int(round(det[3] * width))
         bbox_height = int(round(det[4] * height))
-        x_tl, y_tl, x_br, y_br = _tl_br_from_cen_wh(
+        x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(
             center_x, center_y, bbox_width, bbox_height
         )
 
@@ -151,7 +153,7 @@ def make_array_from_dets(dets: list[Detection]):
     # array format: track_id, frame_id, det_id, xtl, ytl, xbr, ybr, xc, yc, w, h
     dets_array = []
     for det in dets:
-        x_tl, y_tl, x_br, y_br = _tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
+        x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
         item = [
             det.track_id,
             det.frame_number,
@@ -173,8 +175,8 @@ def make_array_from_tracks(tracks) -> np.ndarray:
     # # array format: track_id, frame_id, det_id, xtl, ytl, xbr, ybr, xc, yc, w, h
     tracks_array = []
     for track_id, track in tracks.items():
-        for det in track.coords:
-            x_tl, y_tl, x_br, y_br = _tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
+        for det in track.dets:
+            x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
             item = [
                 track_id,
                 det.frame_number,
@@ -226,7 +228,7 @@ def _get_dets_from_indices_of_array(idxs, annos: np.ndarray):
     return dets_anno
 
 
-def _get_track_coords_from_array(annos: np.ndarray, track_id: int):
+def _get_track_dets_from_array(annos: np.ndarray, track_id: int):
     idxs = np.where(annos[:, 0] == track_id)[0]
     assert len(idxs) != 0, "this track doesn't exist"
     return _get_dets_from_indices_of_array(idxs, annos)
@@ -236,9 +238,9 @@ def make_tracks_from_array(annos: np.ndarray):
     tracks_anno = {}
     track_ids = np.unique(annos[:, 0])
     for track_id in track_ids:
-        coords = _get_track_coords_from_array(annos, track_id)
+        dets = _get_track_dets_from_array(annos, track_id)
         color = tuple(np.random.rand(3).astype(np.float16))
-        tracks_anno[track_id] = Track(coords, color=color, status=Status.Tracked)
+        tracks_anno[track_id] = Track(dets, color=color, status=Status.Tracked)
     return tracks_anno
 
 
@@ -343,7 +345,7 @@ def match_detections(dets1: np.ndarray, dets2: np.ndarray):
 
 
 def _get_tl_and_br(det: Detection) -> tuple:
-    return det.x - det.w / 2, det.y - det.h / 2, det.x + det.w / 2, det.y + det.h / 2
+    return tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
 
 
 def match_two_detection_sets(dets1, dets2):
@@ -368,7 +370,7 @@ def _make_a_new_track(det: Detection, new_track_id) -> Track:
     det.track_id = new_track_id
 
     track = Track(
-        coords=[det],
+        dets=[det],
         color=color,
         status=Status.Untracked,
     )
@@ -397,15 +399,13 @@ def initialize_tracks(det_folder: Path, filename_fixpart: str, width: int, heigh
 
 def _get_predicted_flow(track, current_frame_number, flow_decay_rate=0.5):
     flow = Point(0, 0)
-    if len(track.coords) > 1:
-        num_missing_frames = current_frame_number - track.coords[-1].frame_number
-        diff_frame_number = (
-            track.coords[-1].frame_number - track.coords[-2].frame_number
-        )
+    if len(track.dets) > 1:
+        num_missing_frames = current_frame_number - track.dets[-1].frame_number
+        diff_frame_number = track.dets[-1].frame_number - track.dets[-2].frame_number
 
         factor = num_missing_frames / diff_frame_number * flow_decay_rate
-        x_coord_diff = track.coords[-1].x - track.coords[-2].x
-        y_coord_diff = track.coords[-1].y - track.coords[-2].y
+        x_coord_diff = track.dets[-1].x - track.dets[-2].x
+        y_coord_diff = track.dets[-1].y - track.dets[-2].y
         flow = Point(
             x=np.int64(np.round(x_coord_diff * factor)),
             y=np.int64(np.round(y_coord_diff * factor)),
@@ -452,7 +452,7 @@ def _track_matches(
         current_track_id = pred_dets[pred_id].track_id
         track = tracks[current_track_id]
         # kill tracks that are not tracked for a while
-        if current_frame_number - track.coords[-1].frame_number > stopped_track_length:
+        if current_frame_number - track.dets[-1].frame_number > stopped_track_length:
             track.status = Status.Stoped
         else:
             dist = np.linalg.norm(
@@ -460,7 +460,7 @@ def _track_matches(
             )
             if dist < accepted_flow_length:
                 dets[id].track_id = current_track_id
-                track.coords.append(dets[id])
+                track.dets.append(dets[id])
                 track.status = Status.Tracked
 
             else:
@@ -476,24 +476,24 @@ def _get_predicted_locations(tracks, current_frame_number):
     for _, track in tracks.items():
         if track.status != Status.Stoped:
             # flow = _get_predicted_flow(track, current_frame_number)
-            # pred_det = track.coords[-1]
+            # pred_det = track.dets[-1]
             # pred_det.frame_number = current_frame_number
             # pred_det = _update_pred_loc(pred_det, flow)
             # pred_dets.append(pred_det)
-            pred_dets.append(track.coords[-1])
+            pred_dets.append(track.dets[-1])
     return pred_dets
 
 
 def _remove_short_tracks(tracks):
     new_tracks = {}
     for track_id, track in tracks.items():
-        if len(track.coords) > min_track_length:
+        if len(track.dets) > min_track_length:
             new_tracks[track_id] = _copy_track(track)
     return new_tracks
 
 
 def _change_track_id(track: Track, new_id: int):
-    for det in track.coords:
+    for det in track.dets:
         det.track_id = new_id
     return track
 
@@ -621,7 +621,7 @@ def save_tracks_to_mot_format(
     if isinstance(tracks, dict):
         with open(track_file, "w") as file:
             for track_id, track in tracks.items():
-                for det in track.coords:
+                for det in track.dets:
                     top_left_x = det.x - det.w / 2
                     top_left_y = det.y - det.h / 2
                     file.write(
@@ -702,7 +702,7 @@ def save_tracks(track_file: Path, tracks: np.ndarray | dict[Track]):
     if isinstance(tracks, dict):
         with open(track_file, "w") as file:
             for track_id, track in tracks.items():
-                for det in track.coords:
+                for det in track.dets:
                     file.write(
                         f"{track_id},{det.frame_number},{det.det_id},{det.x},{det.y},{det.w},{det.h},{det.score:.2f},{track.status.value}\n"
                     )
@@ -790,7 +790,7 @@ def is_bbox_in_bbox(bbox1, bbox2, inters_thres=0.85) -> float:
 
 
 def find_detection_in_track_by_frame_number(track, frame_number):
-    for det in track.coords:
+    for det in track.dets:
         if det.frame_number == frame_number:
             return det
 
@@ -805,7 +805,7 @@ def find_detectios_in_tracks_by_frame_number(tracks, frame_number):
 
 
 def get_frame_numbers_of_track(track):
-    return [coord.frame_number for coord in track.coords]
+    return [det.frame_number for det in track.dets]
 
 
 def find_track_id_by_coord_and_frame_number(tracks, x, y, frame_number, tolerance=3):
@@ -854,7 +854,7 @@ class Prediction:
 
 @dataclass
 class Track2:
-    coords: list[Detection]
+    dets: list[Detection]
     predicted_loc: Detection
     color: tuple
     status: Status
@@ -928,17 +928,17 @@ def match_two_detection_sets_with_disps(dets1, dets2):
 
 def _assign_unique_disp(tracks, frame_number):
     for track_id, track in tracks.items():
-        coord = track.coords[-1]
-        if (len(coord.disp_candidates) == 1) and (frame_number == coord.frame_number):
+        det = track.dets[-1]
+        if (len(det.disp_candidates) == 1) and (frame_number == det.frame_number):
             disp = DispWithProb(
-                coord.disp_candidates[0],
+                det.disp_candidates[0],
                 1.0,
                 track.disp.count + 1,
                 frame_number,
-                coord.frame_number,
+                det.frame_number,
             )
             track.disp = disp
-        if frame_number != coord.frame_number:
+        if frame_number != det.frame_number:
             track.disp.current_frame_number = frame_number
     return tracks
 
