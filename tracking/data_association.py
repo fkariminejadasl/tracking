@@ -3,7 +3,6 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-import cv2
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
@@ -13,27 +12,21 @@ accepted_flow_length = 10
 stopped_track_length = 50
 min_track_length = 10
 
+# score_thres = 0.5  # for detection scores
+# sp_thres = 20  # for spatial proximity
+# inters_thres = 0.85  # for bbox in behind the other bbox
+# min_iou = 0
+# flow_decay_rate = 0.5
+
 accepted_rect_error = 3
 smallest_disparity = 250
 largest_disparity = 650
-
-
-def get_video_parameters(vc: cv2.VideoCapture):
-    if vc.isOpened():
-        height = int(vc.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        width = int(vc.get(cv2.CAP_PROP_FRAME_WIDTH))
-        total_no_frames = int(vc.get(cv2.CAP_PROP_FRAME_COUNT))
-        fps = vc.get(cv2.CAP_PROP_FPS)
-        return height, width, total_no_frames, fps
-    else:
-        return
 
 
 class Status(enum.Enum):
     Tracked: bool = enum.auto()
     Untracked: bool = enum.auto()
     Stoped: bool = enum.auto()
-    NewTrack: bool = enum.auto()
 
 
 @dataclass
@@ -249,27 +242,30 @@ def make_tracks_from_array(annos: np.ndarray):
     return tracks_anno
 
 
-def clean_detections_by_score(dets: list[Detection], thres=0.5):
-    cleaned_dets = [det for det in dets if det.score > thres]
+def clean_detections_by_score(dets: list[Detection], score_thres=0.5):
+    cleaned_dets = [det for det in dets if det.score > score_thres]
     return cleaned_dets
 
 
-def _find_dets_around_a_det(det: np.ndarray, dets: np.ndarray, thres=20):
+def _find_dets_around_a_det(det: np.ndarray, dets: np.ndarray, sp_thres=20):
     candidates = dets[
-        ((abs(dets[:, 3] - det[3]) < thres) & (abs(dets[:, 4] - det[4]) < thres))
-        | ((abs(dets[:, 5] - det[5]) < thres) & (abs(dets[:, 6] - det[6]) < thres))
+        ((abs(dets[:, 3] - det[3]) < sp_thres) & (abs(dets[:, 4] - det[4]) < sp_thres))
+        | (
+            (abs(dets[:, 5] - det[5]) < sp_thres)
+            & (abs(dets[:, 6] - det[6]) < sp_thres)
+        )
     ].copy()
     return candidates
 
 
-def clean_detections(dets: np.ndarray, ratio_thres=2.5, thres=20, inters_thres=0.85):
+def clean_detections(dets: np.ndarray, ratio_thres=2.5, sp_thres=20, inters_thres=0.85):
     remove_idxs = []
     for idx, det in enumerate(dets):
         # remove based on shape of the bbox
         # if det[9] / det[10] > ratio_thres:
         #     remove_idxs.append(idx)
 
-        candidates = _find_dets_around_a_det(det, dets, thres)
+        candidates = _find_dets_around_a_det(det, dets, sp_thres)
         idx_det = np.where(candidates[:, 2] == det[2])[0][0]
         candidates = np.delete(candidates, idx_det, axis=0)
         # # remove if other detection if one detection is within the other detection
@@ -295,8 +291,8 @@ def get_cleaned_detections(det_path: Path, width, height) -> list[Detection]:
     return dets
 
 
-def match_detection(det1, dets2, thres=100, min_iou=0):
-    candidates = _find_dets_around_a_det(det1, dets2, thres)
+def match_detection(det1, dets2, sp_thres=100, min_iou=0):
+    candidates = _find_dets_around_a_det(det1, dets2, sp_thres)
     if len(candidates) == 0:
         return None
     ious = []
@@ -374,7 +370,7 @@ def _make_a_new_track(det: Detection, new_track_id) -> Track:
     track = Track(
         coords=[det],
         color=color,
-        status=Status.NewTrack,
+        status=Status.Untracked,
     )
     return track
 
@@ -399,13 +395,20 @@ def initialize_tracks(det_folder: Path, filename_fixpart: str, width: int, heigh
     return tracks, new_track_id
 
 
-def _get_predicted_flow(track, current_frame_number):
+def _get_predicted_flow(track, current_frame_number, flow_decay_rate=0.5):
     flow = Point(0, 0)
     if len(track.coords) > 1:
         num_missing_frames = current_frame_number - track.coords[-1].frame_number
+        diff_frame_number = (
+            track.coords[-1].frame_number - track.coords[-2].frame_number
+        )
+
+        factor = num_missing_frames / diff_frame_number * flow_decay_rate
+        x_coord_diff = track.coords[-1].x - track.coords[-2].x
+        y_coord_diff = track.coords[-1].y - track.coords[-2].y
         flow = Point(
-            x=(track.coords[-1].x - track.coords[-2].x) * num_missing_frames // 2,
-            y=(track.coords[-1].y - track.coords[-2].y) * num_missing_frames // 2,
+            x=np.int64(np.round(x_coord_diff * factor)),
+            y=np.int64(np.round(y_coord_diff * factor)),
         )
     return flow
 
@@ -759,14 +762,14 @@ def get_iou(bbox1, bbox2) -> float:
     return iou
 
 
-def is_bbox_in_bbox(det1, det2, inters_thres=0.85) -> float:
-    # det1,2: (x_topleft,y_topleft, x_bottomright, y_bottomright)
+def is_bbox_in_bbox(bbox1, bbox2, inters_thres=0.85) -> float:
+    # bbox1,2: (x_topleft,y_topleft, x_bottomright, y_bottomright)
 
     # determine the coordinates of the intersection rectangle
-    x_left = max(det1[0], det2[0])
-    y_top = max(det1[1], det2[1])
-    x_right = min(det1[2], det2[2])
-    y_bottom = min(det1[3], det2[3])
+    x_left = max(bbox1[0], bbox2[0])
+    y_top = max(bbox1[1], bbox2[1])
+    x_right = min(bbox1[2], bbox2[2])
+    y_bottom = min(bbox1[3], bbox2[3])
 
     if x_right < x_left or y_bottom < y_top:
         return False
@@ -775,8 +778,8 @@ def is_bbox_in_bbox(det1, det2, inters_thres=0.85) -> float:
     # axis-aligned bounding box
     intersection_area = (x_right - x_left) * (y_bottom - y_top)
 
-    area1 = (det1[2] - det1[0]) * (det1[3] - det1[1])
-    area2 = (det2[2] - det2[0]) * (det2[3] - det2[1])
+    area1 = (bbox1[2] - bbox1[0]) * (bbox1[3] - bbox1[1])
+    area2 = (bbox2[2] - bbox2[0]) * (bbox2[3] - bbox2[1])
 
     inters_ratio1 = intersection_area / float(area1)
     inters_ratio2 = intersection_area / float(area2)

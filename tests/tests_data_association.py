@@ -8,29 +8,20 @@ import pytest
 path = (Path(__file__).parents[1]).as_posix()
 sys.path.insert(0, path)
 
-from tracking.data_association import (
-    clean_detections,
-    compute_tracks,
-    get_detections,
-    get_detections_array,
-    get_iou,
-    is_bbox_in_bbox,
-    make_array_from_dets,
-    make_array_from_tracks,
-    make_dets_from_array,
-    make_tracks_from_array,
-    match_detections,
-    read_tracks_cvat_txt_format,
-    read_tracks_from_mot_format,
-    save_tracks_cvat_txt_format,
-    save_tracks_to_mot_format,
-)
-from tracking.stats import (
-    get_gt_object_match,
-    get_stats_for_a_frame,
-    get_stats_for_a_track,
-    get_stats_for_tracks,
-)
+from tracking.data_association import (clean_detections, compute_tracks,
+                                       get_detections, get_detections_array,
+                                       get_iou, is_bbox_in_bbox,
+                                       make_array_from_dets,
+                                       make_array_from_tracks,
+                                       make_dets_from_array,
+                                       make_tracks_from_array,
+                                       match_detections,
+                                       read_tracks_cvat_txt_format,
+                                       read_tracks_from_mot_format,
+                                       save_tracks_cvat_txt_format,
+                                       save_tracks_to_mot_format)
+from tracking.stats import (get_gt_object_match, get_stats_for_a_frame,
+                            get_stats_for_a_track, get_stats_for_tracks)
 
 data_path = Path(__file__).parent / "data"
 annos = read_tracks_cvat_txt_format(data_path / "tracks_gt.txt")

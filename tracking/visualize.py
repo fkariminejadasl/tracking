@@ -3,12 +3,19 @@ import matplotlib.patches as patches
 import numpy as np
 from matplotlib import pyplot as plt
 
-from tracking.data_association import (
-    Point,
-    get_detections,
-    get_frame_numbers_of_track,
-    get_video_parameters,
-)
+from tracking.data_association import (Detection, Point, get_detections,
+                                       get_frame_numbers_of_track)
+
+
+def get_video_parameters(vc: cv2.VideoCapture):
+    if vc.isOpened():
+        height = int(vc.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        width = int(vc.get(cv2.CAP_PROP_FRAME_WIDTH))
+        total_no_frames = int(vc.get(cv2.CAP_PROP_FRAME_COUNT))
+        fps = vc.get(cv2.CAP_PROP_FPS)
+        return height, width, total_no_frames, fps
+    else:
+        return
 
 
 def _create_output_video(
@@ -110,48 +117,6 @@ def visualize_detections_in_video(
             frame, out, frame_number, top_left, out_width, out_height
         )
     out.release()
-
-
-def draw_matches(frame1, frame2, matches1, matches2):
-    _, ax1 = plt.subplots(1, 1)
-    _, ax2 = plt.subplots(1, 1)
-    ax1.imshow(frame1[..., ::-1])
-    ax2.imshow(frame2[..., ::-1])
-    ax1.set_xlim(1300, 2200)
-    ax1.set_ylim(1200, 700)
-    ax2.set_xlim(1100, 2000)
-    ax2.set_ylim(1200, 700)
-
-    for match1, match2 in zip(matches1, matches2):
-        ax1.plot([match1.x, match2.x], [match1.y, match2.y], "*-", color=(0, 0, 1))
-        ax2.plot([match1.x, match2.x], [match1.y, match2.y], "*-", color=(0, 0, 1))
-    plt.show(block=False)
-
-
-def visualize_tracks_on_a_frame(tracks, vc, frame_number=0):
-    frame = get_frame(frame_number, vc)
-    plt.figure()
-    plt.imshow(frame[..., ::-1])
-    for _, track in tracks.items():
-        plt.plot(
-            [det.x for det in track.coords],
-            [det.y for det in track.coords],
-            "*-",
-            color=track.color,
-        )
-    plt.show(block=False)
-
-
-# roughly up to 50 frames they can be tracked
-# c = 0
-# plt.figure()
-# for k, track in tracks.items():
-#     frame_numbers = get_frame_numbers_of_track(track)
-#     if track.status == Status.Tracked:
-#         c += 1
-#         print(f"{k},{len(frame_numbers)}")
-#         plt.plot(frame_numbers,"*-",label=str(k))
-# print(f"{c}")
 
 
 def plot_frameid_y(tracks, status, legned=False):
@@ -409,12 +374,24 @@ def _draw_detections_epipolar_lines(dets, ax, image_width, draw_text=True):
         ax.add_patch(rect)
 
 
-def _draw_detections(dets, ax, color="r"):
+def _get_text_value(det: Detection, text: str) -> str:
+    valid = ["det_id", "track_id", "frame_number"]
+    assert text in valid, f"not valid. Use only: {valid}"
+    if text == "det_id":
+        text_value = str(f"{det.det_id}")
+    if text == "track_id":
+        text_value = str(f"{det.track_id}")
+    if text == "frame_number":
+        text_value = str(f"{det.frame_number}")
+    return text_value
+
+
+def _draw_detections(dets: list[Detection], ax, color="r", text="det_id"):
     for det in dets:
         ax.text(
             det.x - det.w // 2,
             det.y - det.h // 2,
-            str(f"{det.det_id}"),
+            _get_text_value(det, text),
             color="r",
             fontsize=12,
         )
@@ -474,27 +451,3 @@ def plot_two_tracks_stats(s1, s2):
     axs[0, 2].set_title("fn")
     axs[1, 0].set_title("sw")
     axs[1, 1].set_title("uid")
-
-
-### Maybe removed
-####################################333
-def visualize_tracks_on_two_frames(tracks, vc, frame_number1, frame_number2):
-    frame1 = get_frame(frame_number1, vc)
-    frame2 = get_frame(frame_number2, vc)
-
-    _, axs = plt.subplots(2, 1, sharex=True, sharey=True)
-    _show_two_frames(axs, frame1, frame2)
-
-    for _, track in tracks.items():
-        frame_numbers = get_frame_numbers_of_track(track)
-        for frame_number in frame_numbers:
-            if frame_number == frame_number1:
-                axs[0].plot(
-                    [track.coords[0].x], [track.coords[0].y], "*", color=track.color
-                )
-            if frame_number == frame_number2:
-                axs[1].plot(
-                    [track.coords[-1].x], [track.coords[-1].y], "*", color=track.color
-                )
-    plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
-    plt.show(block=False)

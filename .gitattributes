@@ -24,3 +24,5 @@ tests/data/track_stats_remove_occlusions.txt filter=lfs diff=lfs merge=lfs -text
 tests/data/tracks_no_prediction.txt filter=lfs diff=lfs merge=lfs -text
 tests/data/track_stats_new_tracks.txt filter=lfs diff=lfs merge=lfs -text
 tests/data/track_stats_no_prediction.txt filter=lfs diff=lfs merge=lfs -text
+tests/data/tracks_low_score.txt filter=lfs diff=lfs merge=lfs -text
+tests/data/track_stats_low_score.txt filter=lfs diff=lfs merge=lfs -text

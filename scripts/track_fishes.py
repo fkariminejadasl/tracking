@@ -12,10 +12,13 @@ import matplotlib.pylab as plt
 from tracking.data_association import (
     Point,
     compute_tracks,
-    get_video_parameters,
     save_tracks_to_mot_format,
 )
-from tracking.visualize import get_frame, visualize_tracks_in_video
+from tracking.visualize import (
+    get_frame,
+    visualize_tracks_in_video,
+    get_video_parameters,
+)
 
 
 def parse_args():
