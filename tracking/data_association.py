@@ -78,6 +78,20 @@ def _copy_detections(dets: list[Detection]):
     return new_dets
 
 
+def _update_det_loc_by_flow(det: Detection, flow: Point):
+    return Detection(
+        x=det.x + flow.x,
+        y=det.y + flow.y,
+        w=det.w,
+        h=det.h,
+        track_id=det.track_id,
+        det_id=det.det_id,
+        frame_number=det.frame_number,
+        score=det.score,
+        camera_id=det.camera_id,
+    )
+
+
 @dataclass
 class Track:
     dets: list[Detection]
@@ -428,22 +442,6 @@ def initialize_tracks(det_folder: Path, filename_fixpart: str, width: int, heigh
     return tracks, new_track_id
 
 
-def _get_predicted_flow(track, current_frame_number, flow_decay_rate=0.5):
-    flow = Point(0, 0)
-    if len(track.dets) > 1:
-        num_missing_frames = current_frame_number - track.dets[-1].frame_number
-        diff_frame_number = track.dets[-1].frame_number - track.dets[-2].frame_number
-
-        factor = num_missing_frames / diff_frame_number * flow_decay_rate
-        x_coord_diff = track.dets[-1].x - track.dets[-2].x
-        y_coord_diff = track.dets[-1].y - track.dets[-2].y
-        flow = Point(
-            x=np.int64(np.round(x_coord_diff * factor)),
-            y=np.int64(np.round(y_coord_diff * factor)),
-        )
-    return flow
-
-
 def _track_predicted_unmatched(pred_dets, pred_ids, tracks):
     diff_ids = set(range(len(pred_dets))).difference(set(pred_ids))
     for id in diff_ids:
@@ -467,8 +465,8 @@ def _track_matches(
     tracks,
     current_frame_number,
 ):
-    # pred_ids, ids = hungarian_global_matching(pred_dets, dets)
-    pred_ids, ids = bipartite_local_matching(pred_dets, dets)
+    pred_ids, ids = hungarian_global_matching(pred_dets, dets)
+    # pred_ids, ids = bipartite_local_matching(pred_dets, dets)
 
     if ids is None:
         return tracks, [], []
@@ -498,16 +496,36 @@ def _track_matches(
     return tracks, matched_pred_ids, matched_ids
 
 
+def _get_predicted_flow(track, current_frame_number, flow_decay_rate=0.5):
+    flow = Point(0, 0)
+    if len(track.dets) > 1:
+        num_missing_frames = current_frame_number - track.dets[-1].frame_number
+        diff_frame_number = track.dets[-1].frame_number - track.dets[-2].frame_number
+
+        factor = num_missing_frames / diff_frame_number * flow_decay_rate
+        x_coord_diff = track.dets[-1].x - track.dets[-2].x
+        y_coord_diff = track.dets[-1].y - track.dets[-2].y
+        flow = Point(
+            x=np.int64(np.round(x_coord_diff * factor)),
+            y=np.int64(np.round(y_coord_diff * factor)),
+        )
+    return flow
+
+
 def _get_predicted_locations(tracks, current_frame_number):
     pred_dets = []
     for _, track in tracks.items():
         if track.status != Status.Stoped:
-            # flow = _get_predicted_flow(track, current_frame_number)
-            # pred_det = track.dets[-1]
-            # pred_det.frame_number = current_frame_number
-            # pred_det = _update_pred_loc(pred_det, flow)
-            # pred_dets.append(pred_det)
-            pred_dets.append(track.dets[-1])
+            flow = _get_predicted_flow(track, current_frame_number)
+            pred_det = track.dets[-1]
+
+            pred_loc = _update_det_loc_by_flow(pred_det, flow)
+
+            pred_dets.append(pred_det)
+            # if current_frame_number - pred_det.frame_number < min_track_length:
+            #     pred_dets.append(pred_det)
+            # else:
+            #     track.status = Status.Stoped
     return pred_dets
 
 

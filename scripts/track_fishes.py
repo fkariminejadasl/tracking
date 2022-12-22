@@ -13,10 +13,12 @@ from tracking.data_association import (
     Point,
     compute_tracks,
     save_tracks_to_mot_format,
+    _remove_short_tracks,
+    _reindex_tracks,
 )
 from tracking.visualize import (
     get_frame,
-    visualize_tracks_in_video,
+    plot_tracks_in_video,
     get_video_parameters,
 )
 
@@ -94,6 +96,7 @@ def main():
     tracks = compute_tracks(
         det_folder, filename_fixpart, cam_id, width, height, total_no_frames
     )
+    tracks = _reindex_tracks(_remove_short_tracks(tracks))
 
     if args.video_bbox is None:
         top_left = Point(x=0, y=0)
@@ -107,7 +110,7 @@ def main():
         video_width = bottom_right_x - top_left_x
         video_height = bottom_right_y - top_left_y
 
-    visualize_tracks_in_video(
+    plot_tracks_in_video(
         tracks,
         vc,
         result_folder / f"{args.save_name}.mp4",
