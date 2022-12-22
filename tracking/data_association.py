@@ -308,7 +308,7 @@ def match_detection(det1, dets2, sp_thres=100, min_iou=0):
     #     return None
 
     iou_max = max(ious)
-    if iou_max < min_iou:
+    if iou_max <= min_iou:
         return None
 
     idx = np.where(ious == iou_max)[0][0]
@@ -323,10 +323,17 @@ def match_detection(det1, dets2, sp_thres=100, min_iou=0):
     return candidates[idx]
 
 
-def _get_indices(dets: np.ndarray, det_ids):
+def _get_indices(dets: np.ndarray, ids: np.ndarray):
     idxs = []
-    for det_id in det_ids:
-        idxs.append(np.where(dets[:, 2] == det_id)[0][0])
+    for id in ids:
+        track_id = id[0]
+        det_id = id[1]
+        if track_id == -1:
+            idxs.append(np.where(dets[:, 2] == det_id)[0][0])
+        else:
+            idxs.append(
+                np.where((dets[:, 2] == det_id) & (dets[:, 0] == track_id))[0][0]
+            )
     return np.array(idxs)
 
 
@@ -335,20 +342,44 @@ def match_detections(dets1: np.ndarray, dets2: np.ndarray):
     for det1 in dets1:
         det2 = match_detection(det1, dets2)
         if det2 is not None:
-            matched_ids.append([det1[2], det2[2]])
+            matched_ids.append([det1[0], det1[2], det2[0], det2[2]])
     matched_ids = np.array(matched_ids).astype(np.int64)
-    if len(matched_ids.shape) == 1:
+    if len(matched_ids) == 0:
         return None, None, None
-    idxs1 = _get_indices(dets1, matched_ids[:, 0])
-    idxs2 = _get_indices(dets2, matched_ids[:, 1])
-    return idxs1, idxs2, matched_ids
+    idxs1 = _get_indices(dets1, matched_ids[:, 0:2])
+    idxs2 = _get_indices(dets2, matched_ids[:, 2:])
+    return idxs1, idxs2, matched_ids[:, [1, 3]]
+
+
+def _intersect2d_rows(ids1: np.ndarray, ids2: np.ndarray) -> np.ndarray:
+    """intersect 2D array in row (axis=0) dimension"""
+    intersections = []
+    for item1 in ids1:
+        for item2 in ids2:
+            if np.array_equal(item1, item2):
+                intersections.append(item1)
+    intersections = np.array(intersections).astype(np.int64)
+    return intersections
+
+
+def bipartite_local_matching(pred_dets, dets):
+    pred_dets_array = make_array_from_dets(pred_dets)
+    dets_array = make_array_from_dets(dets)
+    pred_ids1, ids1, _ = match_detections(pred_dets_array, dets_array)
+    ids2, pred_ids2, _ = match_detections(dets_array, pred_dets_array)
+    ids1 = np.vstack((pred_ids1, ids1)).T
+    ids2 = np.vstack((pred_ids2, ids2)).T
+    intersections = _intersect2d_rows(ids1, ids2)
+    pred_ids = intersections[:, 0]
+    ids = intersections[:, 1]
+    return pred_ids, ids
 
 
 def _get_tl_and_br(det: Detection) -> tuple:
     return tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
 
 
-def match_two_detection_sets(dets1, dets2):
+def hungarian_global_matching(dets1, dets2):
     dist = np.zeros((len(dets1), len(dets2)), dtype=np.float32)
     for i, det1 in enumerate(dets1):
         for j, det2 in enumerate(dets2):
@@ -436,15 +467,11 @@ def _track_matches(
     tracks,
     current_frame_number,
 ):
-    pred_ids, ids = match_two_detection_sets(pred_dets, dets)
-
-    ## TODO: bug somewhere
-    # pred_ids, ids, _ = match_detections(
-    #     make_array_from_dets(pred_dets), make_array_from_dets(dets)
-    # )
+    # pred_ids, ids = hungarian_global_matching(pred_dets, dets)
+    pred_ids, ids = bipartite_local_matching(pred_dets, dets)
 
     if ids is None:
-        return tracks, pred_ids, []
+        return tracks, [], []
 
     unmatched_pred_ids = []
     unmatched_ids = []
@@ -908,7 +935,7 @@ def get_detections_with_disp(
     return detections
 
 
-def match_two_detection_sets_with_disps(dets1, dets2):
+def hungarian_global_matching_with_disps(dets1, dets2):
     dist = np.zeros((len(dets1), len(dets2)), dtype=np.float32)
     for i, det1 in enumerate(dets1):
         for j, det2 in enumerate(dets2):
@@ -1015,7 +1042,7 @@ def compute_tracks_with_disps(
             for _, track in tracks.items()
             if track.status != Status.Stoped
         ]
-        pred_ids, ids = match_two_detection_sets_with_disps(pred_dets, dets)
+        pred_ids, ids = hungarian_global_matching_with_disps(pred_dets, dets)
 
         # track maches
         tracks, new_track_id = _track_matches(

@@ -3,13 +3,9 @@ import matplotlib.patches as patches
 import numpy as np
 from matplotlib import pyplot as plt
 
-from tracking.data_association import (
-    Detection,
-    Point,
-    get_detections,
-    get_frame_numbers_of_track,
-    tl_br_from_cen_wh,
-)
+from tracking.data_association import (Detection, Point, get_detections,
+                                       get_frame_numbers_of_track,
+                                       tl_br_from_cen_wh)
 
 
 def get_video_parameters(vc: cv2.VideoCapture):
@@ -457,3 +453,15 @@ def plot_two_tracks_stats(s1, s2):
     axs[0, 2].set_title("fn")
     axs[1, 0].set_title("sw")
     axs[1, 1].set_title("uid")
+
+
+# TOBE removed
+def plot_pred_dets_in_four_plots(frame1, frame2, dets1, dets2, pred_dets):
+    fig, axs = plt.subplots(2, 2, sharex=True, sharey=True)
+    plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
+    [show_one_frame(axs[i, j], frame2) for i in range(2) for j in range(2)]
+    _plot_detections(pred_dets, axs[1, 0], "r")
+    _plot_detections(pred_dets, axs[0, 0], "r", "track_id")
+    _plot_detections(pred_dets, axs[0, 1], "r", "frame_number")
+    # _plot_detections(dets1, axs[0, 1], "g")
+    _plot_detections(dets2, axs[1, 1], "r")

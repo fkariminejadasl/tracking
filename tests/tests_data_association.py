@@ -8,10 +8,11 @@ import pytest
 path = (Path(__file__).parents[1]).as_posix()
 sys.path.insert(0, path)
 
-from tracking.data_association import (clean_detections, compute_tracks,
+from tracking.data_association import (bipartite_local_matching,
+                                       clean_detections, compute_tracks,
                                        get_detections, get_detections_array,
-                                       get_iou, is_bbox_in_bbox,
-                                       make_array_from_dets,
+                                       get_iou, hungarian_global_matching,
+                                       is_bbox_in_bbox, make_array_from_dets,
                                        make_array_from_tracks,
                                        make_dets_from_array,
                                        make_tracks_from_array,
@@ -229,6 +230,32 @@ def test_match_ddetections2():
     assert matched_ids_cleaned[0, 1] == clean_detections(adets2)[idxs2[0], 2]
     assert matched_ids_cleaned[-1, 0] == clean_detections(adets1)[idxs1[-1], 2]
     assert matched_ids_cleaned[-1, 1] == clean_detections(adets2)[idxs2[-1], 2]
+
+
+def test_bipartite_matching():
+    pred_dets = read_tracks_cvat_txt_format(data_path / "pred_dets_56.txt")
+    dets = read_tracks_cvat_txt_format(data_path / "dets_56.txt")
+    pred_ids, ids = bipartite_local_matching(
+        make_dets_from_array(pred_dets), make_dets_from_array(dets)
+    )
+    desired = np.loadtxt(
+        data_path / "matched_ids_56.txt", skiprows=1, delimiter=","
+    ).astype(np.int64)
+    np.testing.assert_equal(pred_ids, desired[:, 0])
+    np.testing.assert_equal(ids, desired[:, 1])
+
+
+def test_hungarian_global_matching():
+    pred_dets = read_tracks_cvat_txt_format(data_path / "pred_dets_56.txt")
+    dets = read_tracks_cvat_txt_format(data_path / "dets_56.txt")
+    pred_ids, ids = hungarian_global_matching(
+        make_dets_from_array(pred_dets), make_dets_from_array(dets)
+    )
+    desired = np.loadtxt(
+        data_path / "matched_ids_56.txt", skiprows=1, delimiter=","
+    ).astype(np.int64)
+    np.testing.assert_equal(pred_ids, desired[:, 0])
+    np.testing.assert_equal(ids, desired[:, 1])
 
 
 @pytest.mark.slow

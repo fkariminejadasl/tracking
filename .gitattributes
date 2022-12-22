@@ -26,3 +26,8 @@ tests/data/track_stats_new_tracks.txt filter=lfs diff=lfs merge=lfs -text
 tests/data/track_stats_no_prediction.txt filter=lfs diff=lfs merge=lfs -text
 tests/data/tracks_low_score.txt filter=lfs diff=lfs merge=lfs -text
 tests/data/track_stats_low_score.txt filter=lfs diff=lfs merge=lfs -text
+tests/data/dets_56.txt filter=lfs diff=lfs merge=lfs -text
+tests/data/matched_ids_56.txt filter=lfs diff=lfs merge=lfs -text
+tests/data/pred_dets_56.txt filter=lfs diff=lfs merge=lfs -text
+tests/data/tracks_bipartite_matching.txt filter=lfs diff=lfs merge=lfs -text
+tests/data/track_stats_bipartite_matching.txt filter=lfs diff=lfs merge=lfs -text
