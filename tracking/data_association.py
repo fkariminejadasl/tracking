@@ -225,10 +225,10 @@ def make_dets_from_array(dets_array: np.ndarray) -> list[Detection]:
     return dets
 
 
-def _get_dets_from_indices_of_array(idxs, annos: np.ndarray):
+def _get_dets_from_indices_of_array(inds, annos: np.ndarray):
     dets_anno = []
-    for idx in idxs:
-        anno = annos[idx]
+    for ind in inds:
+        anno = annos[ind]
         det = Detection(
             x=anno[7],
             y=anno[8],
@@ -243,9 +243,9 @@ def _get_dets_from_indices_of_array(idxs, annos: np.ndarray):
 
 
 def _get_track_dets_from_array(annos: np.ndarray, track_id: int):
-    idxs = np.where(annos[:, 0] == track_id)[0]
-    assert len(idxs) != 0, "this track doesn't exist"
-    return _get_dets_from_indices_of_array(idxs, annos)
+    inds = np.where(annos[:, 0] == track_id)[0]
+    assert len(inds) != 0, "this track doesn't exist"
+    return _get_dets_from_indices_of_array(inds, annos)
 
 
 def make_tracks_from_array(annos: np.ndarray):
@@ -275,28 +275,30 @@ def _find_dets_around_a_det(det: np.ndarray, dets: np.ndarray, sp_thres=20):
 
 
 def clean_detections(dets: np.ndarray, ratio_thres=2.5, sp_thres=20, inters_thres=0.85):
-    remove_idxs = []
-    for idx, det in enumerate(dets):
+    remove_inds = []
+    for ind, det in enumerate(dets):
         # remove based on shape of the bbox
         # if det[9] / det[10] > ratio_thres:
-        #     remove_idxs.append(idx)
+        #     remove_inds.append(ind)
 
         candidates = _find_dets_around_a_det(det, dets, sp_thres)
-        idx_det = np.where(candidates[:, 2] == det[2])[0][0]
-        candidates = np.delete(candidates, idx_det, axis=0)
-        # # remove if other detection if one detection is within the other detection
+        ind_det = np.where(candidates[:, 2] == det[2])[0][0]
+        candidates = np.delete(candidates, ind_det, axis=0)
+
+        # remove if other detection if one detection is within the other detection
         # for item in candidates:
         #     if is_bbox_in_bbox(det[3:7], item[3:7], inters_thres):
-        #         rem_idx = np.where(dets[:, 2] == item[2])[0][0]
-        #         remove_idxs.append(rem_idx)
+        #         rem_ind = np.where(dets[:, 2] == item[2])[0][0]
+        #         remove_inds.append(rem_ind)
+
         # remove overlapping detections
         for item in candidates:
             if get_iou(det[3:7], item[3:7]) > 0:
-                rem_idx = np.where(dets[:, 2] == item[2])[0][0]
-                remove_idxs.append(rem_idx)
-                rem_idx = np.where(dets[:, 2] == det[2])[0][0]
-                remove_idxs.append(rem_idx)
-    cleaned_dets = np.delete(dets, remove_idxs, axis=0)
+                rem_ind = np.where(dets[:, 2] == item[2])[0][0]
+                remove_inds.append(rem_ind)
+                rem_ind = np.where(dets[:, 2] == det[2])[0][0]
+                remove_inds.append(rem_ind)
+    cleaned_dets = np.delete(dets, remove_inds, axis=0)
     return cleaned_dets
 
 
@@ -322,10 +324,12 @@ def match_detection(det1, dets2, sp_thres=100, min_iou=0):
     #     return None
 
     iou_max = max(ious)
+
+    # here no intersection returns none
     if iou_max <= min_iou:
         return None
 
-    idx = np.where(ious == iou_max)[0][0]
+    ind = np.where(ious == iou_max)[0][0]
 
     # handle no intersections, evaluate based on location
     if (iou_max == 0) & (len(ious) > 1):
@@ -333,22 +337,22 @@ def match_detection(det1, dets2, sp_thres=100, min_iou=0):
         for det in candidates:
             dists.append(np.linalg.norm(det1[7:9] - det[7:9]))
         dists = np.array(dists)
-        idx = np.where(dists == min(dists))[0][0]
-    return candidates[idx]
+        ind = np.where(dists == min(dists))[0][0]
+    return candidates[ind]
 
 
 def _get_indices(dets: np.ndarray, ids: np.ndarray):
-    idxs = []
+    inds = []
     for id in ids:
         track_id = id[0]
         det_id = id[1]
         if track_id == -1:
-            idxs.append(np.where(dets[:, 2] == det_id)[0][0])
+            inds.append(np.where(dets[:, 2] == det_id)[0][0])
         else:
-            idxs.append(
+            inds.append(
                 np.where((dets[:, 2] == det_id) & (dets[:, 0] == track_id))[0][0]
             )
-    return np.array(idxs)
+    return np.array(inds)
 
 
 def match_detections(dets1: np.ndarray, dets2: np.ndarray):
@@ -360,9 +364,9 @@ def match_detections(dets1: np.ndarray, dets2: np.ndarray):
     matched_ids = np.array(matched_ids).astype(np.int64)
     if len(matched_ids) == 0:
         return None, None, None
-    idxs1 = _get_indices(dets1, matched_ids[:, 0:2])
-    idxs2 = _get_indices(dets2, matched_ids[:, 2:])
-    return idxs1, idxs2, matched_ids[:, [1, 3]]
+    inds1 = _get_indices(dets1, matched_ids[:, 0:2])
+    inds2 = _get_indices(dets2, matched_ids[:, 2:])
+    return inds1, inds2, matched_ids[:, [1, 3]]
 
 
 def _intersect2d_rows(ids1: np.ndarray, ids2: np.ndarray) -> np.ndarray:
@@ -379,14 +383,14 @@ def _intersect2d_rows(ids1: np.ndarray, ids2: np.ndarray) -> np.ndarray:
 def bipartite_local_matching(pred_dets, dets):
     pred_dets_array = make_array_from_dets(pred_dets)
     dets_array = make_array_from_dets(dets)
-    pred_ids1, ids1, _ = match_detections(pred_dets_array, dets_array)
-    ids2, pred_ids2, _ = match_detections(dets_array, pred_dets_array)
-    ids1 = np.vstack((pred_ids1, ids1)).T
-    ids2 = np.vstack((pred_ids2, ids2)).T
+    pred_inds1, ids1, _ = match_detections(pred_dets_array, dets_array)
+    ids2, pred_inds2, _ = match_detections(dets_array, pred_dets_array)
+    ids1 = np.vstack((pred_inds1, ids1)).T
+    ids2 = np.vstack((pred_inds2, ids2)).T
     intersections = _intersect2d_rows(ids1, ids2)
-    pred_ids = intersections[:, 0]
+    pred_inds = intersections[:, 0]
     ids = intersections[:, 1]
-    return pred_ids, ids
+    return pred_inds, ids
 
 
 def _get_tl_and_br(det: Detection) -> tuple:
@@ -404,10 +408,10 @@ def hungarian_global_matching(dets1, dets2):
     return row_ind, col_ind
 
 
-def _connect_idxs_to_detection_ids(dets):
-    idxs_to_det_ids = {i: det.det_id for i, det in enumerate(dets)}
-    det_ids_to_idxs = {det.det_id: id for i, det in enumerate(dets)}
-    return idxs_to_det_ids, det_ids_to_idxs
+def _connect_inds_to_detection_ids(dets):
+    inds_to_det_ids = {i: det.det_id for i, det in enumerate(dets)}
+    det_ids_to_inds = {det.det_id: id for i, det in enumerate(dets)}
+    return inds_to_det_ids, det_ids_to_inds
 
 
 def _make_a_new_track(det: Detection, new_track_id) -> Track:
@@ -442,8 +446,8 @@ def initialize_tracks(det_folder: Path, filename_fixpart: str, width: int, heigh
     return tracks, new_track_id
 
 
-def _track_predicted_unmatched(pred_dets, pred_ids, tracks):
-    diff_ids = set(range(len(pred_dets))).difference(set(pred_ids))
+def _track_predicted_unmatched(pred_dets, pred_inds, tracks):
+    diff_ids = set(range(len(pred_dets))).difference(set(pred_inds))
     for id in diff_ids:
         current_track_id = pred_dets[id].track_id
         track = tracks[current_track_id]
@@ -451,9 +455,9 @@ def _track_predicted_unmatched(pred_dets, pred_ids, tracks):
     return tracks
 
 
-def _track_current_unmatched(dets, ids, frame_number, tracks, new_track_id):
-    diff_ids = set(range(len(dets))).difference(set(ids))
-    for id in diff_ids:
+def _track_current_unmatched(dets, inds, frame_number, tracks, new_track_id):
+    diff_inds = set(range(len(dets))).difference(set(inds))
+    for id in diff_inds:
         tracks[new_track_id] = _make_a_new_track(dets[id], new_track_id)
         new_track_id += 1
     return tracks, new_track_id
@@ -465,15 +469,15 @@ def _track_matches(
     tracks,
     current_frame_number,
 ):
-    pred_ids, ids = hungarian_global_matching(pred_dets, dets)
-    # pred_ids, ids = bipartite_local_matching(pred_dets, dets)
+    pred_inds, inds = hungarian_global_matching(pred_dets, dets)
+    # pred_inds, inds = bipartite_local_matching(pred_dets, dets)
 
-    if ids is None:
+    if inds is None:
         return tracks, [], []
 
-    unmatched_pred_ids = []
-    unmatched_ids = []
-    for pred_id, id in zip(pred_ids, ids):
+    unmatched_pred_inds = []
+    unmatched_inds = []
+    for pred_id, id in zip(pred_inds, inds):
         current_track_id = pred_dets[pred_id].track_id
         track = tracks[current_track_id]
         # kill tracks that are not tracked for a while
@@ -489,11 +493,11 @@ def _track_matches(
                 track.status = Status.Tracked
 
             else:
-                unmatched_pred_ids.append(pred_id)
-                unmatched_ids.append(id)
-    matched_pred_ids = set(pred_ids).difference(set(unmatched_pred_ids))
-    matched_ids = set(ids).difference(set(unmatched_ids))
-    return tracks, matched_pred_ids, matched_ids
+                unmatched_pred_inds.append(pred_id)
+                unmatched_inds.append(id)
+    matched_pred_inds = set(pred_inds).difference(set(unmatched_pred_inds))
+    matched_inds = set(inds).difference(set(unmatched_inds))
+    return tracks, matched_pred_inds, matched_inds
 
 
 def _get_predicted_flow(track, current_frame_number, flow_decay_rate=0.5):
@@ -516,10 +520,10 @@ def _get_predicted_locations(tracks, current_frame_number):
     pred_dets = []
     for _, track in tracks.items():
         if track.status != Status.Stoped:
-            flow = _get_predicted_flow(track, current_frame_number)
             pred_det = track.dets[-1]
 
-            pred_loc = _update_det_loc_by_flow(pred_det, flow)
+            # flow = _get_predicted_flow(track, current_frame_number)
+            # pred_loc = _update_det_loc_by_flow(pred_det, flow)
 
             pred_dets.append(pred_det)
             # if current_frame_number - pred_det.frame_number < min_track_length:
@@ -577,7 +581,7 @@ def compute_tracks(
         pred_dets = _get_predicted_locations(tracks, frame_number)
 
         # track maches
-        tracks, pred_ids, ids = _track_matches(
+        tracks, pred_inds, inds = _track_matches(
             pred_dets,
             dets,
             tracks,
@@ -585,11 +589,11 @@ def compute_tracks(
         )
 
         # unmatched tracks: predicted
-        tracks = _track_predicted_unmatched(pred_dets, pred_ids, tracks)
+        tracks = _track_predicted_unmatched(pred_dets, pred_inds, tracks)
 
         # unmatched tracks: current
         tracks, new_track_id = _track_current_unmatched(
-            dets, ids, frame_number, tracks, new_track_id
+            dets, inds, frame_number, tracks, new_track_id
         )
     # tracks = _reindex_tracks(_remove_short_tracks(tracks))
     return tracks
@@ -597,11 +601,11 @@ def compute_tracks(
 
 def _rm_det_chang_track_id(tracks: np.ndarray, frame_number: int, track_id: int):
     latest_track_id = np.unique(np.sort(tracks[:, 0]))[-1]
-    idx1 = np.where((tracks[:, 1] == frame_number) & (tracks[:, 0] == track_id))[0][0]
-    idxs = np.where((tracks[:, 1] > frame_number) & (tracks[:, 0] == track_id))[0]
-    if len(idxs) != 0:
-        tracks[idxs, 0] = latest_track_id + 1
-    tracks = np.delete(tracks, idx1, axis=0)
+    ind1 = np.where((tracks[:, 1] == frame_number) & (tracks[:, 0] == track_id))[0][0]
+    inds = np.where((tracks[:, 1] > frame_number) & (tracks[:, 0] == track_id))[0]
+    if len(inds) != 0:
+        tracks[inds, 0] = latest_track_id + 1
+    tracks = np.delete(tracks, ind1, axis=0)
     return tracks
 
 
@@ -633,9 +637,9 @@ def remove_detects_change_track_ids(tracks: np.ndarray):
 def remove_short_tracks(tracks: np.ndarray, min_track_length: int = 50):
     track_ids = np.unique(np.sort(tracks[:, 0]))
     for track_id in track_ids:
-        idxs = np.where(tracks[:, 0] == track_id)[0]
-        if len(idxs) < min_track_length:
-            tracks = np.delete(tracks, idxs, axis=0)
+        inds = np.where(tracks[:, 0] == track_id)[0]
+        if len(inds) < min_track_length:
+            tracks = np.delete(tracks, inds, axis=0)
     return tracks
 
 
@@ -1060,12 +1064,12 @@ def compute_tracks_with_disps(
             for _, track in tracks.items()
             if track.status != Status.Stoped
         ]
-        pred_ids, ids = hungarian_global_matching_with_disps(pred_dets, dets)
+        pred_inds, inds = hungarian_global_matching_with_disps(pred_dets, dets)
 
         # track maches
         tracks, new_track_id = _track_matches(
-            pred_ids,
-            ids,
+            pred_inds,
+            inds,
             pred_dets,
             dets,
             tracks,
@@ -1074,11 +1078,11 @@ def compute_tracks_with_disps(
         )
 
         # unmatched tracks: predicted
-        tracks = _track_predicted_unmatched(pred_dets, pred_ids, tracks)
+        tracks = _track_predicted_unmatched(pred_dets, pred_inds, tracks)
 
         # unmatched tracks: current
         tracks, new_track_id = _track_current_unmatched(
-            dets, ids, frame_number, tracks, new_track_id
+            dets, inds, frame_number, tracks, new_track_id
         )
 
         # assign a unique disparity: heuristics

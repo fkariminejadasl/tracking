@@ -192,8 +192,8 @@ def plot_tracks_in_video(
             if frame_number in frame_numbers:
                 color = tuple(int(round(c * 255)) for c in track.color)
                 color = (color[2], color[1], color[0])
-                idx = frame_numbers.index(frame_number)
-                det = track.dets[idx]
+                ind = frame_numbers.index(frame_number)
+                det = track.dets[ind]
                 x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
                 cv2.rectangle(
                     frame,
@@ -257,8 +257,8 @@ def plot_matches_in_video(
                 if frame_number in frame_numbers:
                     color = tuple(int(round(c * 255)) for c in matches.track1_color)
                     color = (color[2], color[1], color[0])
-                    idx = frame_numbers.index(frame_number)
-                    det = matches.dets1[idx]
+                    ind = frame_numbers.index(frame_number)
+                    det = matches.dets1[ind]
                     text = f"{track_id1}"
 
                     x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(
@@ -292,7 +292,7 @@ def plot_matches_in_video(
                         2,  # line type
                     )
 
-                    det = matches.dets2[idx]
+                    det = matches.dets2[ind]
                     x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(
                         det.x, det.y, det.w, det.h
                     )
