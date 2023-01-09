@@ -684,7 +684,7 @@ def save_tracks_to_mot_format(
         shutil.rmtree(track_folder)
 
 
-def read_tracks_from_mot_format(track_file: Path) -> np.ndarray:
+def load_tracks_from_mot_format(track_file: Path) -> np.ndarray:
     """
     mot format: frame_id, track_id, xtl, ytl, w, h, score, class, visibility
     array format: track_id, frame_id, det_id, xtl, ytl, xbr, ybr, xc, yc, w, h
@@ -720,7 +720,7 @@ def read_tracks_from_mot_format(track_file: Path) -> np.ndarray:
     return np.round(np.array(tracks)).astype(np.int64)
 
 
-def read_tracks_cvat_txt_format(track_file: Path) -> np.ndarray:
+def load_tracks_from_cvat_txt_format(track_file: Path) -> np.ndarray:
     """
     array format: track_id, frame_number, det_id, xtl, ytl, xbr, ybr, xc, yc, w, h
     """
@@ -734,7 +734,7 @@ def read_tracks_cvat_txt_format(track_file: Path) -> np.ndarray:
     return np.concatenate((tracks, centers_x, centers_y, width, height), axis=1)
 
 
-def save_tracks_cvat_txt_format(track_file: Path, tracks: np.ndarray):
+def save_tracks_to_cvat_txt_format(track_file: Path, tracks: np.ndarray):
     np.savetxt(
         track_file,
         tracks[:, :7],
@@ -761,7 +761,7 @@ def save_tracks(track_file: Path, tracks: np.ndarray | dict[Track]):
                 )
 
 
-def read_tracks(track_file):
+def load_tracks(track_file):
     tracks = []
     with open(track_file, "r") as f:
         for row in f:
