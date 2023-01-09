@@ -8,24 +8,41 @@ import pytest
 path = (Path(__file__).parents[1]).as_posix()
 sys.path.insert(0, path)
 
-from tracking.data_association import (bipartite_local_matching,
-                                       clean_detections, compute_tracks,
-                                       get_detections, get_detections_array,
-                                       get_iou, hungarian_global_matching,
-                                       is_bbox_in_bbox, make_array_from_dets,
-                                       make_array_from_tracks,
-                                       make_dets_from_array,
-                                       make_tracks_from_array,
-                                       match_detections,
-                                       read_tracks_cvat_txt_format,
-                                       read_tracks_from_mot_format,
-                                       save_tracks_cvat_txt_format,
-                                       save_tracks_to_mot_format)
-from tracking.stats import (get_gt_object_match, get_stats_for_a_frame,
-                            get_stats_for_a_track, get_stats_for_tracks)
+from tracking.data_association import (
+    bipartite_local_matching,
+    clean_detections,
+    compute_tracks,
+    get_detections,
+    get_detections_array,
+    get_iou,
+    hungarian_global_matching,
+    is_bbox_in_bbox,
+    make_array_from_dets,
+    make_array_from_tracks,
+    make_dets_from_array,
+    make_tracks_from_array,
+    match_detections,
+    read_tracks_cvat_txt_format,
+    read_tracks_from_mot_format,
+    save_tracks_cvat_txt_format,
+    save_tracks_to_mot_format,
+    get_detections_with_disparity,
+    load_disparities,
+)
+from tracking.stats import (
+    get_gt_object_match,
+    get_stats_for_a_frame,
+    get_stats_for_a_track,
+    get_stats_for_tracks,
+)
+
+from tracking.stereo_gt import (
+    get_matched_track_ids,
+    load_matched_tracks_ids
+)
 
 data_path = Path(__file__).parent / "data"
-annos = read_tracks_cvat_txt_format(data_path / "tracks_gt.txt")
+annos = read_tracks_cvat_txt_format(data_path / "04_07_22_G_2_rect_valid_gt.txt")
 atracks = read_tracks_cvat_txt_format(data_path / "tracks.txt")
 im_width, im_height = 2098, 1220
 
@@ -326,3 +343,33 @@ def test_compute_track():
     desired = atracks[atracks[:, 1] < 3]
 
     np.testing.assert_equal(tracks_array[:, :7], desired)
+
+@pytest.mark.temp
+def test_disparities():
+    desired = load_disparities(data_path / "disparities_frame81.txt")
+    disparities = get_detections_with_disparity(
+        data_path / "04_07_22_F_2_rect_valid_82.txt",
+        data_path / "04_07_22_G_2_rect_valid_82.txt",
+        im_width,
+        im_height,
+    )
+    actual = []
+    for disparity in disparities:
+        if len(disparity.candidates) != 0:
+            actual.append(disparity)
+    for disp_act, disp_desired in zip(actual, desired):
+        assert disp_act.track_id == disp_desired.track_id
+        assert disp_act.frame_number == disp_desired.frame_number
+        assert disp_act.det_id == disp_desired.det_id
+        assert disp_act.candidates == disp_desired.candidates
+        assert disp_act.det_ids == disp_desired.det_ids
+
+
+@pytest.mark.slow
+def test_get_matched_track_ids():
+    desired = np.array(load_matched_tracks_ids())
+
+    annos1 = read_tracks_cvat_txt_format(data_path / "04_07_22_F_2_rect_valid_gt.txt")
+    matches = np.array(get_matched_track_ids(annos1, annos)) 
+    matches = matches[matches[:,2]<5]
+    np.testing.assert_equal(matches[:,:2], desired[:,:2])

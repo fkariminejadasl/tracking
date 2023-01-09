@@ -5,8 +5,8 @@ from tracking.data_association import Detection, get_frame_numbers_of_track
 accepted_track_length = 50
 matched_track_length = 50
 accepted_error = 3
-smallest_disparity = 250
-largest_disparity = 650
+smallest_disparity = 450
+largest_disparity = 750
 
 
 @dataclass

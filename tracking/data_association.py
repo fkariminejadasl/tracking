@@ -52,7 +52,6 @@ class Detection:
     det_id: int
     frame_number: int = -1
     score: np.float16 = -1
-    camera_id: int = 0
     track_id: int = -1
 
 
@@ -66,7 +65,6 @@ def _copy_detection(det: Detection):
         det_id=det.det_id,
         frame_number=det.frame_number,
         score=det.score,
-        camera_id=det.camera_id,
     )
 
 
@@ -88,7 +86,6 @@ def _update_det_loc_by_flow(det: Detection, flow: Point):
         det_id=det.det_id,
         frame_number=det.frame_number,
         score=det.score,
-        camera_id=det.camera_id,
     )
 
 
@@ -105,7 +102,9 @@ def _copy_track(track: Track):
 
 
 def get_detections(
-    det_file: Path, width: int, height: int, camera_id: int = 1
+    det_file: Path,
+    width: int,
+    height: int,
 ) -> list[Detection]:
     frame_number = int(det_file.stem.split("_")[-1]) - 1
     detections = np.loadtxt(det_file)
@@ -118,7 +117,6 @@ def get_detections(
             frame_number=frame_number,
             det_id=det_id,
             score=np.float16(f"{det[5]:.2f}"),
-            camera_id=camera_id,
         )
         for det_id, det in enumerate(detections)
     ]
@@ -559,7 +557,6 @@ def _reindex_tracks(tracks):
 def compute_tracks(
     det_folder: Path,
     filename_fixpart: str,
-    camera_id: int,
     width: int,
     height: int,
     total_no_frames: int,
@@ -576,7 +573,7 @@ def compute_tracks(
         #     tracks = _reindex_tracks(_remove_short_tracks(tracks))
 
         det_path = det_folder / f"{filename_fixpart}_{frame_number + 1}.txt"
-        # dets = get_detections(det_path, width, height, camera_id)
+        # dets = get_detections(det_path, width, height)
         dets = get_cleaned_detections(det_path, width, height)
         pred_dets = _get_predicted_locations(tracks, frame_number)
 
@@ -785,7 +782,7 @@ def read_tracks(track_file):
 
 
 def get_iou(bbox1, bbox2) -> float:
-    # bbox1,2: (x_topleft,y_topleft, x_bottomright, y_bottomright)
+    # bbox1,2: (x_topleft, y_topleft, x_bottomright, y_bottomright)
     # copied and modified from
     # https://stackoverflow.com/questions/25349178/calculating-percentage-of-bounding-box-overlap-for-image-detector-evaluation
 
@@ -812,7 +809,7 @@ def get_iou(bbox1, bbox2) -> float:
 
 
 def is_bbox_in_bbox(bbox1, bbox2, inters_thres=0.85) -> float:
-    # bbox1,2: (x_topleft,y_topleft, x_bottomright, y_bottomright)
+    # bbox1,2: (x_topleft, y_topleft, x_bottomright, y_bottomright)
 
     # determine the coordinates of the intersection rectangle
     x_left = max(bbox1[0], bbox2[0])
@@ -836,6 +833,17 @@ def is_bbox_in_bbox(bbox1, bbox2, inters_thres=0.85) -> float:
         return True
     else:
         return False
+
+
+def interpolate_two_bboxs(bbox1, bbox2, frame_number1, frame_number2):
+    # bbox1,2: (x_topleft, y_topleft, x_bottomright, y_bottomright)
+    frames = np.arange(frame_number1 + 1, frame_number2)
+    given_frames = [frame_number1, frame_number2]
+    xs_tl = np.interp(frames, given_frames, [bbox1[0], bbox2[0]])
+    ys_tl = np.interp(frames, given_frames, [bbox1[1], bbox2[1]])
+    xs_br = np.interp(frames, given_frames, [bbox1[2], bbox2[2]])
+    ys_br = np.interp(frames, given_frames, [bbox1[3], bbox2[3]])
+    return list(zip(xs_tl, ys_tl, xs_br, ys_br))
 
 
 def find_detection_in_track_by_frame_number(track, frame_number):
@@ -865,114 +873,86 @@ def find_track_id_by_coord_and_frame_number(tracks, x, y, frame_number, toleranc
                 return track_id
 
 
-# TODO: move somewhere else
-# ==========================
-@dataclass
-class DetectionWithDisp:
-    x: int
-    y: int
-    w: int
-    h: int
-    det_id: int
-    disp_candidates: list[int]
-    frame_number: int = -1
-    score: np.float16 = -1
-    camera_id: int = 0
+def get_a_track_from_track_id(tracks: np.ndarray, track_id: int) -> np.ndarray:
+    return tracks[tracks[:, 0] == track_id]
 
 
-@dataclass
-class DispWithProb:
-    val: int = -1
-    prob: float = 0.0
-    count: int = 0
-    current_frame_number: int = 0
-    frame_number: int = -1
-
-
-@dataclass
-class Prediction:
-    x: int
-    y: int
-    w: int
-    h: int
-    track_id: int
-    det_id: int
-    frame_number: int
-    disp: DispWithProb = DispWithProb()
-
-
-@dataclass
-class Track2:
-    dets: list[Detection]
-    predicted_loc: Detection
-    color: tuple
-    status: Status
-    disp: DispWithProb = DispWithProb()
-
-
-def _compute_disp_candidates(det1, dets2) -> list[int]:
+def _compute_disp_candidates(det1: Detection, dets2: Detection) -> list[int]:
     disp_candidates = []
+    det_ids = []
     for det2 in dets2:
         disp = abs(det1.x - det2.x)
         rectification_error = abs(det1.y - det2.y)
         if (
-            rectification_error < accepted_rect_error
-            and disp < largest_disparity
-            and disp > smallest_disparity
+            rectification_error
+            < accepted_rect_error
+            # and disp < largest_disparity
+            # and disp > smallest_disparity
         ):
             disp_candidates.append(disp)
-    return disp_candidates
+            det_ids.append(det2.det_id)
+    return disp_candidates, det_ids
 
 
-def get_detections_with_disp(
+@dataclass
+class Disparity:
+    track_id: int
+    frame_number: int
+    det_id: int
+    candidates: list[int]
+    det_ids: list[int]
+
+
+def get_detections_with_disparity(
     det_path_cam1,
     det_path_cam2,
     width: int,
     height: int,
-    camera_id: int = 1,
-) -> list[DetectionWithDisp]:
-    camera_id2 = 2
-    if camera_id == 2:
-        camera_id2 = 1
+) -> list[Disparity]:
     frame_number = int(det_path_cam1.stem.split("_")[-1]) - 1
-    assert frame_number == int(det_path_cam2.stem.split("_")[-1]), "not a stereo pair"
-    dets_cam1 = get_detections(det_path_cam1, width, height, camera_id=camera_id)
-    dets_cam2 = get_detections(det_path_cam2, width, height, camera_id=camera_id2)
+    assert (
+        frame_number == int(det_path_cam2.stem.split("_")[-1]) - 1
+    ), "not a stereo pair"
+    dets_cam1 = get_detections(det_path_cam1, width, height)
+    dets_cam2 = get_detections(det_path_cam2, width, height)
     detections = []
     for det in dets_cam1:
-        disp_candidates = _compute_disp_candidates(det, dets_cam2)
-        detection = DetectionWithDisp(
-            x=det.x,
-            y=det.y,
-            w=det.w,
-            h=det.h,
-            frame_number=frame_number,
-            det_id=det.det_id,
-            score=det.score,
-            camera_id=det.camera_id,
-            disp_candidates=disp_candidates,
+        disp_candidates, det_ids = _compute_disp_candidates(det, dets_cam2)
+        detection = Disparity(
+            det.track_id, frame_number, det.det_id, disp_candidates, det_ids
         )
         detections.append(detection)
-
     return detections
 
 
-def hungarian_global_matching_with_disps(dets1, dets2):
-    dist = np.zeros((len(dets1), len(dets2)), dtype=np.float32)
-    for i, det1 in enumerate(dets1):
-        for j, det2 in enumerate(dets2):
-            iou_loss = 1 - get_iou(_get_tl_and_br(det1), _get_tl_and_br(det2))
-            loc_loss = np.linalg.norm([det2.x - det1.x, det2.y - det1.y])
-            disp_loss = 0
-            # if det1.disp.val != -1 and len(det2.disp_candidates) > 0:
-            #     disp_loss = min(
-            #         [abs(disp2 - det1.disp.val) for disp2 in det2.disp_candidates]
-            #     )
-            # else:
-            #     disp_loss = 0
-            dist[i, j] = iou_loss + disp_loss
-    row_ind, col_ind = linear_sum_assignment(dist)
-    return row_ind, col_ind
+def save_disparities(save_file: Path, disps: list[Disparity]):
+    with open(save_file, "w") as wfile:
+        wfile.write("track_id,frame_number,det_id,candidates,det_ids")
+        for disp in disps:
+            if len(disp.candidates) != 0:
+                wfile.write("\n")
+                wfile.write(
+                    f"{disp.track_id};{disp.frame_number};{disp.det_id};{disp.candidates};{disp.det_ids}"
+                )
+
+
+def load_disparities(save_file) -> list[Disparity]:
+    disparities = []
+    with open(save_file, "r") as rfile:
+        rfile.readline()
+        for row in rfile:
+            items = row.split("\n")[0].split(";")
+            candidats = list(map(int, items[3].split("[")[1].split("]")[0].split(",")))
+            det_ids = list(map(int, items[4].split("[")[1].split("]")[0].split(",")))
+            disparity = Disparity(
+                track_id=int(items[0]),
+                frame_number=int(items[1]),
+                det_id=int(items[2]),
+                candidates=candidats,
+                det_ids=det_ids,
+            )
+            disparities.append(disparity)
+    return disparities
 
 
 def _assign_unique_disp(tracks, frame_number):
@@ -989,107 +969,4 @@ def _assign_unique_disp(tracks, frame_number):
             track.disp = disp
         if frame_number != det.frame_number:
             track.disp.current_frame_number = frame_number
-    return tracks
-
-
-def initialize_tracks_with_disps(
-    det_folder_cam1: Path,
-    filename_fixpart_cam1: str,
-    det_folder_cam2: Path,
-    filename_fixpart_cam2: str,
-    camera_id: int,
-    width: int,
-    height: int,
-):
-    frame_number = 0
-    det_path_cam1 = det_folder_cam1 / f"{filename_fixpart_cam1}_{frame_number + 1}.txt"
-    det_path_cam2 = det_folder_cam2 / f"{filename_fixpart_cam2}_{frame_number + 1}.txt"
-    dets = get_detections_with_disp(
-        det_path_cam1,
-        det_path_cam2,
-        width,
-        height,
-        camera_id,
-    )
-    tracks, new_track_id = _initialize_track_frame1(dets)
-
-    # assign a unique disparity: heuristics
-    tracks = _assign_unique_disp(tracks, frame_number)
-
-    # assign disparities to predictions
-    for _, track in tracks.items():
-        track.predicted_loc.disp = track.disp
-
-    return tracks, new_track_id
-
-
-def compute_tracks_with_disps(
-    det_folder_cam1: Path,
-    filename_fixpart_cam1: str,
-    det_folder_cam2: Path,
-    filename_fixpart_cam2: str,
-    camera_id: int,
-    width: int,
-    height: int,
-    total_no_frames: int = 680,
-):
-    tracks, new_track_id = initialize_tracks_with_disps(
-        det_folder_cam1,
-        filename_fixpart_cam1,
-        det_folder_cam2,
-        filename_fixpart_cam2,
-        camera_id,
-        width,
-        height,
-    )
-    # start track
-    # ===========
-    for frame_number in range(1, total_no_frames):
-        det_path_cam1 = (
-            det_folder_cam1 / f"{filename_fixpart_cam1}_{frame_number+1}.txt"
-        )
-        det_path_cam2 = (
-            det_folder_cam2 / f"{filename_fixpart_cam2}_{frame_number+1}.txt"
-        )
-        dets = get_detections_with_disp(
-            det_path_cam1,
-            det_path_cam2,
-            width,
-            height,
-            camera_id,
-        )
-
-        pred_dets = [
-            track.predicted_loc
-            for _, track in tracks.items()
-            if track.status != Status.Stoped
-        ]
-        pred_inds, inds = hungarian_global_matching_with_disps(pred_dets, dets)
-
-        # track maches
-        tracks, new_track_id = _track_matches(
-            pred_inds,
-            inds,
-            pred_dets,
-            dets,
-            tracks,
-            frame_number,
-            new_track_id,
-        )
-
-        # unmatched tracks: predicted
-        tracks = _track_predicted_unmatched(pred_dets, pred_inds, tracks)
-
-        # unmatched tracks: current
-        tracks, new_track_id = _track_current_unmatched(
-            dets, inds, frame_number, tracks, new_track_id
-        )
-
-        # assign a unique disparity: heuristics
-        tracks = _assign_unique_disp(tracks, frame_number)
-
-        # assign disparities to predictions
-        for _, track in tracks.items():
-            track.predicted_loc.disp = track.disp
-
     return tracks
