@@ -696,8 +696,8 @@ def read_tracks_from_mot_format(track_file: Path) -> np.ndarray:
             top_left_x, top_left_y, width, height = (
                 float(items[2]) - 1,
                 float(items[3]) - 1,
-                int(items[4]),
-                int(items[5]),
+                float(items[4]),
+                float(items[5]),
             )
             center_x = top_left_x + width / 2
             center_y = top_left_y + height / 2
@@ -717,7 +717,7 @@ def read_tracks_from_mot_format(track_file: Path) -> np.ndarray:
                 height,
             ]
             tracks.append(track)
-    return np.array(tracks).astype(np.int64)
+    return np.round(np.array(tracks)).astype(np.int64)
 
 
 def read_tracks_cvat_txt_format(track_file: Path) -> np.ndarray:
@@ -955,6 +955,8 @@ def load_disparities(save_file) -> list[Disparity]:
     return disparities
 
 
+# TODO: broken
+"""
 def _assign_unique_disp(tracks, frame_number):
     for track_id, track in tracks.items():
         det = track.dets[-1]
@@ -970,3 +972,4 @@ def _assign_unique_disp(tracks, frame_number):
         if frame_number != det.frame_number:
             track.disp.current_frame_number = frame_number
     return tracks
+"""

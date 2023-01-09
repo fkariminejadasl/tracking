@@ -14,9 +14,11 @@ from tracking.data_association import (
     compute_tracks,
     get_detections,
     get_detections_array,
+    get_detections_with_disparity,
     get_iou,
     hungarian_global_matching,
     is_bbox_in_bbox,
+    load_disparities,
     make_array_from_dets,
     make_array_from_tracks,
     make_dets_from_array,
@@ -26,8 +28,6 @@ from tracking.data_association import (
     read_tracks_from_mot_format,
     save_tracks_cvat_txt_format,
     save_tracks_to_mot_format,
-    get_detections_with_disparity,
-    load_disparities,
 )
 from tracking.stats import (
     get_gt_object_match,
@@ -35,11 +35,7 @@ from tracking.stats import (
     get_stats_for_a_track,
     get_stats_for_tracks,
 )
-
-from tracking.stereo_gt import (
-    get_matched_track_ids,
-    load_matched_tracks_ids
-)
+from tracking.stereo_gt import get_matched_track_ids, load_matched_tracks_ids
 
 data_path = Path(__file__).parent / "data"
 annos = read_tracks_cvat_txt_format(data_path / "04_07_22_G_2_rect_valid_gt.txt")
@@ -344,6 +340,7 @@ def test_compute_track():
 
     np.testing.assert_equal(tracks_array[:, :7], desired)
 
+
 @pytest.mark.temp
 def test_disparities():
     desired = load_disparities(data_path / "disparities_frame81.txt")
@@ -370,6 +367,6 @@ def test_get_matched_track_ids():
     desired = np.array(load_matched_tracks_ids())
 
     annos1 = read_tracks_cvat_txt_format(data_path / "04_07_22_F_2_rect_valid_gt.txt")
-    matches = np.array(get_matched_track_ids(annos1, annos)) 
-    matches = matches[matches[:,2]<5]
-    np.testing.assert_equal(matches[:,:2], desired[:,:2])
+    matches = np.array(get_matched_track_ids(annos1, annos))
+    matches = matches[matches[:, 2] < 5]
+    np.testing.assert_equal(matches[:, :2], desired[:, :2])

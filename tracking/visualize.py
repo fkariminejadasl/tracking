@@ -6,15 +6,12 @@ from matplotlib import pyplot as plt
 from tracking.data_association import (
     Detection,
     Point,
+    get_a_track_from_track_id,
     get_detections,
     get_frame_numbers_of_track,
     tl_br_from_cen_wh,
-    get_a_track_from_track_id,
 )
-
-from tracking.stereo_gt import (
-    get_disparity_info_from_stereo_track,
-)
+from tracking.stereo_gt import get_disparity_info_from_stereo_track
 
 
 def get_video_parameters(vc: cv2.VideoCapture):
