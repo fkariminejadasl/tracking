@@ -1,5 +1,4 @@
 import argparse
-import os
 import sys
 from pathlib import Path
 
@@ -7,20 +6,11 @@ path = (Path(__file__).parents[1]).as_posix()
 sys.path.insert(0, path)
 
 import cv2
-import matplotlib.pylab as plt
 
-from tracking.data_association import (
-    Point,
-    compute_tracks,
-    save_tracks_to_mot_format,
-    _remove_short_tracks,
-    _reindex_tracks,
-)
-from tracking.visualize import (
-    get_frame,
-    plot_tracks_in_video,
-    get_video_parameters,
-)
+from tracking.data_association import (Point, _reindex_tracks,
+                                       _remove_short_tracks, compute_tracks,
+                                       save_tracks_to_mot_format)
+from tracking.visualize import get_video_parameters, plot_tracks_in_video
 
 
 def parse_args():
@@ -91,10 +81,8 @@ def main():
     if args.total_no_frames is None:
         args.total_no_frames = total_no_frames
 
-    cam_id = 1
-
     tracks = compute_tracks(
-        det_folder, filename_fixpart, cam_id, width, height, total_no_frames
+        det_folder, filename_fixpart, width, height, total_no_frames
     )
     tracks = _reindex_tracks(_remove_short_tracks(tracks))
 

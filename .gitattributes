@@ -31,3 +31,9 @@ tests/data/matched_ids_56.txt filter=lfs diff=lfs merge=lfs -text
 tests/data/pred_dets_56.txt filter=lfs diff=lfs merge=lfs -text
 tests/data/tracks_bipartite_matching.txt filter=lfs diff=lfs merge=lfs -text
 tests/data/track_stats_bipartite_matching.txt filter=lfs diff=lfs merge=lfs -text
+tests/data/stereo_matches.txt filter=lfs diff=lfs merge=lfs -text
+tests/data/04_07_22_F_2_rect_valid_82.txt filter=lfs diff=lfs merge=lfs -text
+tests/data/04_07_22_F_2_rect_valid_gt.txt filter=lfs diff=lfs merge=lfs -text
+tests/data/04_07_22_G_2_rect_valid_82.txt filter=lfs diff=lfs merge=lfs -text
+tests/data/04_07_22_G_2_rect_valid_gt.txt filter=lfs diff=lfs merge=lfs -text
+tests/data/disparities_frame81.txt filter=lfs diff=lfs merge=lfs -text
