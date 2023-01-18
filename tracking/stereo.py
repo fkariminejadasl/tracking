@@ -20,7 +20,7 @@ class Matches:
     track2_color: tuple
 
 
-def compute_possible_matches_for_a_track(track1, tracks2):
+def compute_possible_matches_for_track(track1, tracks2):
     possible_matches = {}
     for track_id2, track2 in tracks2.items():
         if len(track2.dets) > accepted_track_length:
@@ -68,7 +68,7 @@ def compute_possible_matches(tracks1, tracks2):
     all_matches = {}
     for track_id1, track1 in tracks1.items():
         if len(track1.dets) > accepted_track_length:
-            matched_groups = compute_possible_matches_for_a_track(track1, tracks2)
+            matched_groups = compute_possible_matches_for_track(track1, tracks2)
             if matched_groups:
                 all_matches[track_id1] = matched_groups
                 print(f"{track_id1}: {list(matched_groups.keys())}")

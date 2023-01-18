@@ -3,11 +3,14 @@ import matplotlib.patches as patches
 import numpy as np
 from matplotlib import pyplot as plt
 
-from tracking.data_association import (Detection, Point,
-                                       get_a_track_from_track_id,
-                                       get_detections,
-                                       get_frame_numbers_of_track,
-                                       tl_br_from_cen_wh)
+from tracking.data_association import (
+    Detection,
+    Point,
+    get_detections,
+    get_frame_numbers_of_track,
+    get_track_from_track_id,
+    tl_br_from_cen_wh,
+)
 from tracking.stereo_gt import get_disparity_info_from_stereo_track
 
 
@@ -483,10 +486,10 @@ def plot_disparity_info(disparity_info: np.ndarray, axs=None):
 
 def plot_disparity_infos(tracks1, tracks2, matches):
     for i, (track1_id, track2_id) in enumerate(matches):
-        track1 = get_a_track_from_track_id(tracks1, track1_id)
-        track2 = get_a_track_from_track_id(tracks2, track2_id)
+        track1 = get_track_from_track_id(tracks1, track1_id)
+        track2 = get_track_from_track_id(tracks2, track2_id)
         disparity_info = np.array(get_disparity_info_from_stereo_track(track1, track2))
-        print(i, i % 10, track1_id, track2_id, len(disparity_info))
+        print(track1_id, track2_id, len(disparity_info))
         if i % 10 == 0:
             fig, axs = plt.subplots(1, 2)
         plot_disparity_info(disparity_info, axs)

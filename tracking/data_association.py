@@ -596,61 +596,6 @@ def compute_tracks(
     return tracks
 
 
-def _rm_det_chang_track_id(tracks: np.ndarray, frame_number: int, track_id: int):
-    latest_track_id = np.unique(np.sort(tracks[:, 0]))[-1]
-    ind1 = np.where((tracks[:, 1] == frame_number) & (tracks[:, 0] == track_id))[0][0]
-    inds = np.where((tracks[:, 1] > frame_number) & (tracks[:, 0] == track_id))[0]
-    if len(inds) != 0:
-        tracks[inds, 0] = latest_track_id + 1
-    tracks = np.delete(tracks, ind1, axis=0)
-    return tracks
-
-
-def remove_detect_change_track_id_per_frame(tracks: np.ndarray, frame_number: int):
-    frame_tracks = tracks[tracks[:, 1] == frame_number].copy()
-    track_ids_remove = []
-    for i in range(len(frame_tracks)):
-        for j in range(i + 1, len(frame_tracks)):
-            item1 = frame_tracks[i]
-            item2 = frame_tracks[j]
-            iou = get_iou(item1[3:7], item2[3:7])
-            if iou > 0:
-                track_ids_remove.append(item1[0])
-                track_ids_remove.append(item2[0])
-
-    track_ids_remove = list(set(track_ids_remove))
-    for track_id in track_ids_remove:
-        tracks = _rm_det_chang_track_id(tracks, frame_number, track_id)
-    return tracks
-
-
-def remove_detects_change_track_ids(tracks: np.ndarray):
-    frame_numbers = np.unique(np.sort(tracks[:, 1]))
-    for frame_number in frame_numbers:
-        tracks = remove_detect_change_track_id_per_frame(tracks, frame_number)
-    return tracks
-
-
-def remove_short_tracks(tracks: np.ndarray, min_track_length: int = 50):
-    track_ids = np.unique(np.sort(tracks[:, 0]))
-    for track_id in track_ids:
-        inds = np.where(tracks[:, 0] == track_id)[0]
-        if len(inds) < min_track_length:
-            tracks = np.delete(tracks, inds, axis=0)
-    return tracks
-
-
-def arrange_track_ids(tracks: np.ndarray):
-    new_tracks = tracks.copy()
-    track_ids = np.unique(np.sort(tracks[:, 0]))
-    old_to_new_ids = {
-        track_id: new_track_id for new_track_id, track_id in enumerate(track_ids)
-    }
-    for track_id in track_ids:
-        new_tracks[tracks[:, 0] == track_id, 0] = old_to_new_ids[track_id]
-    return new_tracks
-
-
 def save_tracks_to_mot_format(
     save_file: Path, tracks: np.ndarray | dict[Track], make_zip: bool = True
 ):
@@ -684,11 +629,17 @@ def save_tracks_to_mot_format(
         shutil.rmtree(track_folder)
 
 
-def load_tracks_from_mot_format(track_file: Path) -> np.ndarray:
+def load_tracks_from_mot_format(zip_file: Path) -> np.ndarray:
     """
     mot format: frame_id, track_id, xtl, ytl, w, h, score, class, visibility
     array format: track_id, frame_id, det_id, xtl, ytl, xbr, ybr, xc, yc, w, h
     """
+    if zip_file.suffix == ".zip":
+        shutil.unpack_archive(zip_file, zip_file.parent / zip_file.stem, "zip")
+        track_file = zip_file.parent / zip_file.stem / "gt/gt.txt"
+    else:
+        track_file = zip_file
+
     tracks = []
     with open(track_file, "r") as file:
         for row in file:
@@ -717,6 +668,8 @@ def load_tracks_from_mot_format(track_file: Path) -> np.ndarray:
                 height,
             ]
             tracks.append(track)
+    if zip_file.suffix == ".zip":
+        shutil.rmtree(zip_file.parent / zip_file.stem)
     return np.round(np.array(tracks)).astype(np.int64)
 
 
@@ -873,8 +826,12 @@ def find_track_id_by_coord_and_frame_number(tracks, x, y, frame_number, toleranc
                 return track_id
 
 
-def get_a_track_from_track_id(tracks: np.ndarray, track_id: int) -> np.ndarray:
+def get_track_from_track_id(tracks: np.ndarray, track_id: int) -> np.ndarray:
     return tracks[tracks[:, 0] == track_id]
+
+
+def get_track_inds_from_track_id(tracks: np.ndarray, track_id: int) -> np.ndarray:
+    return np.where(tracks[:, 0] == track_id)[0]
 
 
 def _compute_disp_candidates(det1: Detection, dets2: Detection) -> list[int]:

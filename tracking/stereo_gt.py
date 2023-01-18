@@ -1,11 +1,12 @@
 import numpy as np
 
-from tracking.data_association import get_a_track_from_track_id
+from tracking.data_association import get_track_from_track_id
 
 
 def get_disparity_info_from_stereo_track(
     track1: np.ndarray, track2: np.ndarray
 ) -> np.ndarray:
+    # disparity_info: track_id1, track_id2, frame_number, align_error, disparity
     min_frame_number = min(min(track1[:, 1]), min(track2[:, 1]))
     max_frame_number = max(max(track1[:, 1]), max(track2[:, 1]))
     disparity_info = []
@@ -23,6 +24,7 @@ def get_disparity_info_from_stereo_track(
     return disparity_info
 
 
+# TODO remove?
 def get_disparity_info_from_stereo_tracks(
     tracks1: np.ndarray, tracks2: np.ndarray, matches: np.ndarray
 ):
@@ -32,8 +34,8 @@ def get_disparity_info_from_stereo_tracks(
         ind = np.where(matches[:, 0] == track1_id)[0][0]
         track2_id = matches[ind, 1]
         if track2_id != -1:
-            track1 = get_a_track_from_track_id(tracks1, track1_id)
-            track2 = get_a_track_from_track_id(tracks2, track2_id)
+            track1 = get_track_from_track_id(tracks1, track1_id)
+            track2 = get_track_from_track_id(tracks2, track2_id)
             disparity_info = get_disparity_info_from_stereo_track(track1, track2)
             disparity_infos.extend(disparity_info)
     return disparity_infos
@@ -53,13 +55,11 @@ def get_matched_track_ids(tracks1, tracks2):
     for track1_id in tracks1_ids:
         align_errors = []
         for track2_id in tracks2_ids:
-            track1 = get_a_track_from_track_id(tracks1, track1_id)
-            track2 = get_a_track_from_track_id(tracks2, track2_id)
+            track1 = get_track_from_track_id(tracks1, track1_id)
+            track2 = get_track_from_track_id(tracks2, track2_id)
             align_error = get_mean_alignment_error(track1, track2)
             if align_error:
-                align_errors.append(
-                    [track2_id, get_mean_alignment_error(track1, track2)]
-                )
+                align_errors.append([track2_id, align_error])
         align_errors = np.array(align_errors)
         track2_id, align_error = align_errors[
             align_errors[:, 1] == min(align_errors[:, 1])
