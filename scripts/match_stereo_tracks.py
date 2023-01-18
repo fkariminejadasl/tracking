@@ -56,8 +56,8 @@ def parse_args():
 
 def main():
     args = parse_args()
-    result_folder = args.result_folder.absolute()
-    data_folder = args.data_folder.absolute()
+    result_folder = args.result_folder.expanduser()
+    data_folder = args.data_folder.expanduser()
 
     tracks1 = load_tracks_from_mot_format(Path(data_folder / args.tracks1))
     tracks2 = load_tracks_from_mot_format(Path(data_folder / args.tracks2))

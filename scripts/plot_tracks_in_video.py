@@ -12,36 +12,34 @@ from tracking.data_association import (
     _reindex_tracks,
     _remove_short_tracks,
     compute_tracks,
-    save_tracks_to_mot_format,
+    load_tracks_from_mot_format,
+    make_tracks_from_array,
 )
 from tracking.visualize import get_video_parameters, plot_tracks_in_video
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Description of your program")
+    parser = argparse.ArgumentParser(description="Plot tracks bounding boxes in video")
     parser.add_argument(
-        "-r",
-        "--result_folder",
-        help="Path to save the result",
+        "-t",
+        "--track_file",
+        help="Track file",
         required=True,
         type=Path,
     )
     parser.add_argument(
-        "-d",
-        "--det_folder",
-        help="Path where the detections are",
+        "-v",
+        "--video_file",
+        help="Video file extension '.mp4'",
         required=True,
         type=Path,
     )
     parser.add_argument(
-        "-v", "--video_file", help="Video file with full path", required=True, type=Path
-    )
-    parser.add_argument(
-        "--save_name",
-        help="The name of the file used to save tracks and video",
-        required=False,
-        type=str,
-        default="tracks_test",
+        "-s",
+        "--save_file",
+        help="The resulting video with or without full path.",
+        required=True,
+        type=Path,
     )
     parser.add_argument(
         "--fps",
@@ -71,12 +69,11 @@ def parse_args():
 
 def main():
     args = parse_args()
-    result_folder = args.result_folder.expanduser()
-    det_folder = args.det_folder.expanduser()
+    track_file = args.track_file.expanduser()
     video_file = args.video_file.expanduser()
-    filename_fixpart = video_file.stem
+    save_file = args.save_file.expanduser()
 
-    result_folder.mkdir(parents=True, exist_ok=True)
+    save_file.parent.mkdir(parents=True, exist_ok=True)
     vc = cv2.VideoCapture(video_file.as_posix())
 
     height, width, total_no_frames, fps = get_video_parameters(vc)
@@ -84,11 +81,6 @@ def main():
         args.fps = fps
     if args.total_no_frames is None:
         args.total_no_frames = total_no_frames
-
-    tracks = compute_tracks(
-        det_folder, filename_fixpart, width, height, total_no_frames
-    )
-    tracks = _reindex_tracks(_remove_short_tracks(tracks))
 
     if args.video_bbox is None:
         top_left = Point(x=0, y=0)
@@ -102,19 +94,20 @@ def main():
         video_width = bottom_right_x - top_left_x
         video_height = bottom_right_y - top_left_y
 
+    tracks = load_tracks_from_mot_format(track_file)
+    tracks = make_tracks_from_array(tracks)
     plot_tracks_in_video(
         tracks,
         vc,
-        result_folder / f"{args.save_name}.mp4",
+        save_file,
         top_left,
         video_width,
         video_height,
         args.total_no_frames,
         fps=args.fps,
         show_det_id=False,
-        black=True,
+        black=False,
     )
-    save_tracks_to_mot_format(result_folder / f"{args.save_name}", tracks)
 
 
 if __name__ == "__main__":
