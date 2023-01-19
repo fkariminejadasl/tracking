@@ -131,6 +131,14 @@ def tl_br_from_cen_wh(center_x, center_y, bbox_w, bbox_h) -> tuple:
     )
 
 
+def cen_wh_from_tl_br(tl_x, tl_y, br_x, br_y) -> tuple:
+    width = int(round(br_x - tl_x))
+    height = int(round(br_y - tl_y))
+    center_x = int(round(width / 2 + tl_x))
+    center_y = int(round(height / 2 + tl_y))
+    return center_x, center_y, width, height
+
+
 def get_detections_array(det_file: Path, width: int, height: int) -> list[np.ndarray]:
     frame_number = int(det_file.stem.split("_")[-1]) - 1
     detections = np.loadtxt(det_file)
@@ -788,14 +796,14 @@ def is_bbox_in_bbox(bbox1, bbox2, inters_thres=0.85) -> float:
         return False
 
 
-def interpolate_two_bboxs(bbox1, bbox2, frame_number1, frame_number2):
-    # bbox1,2: (x_topleft, y_topleft, x_bottomright, y_bottomright)
-    frames = np.arange(frame_number1 + 1, frame_number2)
-    given_frames = [frame_number1, frame_number2]
-    xs_tl = np.interp(frames, given_frames, [bbox1[0], bbox2[0]])
-    ys_tl = np.interp(frames, given_frames, [bbox1[1], bbox2[1]])
-    xs_br = np.interp(frames, given_frames, [bbox1[2], bbox2[2]])
-    ys_br = np.interp(frames, given_frames, [bbox1[3], bbox2[3]])
+def interpolate_two_bboxes(start_bbox, end_bbox, start_frame, end_frame):
+    # bbox: (x_topleft, y_topleft, x_bottomright, y_bottomright)
+    frames = np.arange(start_frame + 1, end_frame)
+    given_frames = [start_frame, end_frame]
+    xs_tl = np.interp(frames, given_frames, [start_bbox[0], end_bbox[0]])
+    ys_tl = np.interp(frames, given_frames, [start_bbox[1], end_bbox[1]])
+    xs_br = np.interp(frames, given_frames, [start_bbox[2], end_bbox[2]])
+    ys_br = np.interp(frames, given_frames, [start_bbox[3], end_bbox[3]])
     return list(zip(xs_tl, ys_tl, xs_br, ys_br))
 
 
@@ -827,6 +835,7 @@ def find_track_id_by_coord_and_frame_number(tracks, x, y, frame_number, toleranc
 
 
 def get_track_from_track_id(tracks: np.ndarray, track_id: int) -> np.ndarray:
+    # this is a copy
     return tracks[tracks[:, 0] == track_id]
 
 

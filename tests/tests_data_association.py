@@ -370,11 +370,20 @@ def test_get_matched_track_ids():
     np.testing.assert_equal(matches[:, :2], desired[:, :2])
 
 
-from tracking.tracklet_operations import add_remove_tracks
+from tracking.data_association import (
+    cen_wh_from_tl_br,
+    get_track_from_track_id,
+    interpolate_two_bboxes,
+    tl_br_from_cen_wh,
+)
 from tracking.stereo_gt import get_disparity_info_from_stereo_track
-from tracking.data_association import get_track_from_track_id
+from tracking.tracklet_operations import (
+    add_remove_tracks,
+    get_start_ends_missing_frames,
+)
 
 
+# TODO maybe remove
 def test_add_remove_tracks():
     remove_tracks = np.random.randint(10, size=(3, 2))
     remove_lengths = np.random.randint(10, size=(3, 2))
@@ -412,6 +421,43 @@ def test_get_disparity_info_from_stereo_track():
     np.testing.assert_equal(disparity_info[:, 0], np.repeat(track1_id, len_disparity))
     np.testing.assert_equal(disparity_info[:, 1], np.repeat(track2_id, len_disparity))
     np.testing.assert_equal(disparity_info[:, 2], np.arange(80, 100))
+
+
+def test_interpolate_two_bboxes():
+    bbox1 = 2, 2, 5, 5
+    bbox2 = 22, 32, 15, 25
+    frame_number1 = 20
+    frame_number2 = 24
+    bboxes = interpolate_two_bboxes(bbox1, bbox2, frame_number1, frame_number2)
+    desired = [
+        (7.0, 9.5, 7.5, 10.0),
+        (12.0, 17.0, 10.0, 15.0),
+        (17.0, 24.5, 12.5, 20.0),
+    ]
+    np.testing.assert_equal(bboxes, desired)
+
+
+def test_get_start_ends_missing_frames():
+    missing_frames = np.array([4, 5, 6, 10, 11, 15, 18, 19])
+    desired = [(3, 7), (9, 12), (14, 16), (17, 20)]
+
+    start_ends = get_start_ends_missing_frames(missing_frames)
+    np.testing.assert_equal(start_ends, desired)
+
+    missing_frames = np.append(missing_frames, 25)
+    desired = desired + [(24, 26)]
+
+    start_ends = get_start_ends_missing_frames(missing_frames)
+    np.testing.assert_equal(start_ends, desired)
+
+
+def test_tl_br_from_cen_wh_and_reverse():
+    det = np.array([43, 599, 0, 430, 440, 466, 461, 448, 450, 36, 21])
+    cen_wh = cen_wh_from_tl_br(*det[3:7])
+    tl_br = tl_br_from_cen_wh(*det[7:])
+
+    np.testing.assert_almost_equal(cen_wh, det[7:11], decimal=0)
+    np.testing.assert_almost_equal(tl_br, det[3:7], decimal=0)
 
 
 """

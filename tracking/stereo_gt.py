@@ -30,7 +30,7 @@ def get_disparity_info_from_stereo_track(
 def get_disparity_info_from_stereo_tracks(
     tracks1: np.ndarray, tracks2: np.ndarray, matches: np.ndarray
 ):
-    disparity_infos = np.empty(shape=(0,5))
+    disparity_infos = np.empty(shape=(0, 5))
     tracks1_ids = np.unique(tracks1[:, 0])
     for track1_id in tracks1_ids:
         ind = np.where(matches[:, 0] == track1_id)[0][0]
