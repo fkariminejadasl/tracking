@@ -7,18 +7,14 @@ sys.path.insert(0, path)
 
 import cv2
 
-from tracking.data_association import (
-    Point,
-    _reindex_tracks,
-    _remove_short_tracks,
-    compute_tracks,
-    save_tracks_to_mot_format,
-)
+from tracking.data_association import (Point, _reindex_tracks,
+                                       _remove_short_tracks, compute_tracks,
+                                       save_tracks_to_mot_format)
 from tracking.visualize import get_video_parameters, plot_tracks_in_video
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Description of your program")
+    parser = argparse.ArgumentParser(description="Track fishes")
     parser.add_argument(
         "-r",
         "--result_folder",
@@ -103,9 +99,9 @@ def main():
         video_height = bottom_right_y - top_left_y
 
     plot_tracks_in_video(
+        result_folder / f"{args.save_name}.mp4",
         tracks,
         vc,
-        result_folder / f"{args.save_name}.mp4",
         top_left,
         video_width,
         video_height,

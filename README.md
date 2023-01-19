@@ -44,6 +44,10 @@ cd /home/fatemeh/data/dataset5
 python ~/dev/tracking/scripts/track_fishes.py -r /home/fatemeh/results/dataset5 -d cam1_labels -v 04_07_22_F_2_rect_valid.mp4 --video_bbox 270,100,1800,1200 --fps 1 --total_no_frames 10 --save_name test2
 ```
 
-### match stereo tracks
+### match ground-truth stereo tracks
 
-python ~/dev/tracking/scripts/match_stereo_tracks.py -r ~/Downloads -d ~/Downloads/ -t1 04_07_22_F_2_rect_valid_gt.txt -t2 04_07_22_G_2_rect_valid_gt.txt --save_name my_matches.txt
+python ~/dev/tracking/scripts/match_gt_stereo_tracks.py -r ~/Downloads -d ~/Downloads/ -t1 04_07_22_F_2_rect_valid_gt.txt -t2 04_07_22_G_2_rect_valid_gt.txt --save_name my_matches.txt
+
+### plot tracks in video
+
+python ~/dev/tracking/scripts/plot_tracks_in_video.py -v ~/Downloads/vids/129_cam_1.MP4 -t ~/test.zip -s /home/fatemeh/Downloads/test2.mp4 --total_no_frames 2000

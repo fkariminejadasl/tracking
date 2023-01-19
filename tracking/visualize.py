@@ -2,15 +2,12 @@ import cv2
 import matplotlib.patches as patches
 import numpy as np
 from matplotlib import pyplot as plt
+from tqdm import tqdm
 
-from tracking.data_association import (
-    Detection,
-    Point,
-    get_detections,
-    get_frame_numbers_of_track,
-    get_track_from_track_id,
-    tl_br_from_cen_wh,
-)
+from tracking.data_association import (Detection, Point, get_detections,
+                                       get_frame_numbers_of_track,
+                                       get_track_from_track_id,
+                                       tl_br_from_cen_wh)
 from tracking.stereo_gt import get_disparity_info_from_stereo_track
 
 
@@ -169,10 +166,38 @@ def plot_frameid_y_for_stereo(tracks1, track1_ids, tracks2, track2_ids):
     plt.show(block=False)
 
 
-def plot_tracks_in_video(
-    tracks,
-    vc,
+def _plot_cv2_bbox(
+    frame, x_tl, y_tl, x_br, y_br, color, show_det_id, track_id, det_id, black
+):
+    cv2.rectangle(
+        frame,
+        (x_tl, y_tl),
+        (x_br, y_br),
+        color=color,
+        thickness=1,
+    )
+    if show_det_id:
+        text = f"{track_id},{det_id}"
+    else:
+        text = f"{track_id}"
+    if black:
+        color = (0, 0, 0)
+    cv2.putText(
+        frame,
+        text,
+        (x_tl, y_tl),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.5,  # font scale
+        color,
+        1,  # Thinckness
+        2,  # line type
+    )
+
+
+def plot_tracks_array_in_video(
     output_video_file,
+    tracks: np.ndarray,
+    vc,
     top_left=Point(1300, 700),
     out_width=900,
     out_height=500,
@@ -190,7 +215,65 @@ def plot_tracks_in_video(
             output_video_file, vc, out_width, out_height, fps
         )
 
-    for frame_number in range(0, total_no_frames):
+    tracks_ids = np.unique(tracks[:, 0])
+    colors = np.random.randint(0, 255, size=(len(tracks_ids), 3))
+    tracks_ids_to_inds = {track_id: i for i, track_id in enumerate(tracks_ids)}
+
+    for frame_number in tqdm(range(0, total_no_frames)):
+        frame = get_frame(frame_number, vc)
+        frame_tracks = tracks[tracks[:, 1] == frame_number]
+        if frame_tracks.size == 0:
+            continue
+        for det in frame_tracks:
+            det_id = det[2]
+            track_id = det[0]
+            color = colors[tracks_ids_to_inds[track_id]]
+            color = tuple(map(int, color))
+            color = (color[2], color[1], color[0])
+
+            x_tl, y_tl, x_br, y_br = det[3:7]
+            _plot_cv2_bbox(
+                frame,
+                x_tl,
+                y_tl,
+                x_br,
+                y_br,
+                color,
+                show_det_id,
+                track_id,
+                det_id,
+                black,
+            )
+
+        out = _write_frame_in_video(
+            frame, out, frame_number, top_left, out_width, out_height
+        )
+
+    out.release()
+
+
+def plot_tracks_in_video(
+    output_video_file,
+    tracks,
+    vc,
+    top_left=Point(1300, 700),
+    out_width=900,
+    out_height=500,
+    total_no_frames: int = 0,
+    fps: int = None,
+    show_det_id=False,
+    black=True,
+):
+    if total_no_frames != 0:
+        out, height, width, _ = _create_output_video(
+            output_video_file, vc, out_width, out_height, fps
+        )
+    else:
+        out, height, width, total_no_frames = _create_output_video(
+            output_video_file, vc, out_width, out_height, fps
+        )
+
+    for frame_number in tqdm(range(0, total_no_frames)):
         frame = get_frame(frame_number, vc)
 
         for track_id, track in tracks.items():
@@ -201,29 +284,21 @@ def plot_tracks_in_video(
                 ind = frame_numbers.index(frame_number)
                 det = track.dets[ind]
                 x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
-                cv2.rectangle(
+
+                det_id = det.det_id
+                _plot_cv2_bbox(
                     frame,
-                    (x_tl, y_tl),
-                    (x_br, y_br),
-                    color=color,
-                    thickness=1,
-                )
-                if show_det_id:
-                    text = f"{track_id},{det.det_id}"
-                else:
-                    text = f"{track_id}"
-                if black:
-                    color = (0, 0, 0)
-                cv2.putText(
-                    frame,
-                    text,
-                    (x_tl, y_tl),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,  # font scale
+                    x_tl,
+                    y_tl,
+                    x_br,
+                    y_br,
                     color,
-                    1,  # Thinckness
-                    2,  # line type
+                    show_det_id,
+                    track_id,
+                    det_id,
+                    black,
                 )
+
         out = _write_frame_in_video(
             frame, out, frame_number, top_left, out_width, out_height
         )

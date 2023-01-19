@@ -8,33 +8,23 @@ import pytest
 path = (Path(__file__).parents[1]).as_posix()
 sys.path.insert(0, path)
 
-from tracking.data_association import (
-    bipartite_local_matching,
-    clean_detections,
-    compute_tracks,
-    get_detections,
-    get_detections_array,
-    get_detections_with_disparity,
-    get_iou,
-    hungarian_global_matching,
-    is_bbox_in_bbox,
-    load_disparities,
-    load_tracks_from_cvat_txt_format,
-    load_tracks_from_mot_format,
-    make_array_from_dets,
-    make_array_from_tracks,
-    make_dets_from_array,
-    make_tracks_from_array,
-    match_detections,
-    save_tracks_to_cvat_txt_format,
-    save_tracks_to_mot_format,
-)
-from tracking.stats import (
-    get_gt_object_match,
-    get_stats_for_frame,
-    get_stats_for_track,
-    get_stats_for_tracks,
-)
+from tracking.data_association import (bipartite_local_matching,
+                                       clean_detections, compute_tracks,
+                                       get_detections, get_detections_array,
+                                       get_detections_with_disparity, get_iou,
+                                       hungarian_global_matching,
+                                       is_bbox_in_bbox, load_disparities,
+                                       load_tracks_from_cvat_txt_format,
+                                       load_tracks_from_mot_format,
+                                       make_array_from_dets,
+                                       make_array_from_tracks,
+                                       make_dets_from_array,
+                                       make_tracks_from_array,
+                                       match_detections,
+                                       save_tracks_to_cvat_txt_format,
+                                       save_tracks_to_mot_format)
+from tracking.stats import (get_gt_object_match, get_stats_for_frame,
+                            get_stats_for_track, get_stats_for_tracks)
 from tracking.stereo_gt import get_matched_track_ids, load_matched_tracks_ids
 
 data_path = Path(__file__).parent / "data"

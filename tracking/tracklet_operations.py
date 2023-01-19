@@ -1,10 +1,7 @@
 import numpy as np
 
-from tracking.data_association import (
-    get_iou,
-    get_track_from_track_id,
-    get_track_inds_from_track_id,
-)
+from tracking.data_association import (get_iou, get_track_from_track_id,
+                                       get_track_inds_from_track_id)
 from tracking.stereo_gt import get_disparity_info_from_stereo_track
 
 # min_track_length: int = 10

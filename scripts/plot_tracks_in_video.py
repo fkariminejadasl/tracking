@@ -7,15 +7,8 @@ sys.path.insert(0, path)
 
 import cv2
 
-from tracking.data_association import (
-    Point,
-    _reindex_tracks,
-    _remove_short_tracks,
-    compute_tracks,
-    load_tracks_from_mot_format,
-    make_tracks_from_array,
-)
-from tracking.visualize import get_video_parameters, plot_tracks_in_video
+from tracking.data_association import Point, load_tracks_from_mot_format
+from tracking.visualize import get_video_parameters, plot_tracks_array_in_video
 
 
 def parse_args():
@@ -95,11 +88,10 @@ def main():
         video_height = bottom_right_y - top_left_y
 
     tracks = load_tracks_from_mot_format(track_file)
-    tracks = make_tracks_from_array(tracks)
-    plot_tracks_in_video(
+    plot_tracks_array_in_video(
+        save_file,
         tracks,
         vc,
-        save_file,
         top_left,
         video_width,
         video_height,
