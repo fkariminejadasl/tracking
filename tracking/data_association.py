@@ -261,7 +261,7 @@ def clean_detections_by_score(dets: list[Detection], score_thres=0.5):
     return cleaned_dets
 
 
-def _find_dets_around_a_det(det: np.ndarray, dets: np.ndarray, sp_thres=20):
+def _find_dets_around_det(det: np.ndarray, dets: np.ndarray, sp_thres=20):
     candidates = dets[
         ((abs(dets[:, 3] - det[3]) < sp_thres) & (abs(dets[:, 4] - det[4]) < sp_thres))
         | (
@@ -279,7 +279,7 @@ def clean_detections(dets: np.ndarray, ratio_thres=2.5, sp_thres=20, inters_thre
         # if det[9] / det[10] > ratio_thres:
         #     remove_inds.append(ind)
 
-        candidates = _find_dets_around_a_det(det, dets, sp_thres)
+        candidates = _find_dets_around_det(det, dets, sp_thres)
         ind_det = np.where(candidates[:, 2] == det[2])[0][0]
         candidates = np.delete(candidates, ind_det, axis=0)
 
@@ -308,7 +308,7 @@ def get_cleaned_detections(det_path: Path, width, height) -> list[Detection]:
 
 
 def match_detection(det1, dets2, sp_thres=100, min_iou=0):
-    candidates = _find_dets_around_a_det(det1, dets2, sp_thres)
+    candidates = _find_dets_around_det(det1, dets2, sp_thres)
     if len(candidates) == 0:
         return None
     ious = []
@@ -412,7 +412,7 @@ def _connect_inds_to_detection_ids(dets):
     return inds_to_det_ids, det_ids_to_inds
 
 
-def _make_a_new_track(det: Detection, new_track_id) -> Track:
+def _make_new_track(det: Detection, new_track_id) -> Track:
     color = tuple(np.random.rand(3).astype(np.float16))
     det.track_id = new_track_id
 
@@ -429,7 +429,7 @@ def _initialize_track_frame1(dets):
     tracks = {}
     ids = range(len(dets))
     for id in ids:
-        tracks[new_track_id] = _make_a_new_track(dets[id], new_track_id)
+        tracks[new_track_id] = _make_new_track(dets[id], new_track_id)
         new_track_id += 1
     return tracks, new_track_id
 
@@ -456,7 +456,7 @@ def _track_predicted_unmatched(pred_dets, pred_inds, tracks):
 def _track_current_unmatched(dets, inds, frame_number, tracks, new_track_id):
     diff_inds = set(range(len(dets))).difference(set(inds))
     for id in diff_inds:
-        tracks[new_track_id] = _make_a_new_track(dets[id], new_track_id)
+        tracks[new_track_id] = _make_new_track(dets[id], new_track_id)
         new_track_id += 1
     return tracks, new_track_id
 

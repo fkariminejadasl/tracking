@@ -143,10 +143,10 @@ def add_remove_tracks_by_track_ids(tracks_ids, add_tracks, remove_tracks):
     return add_tracks, remove_tracks
 
 
-def get_a_matched_disparity_info(
+def get_matched_disparity_info(
     track1, track2, percentile=80, max_alignment_error=8, min_match_length=10
 ):
-    disparity_info = np.array(get_disparity_info_from_stereo_track(track1, track2))
+    disparity_info = get_disparity_info_from_stereo_track(track1, track2)
     if disparity_info.size > 0:
         align_error = np.percentile(disparity_info[:, 3], percentile)
         align_error = float(f"{align_error:.2f}")
@@ -195,7 +195,7 @@ def match_primary_track_to_secondry_tracklets(p_track, s_tracks):
     candidates_disparity_infos = []
     for s_track_id in s_tracks_ids:
         s_track = get_track_from_track_id(s_tracks, s_track_id)
-        matched_disparity_info = get_a_matched_disparity_info(p_track, s_track)
+        matched_disparity_info = get_matched_disparity_info(p_track, s_track)
         if matched_disparity_info.size != 0:
             candidates_disparity_infos.extend(matched_disparity_info)
     candidates_disparity_infos = np.array(candidates_disparity_infos)

@@ -563,7 +563,7 @@ def plot_disparity_infos(tracks1, tracks2, matches):
     for i, (track1_id, track2_id) in enumerate(matches):
         track1 = get_track_from_track_id(tracks1, track1_id)
         track2 = get_track_from_track_id(tracks2, track2_id)
-        disparity_info = np.array(get_disparity_info_from_stereo_track(track1, track2))
+        disparity_info = get_disparity_info_from_stereo_track(track1, track2)
         print(track1_id, track2_id, len(disparity_info))
         if i % 10 == 0:
             fig, axs = plt.subplots(1, 2)
