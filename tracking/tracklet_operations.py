@@ -147,8 +147,8 @@ def _assing_match_id_to_tracks(tracks, tracks_ids, match_id):
 def assign_match_id_to_stereo_tracks(
     p_tracks, p_track_id, s_tracks, s_track_ids, match_id
 ):
-    p_tracks = _assing_match_id_to_tracks(p_tracks, [p_track_id], match_id)
-    s_tracks = _assing_match_id_to_tracks(s_tracks, s_track_ids, match_id)
+    _assing_match_id_to_tracks(p_tracks, [p_track_id], match_id)
+    _assing_match_id_to_tracks(s_tracks, s_track_ids, match_id)
 
 
 def add_remove_tracks_by_track_ids(tracks_ids, add_tracks, remove_tracks):
@@ -156,7 +156,7 @@ def add_remove_tracks_by_track_ids(tracks_ids, add_tracks, remove_tracks):
         new_track_id = 0
     else:
         # unique is sorted assending
-        new_track_id = np.unique(remove_tracks[:, 0])[::-1][0] + 1
+        new_track_id = np.unique(add_tracks[:, 0])[::-1][0] + 1
     for track_id in tracks_ids:
         track = get_track_from_track_id(remove_tracks, track_id)
         track[:, 0] = new_track_id
@@ -188,7 +188,7 @@ def get_matched_disparity_info(
 
 def get_matches_from_candidates_disparity_infos(
     candidates_disparity_infos, min_match_length=50
-):
+) -> list[int]:
     frame_numbers = np.unique(candidates_disparity_infos[:, 2])
     matched_disparity_infos = []
     for frame_number in frame_numbers:
@@ -221,6 +221,8 @@ def match_primary_track_to_secondry_tracklets(p_track, s_tracks):
         matched_disparity_info = get_matched_disparity_info(p_track, s_track)
         if matched_disparity_info.size != 0:
             candidates_disparity_infos.extend(matched_disparity_info)
+    if len(candidates_disparity_infos) == 0:
+        return []
     candidates_disparity_infos = np.array(candidates_disparity_infos)
     matched_s_tracks_ids = get_matches_from_candidates_disparity_infos(
         candidates_disparity_infos
@@ -237,7 +239,7 @@ def make_long_tracks_from_stereo_tracklets(tracks1, tracks2):
 
     tracks_lengths = compute_two_tracks_lengths_sorted_descending(p_tracks, s_tracks)
     match_id = 0
-    while tracks_lengths.size == 0:
+    while tracks_lengths.size != 0:
         # select the longest track
         track_id, cam_id, track_length = tracks_lengths[0]
         tracks_lengths = np.delete(tracks_lengths, 0, axis=0)
@@ -258,14 +260,22 @@ def make_long_tracks_from_stereo_tracklets(tracks1, tracks2):
         lp_tracks, p_tracks = add_remove_tracks_by_track_ids(
             [track_id], lp_tracks, p_tracks
         )
-        if matched_s_tracks_ids.size != 0:
+        if len(matched_s_tracks_ids) != 0:
             assign_match_id_to_stereo_tracks(
-                p_tracks, track_id, s_tracks, matched_s_tracks_ids, match_id
+                lp_tracks, track_id, s_tracks, matched_s_tracks_ids, match_id
             )
             match_id += 1
 
             ls_tracks, s_tracks = add_remove_tracks_by_track_ids(
                 matched_s_tracks_ids, ls_tracks, s_tracks
+            )
+
+        # calculate track lengths to account for removed tracks
+        if (p_tracks.size == 0) | (s_tracks.size == 0):
+            break
+        else:
+            tracks_lengths = compute_two_tracks_lengths_sorted_descending(
+                p_tracks, s_tracks
             )
     return lp_tracks, ls_tracks
 
