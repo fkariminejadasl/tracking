@@ -460,6 +460,40 @@ def test_tl_br_from_cen_wh_and_reverse():
     np.testing.assert_almost_equal(tl_br, det[3:7], decimal=0)
 
 
+from tracking.tracklet_operations import (
+    add_remove_tracks_by_disp_infos,
+    append_tracks_with_cam_id_match_id,
+    arrange_track_ids,
+    match_primary_track_to_secondry_tracklets,
+    remove_detects_change_track_ids,
+    remove_short_tracks,
+)
+
+
+def test_add_remove_tracks_by_disp_infos():
+    annos1 = load_tracks_from_cvat_txt_format(
+        data_path / "04_07_22_F_2_rect_valid_gt.txt"
+    )
+    annos2 = annos.copy()
+    tracks1 = arrange_track_ids(
+        remove_short_tracks(remove_detects_change_track_ids(annos1), 10)
+    )
+    tracks2 = arrange_track_ids(
+        remove_short_tracks(remove_detects_change_track_ids(annos2), 10)
+    )
+
+    ls_tracks = np.empty(shape=(0, 13), dtype=np.int64)
+    p_track = get_track_from_track_id(tracks2, 14)
+    s_tracks = append_tracks_with_cam_id_match_id(tracks1, 1)
+    cands = match_primary_track_to_secondry_tracklets(p_track, tracks1)
+    ls_tracks, new_s_tracks = add_remove_tracks_by_disp_infos(
+        cands, ls_tracks, s_tracks
+    )
+    track_item = new_s_tracks[(new_s_tracks[:, 0] == 72) & (new_s_tracks[:, 1] == 500)]
+    assert track_item.size != 0
+    assert ls_tracks.shape[0] + new_s_tracks.shape[0] == s_tracks.shape[0]
+
+
 """
 a = np.random.randint(10, size=(3, 2))
 b = np.empty(shape=(0, 2), dtype=np.int64)
@@ -468,42 +502,39 @@ while a.size != 0:
     b = np.append(b, a[inds], axis=0)
     a = np.delete(a, inds, axis=0)
 
-
-# S = {s_i_f}, LS = {ls_i_f} -> TS
-# P = {p_i_f}, LP = {lp_i_f} -> TP
-
-# init: calculate length, sort (S,P)
-# some for loop (P_tracks_ids, S_tracks_ids)
-#   if (LP[0] > SP[0]):
-#       match(p_track, tracks2) -> s_track1, s_track2, ..., s_trackn (s_inds)
-#       add with new_track_id + remove + update lengths + sot (S, P, LS, LP -> TS, TP)
-# remaining add to TS, TP (-1 not matched)
-
-# think about align_errors (some drawing)
-# stop criteria (S, P not empty)
-
-
-# annos1 = load_tracks_from_cvat_txt_format(
-#         data_path / "04_07_22_F_2_rect_valid_gt.txt"
-#     )
-# annos2 = load_tracks_from_cvat_txt_format(
-#         data_path / "04_07_22_G_2_rect_valid_gt.txt"
-#     )
-
-track1 = da.get_track_from_track_id(annos1, 21)
-track2 = da.get_track_from_track_id(annos2, 16)
-
-p_track1 = da.get_track_from_track_id(tracks1, 17)
-p_track2 = da.get_track_from_track_id(tracks1, 72)
-s_track1 = da.get_track_from_track_id(tracks2, 14)
-s_track2 = da.get_track_from_track_id(tracks2, 79)
+# 21 <-> 16
+# 21 -> 17, 72 len:(236, 332)
+# 16 -> 14, 79 len: (361, 219)
+# 17 <-> 14
+# 72 <-> 14, 79
 
 # 7 <-> 24
 # 7  -> 5, 54, 71, 79, 84, 90 len:(80, 107, 39, 12, 58, 201)
 # 24 -> 21, 63  len:(262, 313)
+# 21 <-> 5, 54, 71
+# 63 <-> 79, 84, 90
 
 
-# len(s_track1), len(s_track2), len(p_track1), len(p_track2): 361, 219, 236, 332
 # tk.match_primary_track_to_secondry_tracklets(p_track1, tracks2)
 # [[14, 1.0], [38, 6.0], [39, 3.0], [48, 2.0], [50, 1.0], [56, 6.0]]
+
+
+fig, axs = plt.subplots(1, 2, sharex=True)
+
+p_track = da.get_track_from_track_id(annos1, 7)
+s_track = da.get_track_from_track_id(annos2, 24)
+
+axs[0].plot(p_track[:,1], p_track[:,8],'-*',label='p_annos')
+axs[0].plot(s_track[:,1], s_track[:,8],'-*',label='s_annos')
+axs[1].plot(p_track[:,1], p_track[:,8],'-*',label='p_annos')
+axs[1].plot(s_track[:,1], s_track[:,8],'-*',label='s_annos')
+
+for track_id in [21, 63]:
+    track = da.get_track_from_track_id(tracks2, track_id)
+    axs[1].plot(track[:,1], track[:,8],'-*',label=f's_{track_id}')
+
+for track_id in [5, 54, 71, 79, 84, 90]:
+    track = da.get_track_from_track_id(tracks1, track_id)
+    axs[1].plot(track[:,1], track[:,8],'-*',label=f'p_{track_id}')
+
 """

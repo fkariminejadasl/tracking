@@ -4,6 +4,7 @@ from tracking.data_association import (
     cen_wh_from_tl_br,
     get_iou,
     get_track_from_track_id,
+    get_track_ind_from_track_id_frame_number,
     get_track_inds_from_track_id,
     interpolate_two_bboxes,
 )
@@ -166,6 +167,28 @@ def add_remove_tracks_by_track_ids(tracks_ids, add_tracks, remove_tracks):
     return add_tracks, remove_tracks
 
 
+def add_remove_tracks_by_disp_infos(disp_infos, add_tracks, remove_tracks):
+    if add_tracks.size == 0:
+        new_track_id = 0
+    else:
+        # unique is sorted assending
+        new_track_id = np.unique(add_tracks[:, 0])[::-1][0] + 1
+    for disp_info in disp_infos:
+        track_id = disp_info[1]
+        frame_number = disp_info[2]
+        ind = get_track_ind_from_track_id_frame_number(
+            remove_tracks, track_id, frame_number
+        )
+
+        track_item = remove_tracks[ind].copy()  # 2d array
+        if track_item.size == 0:
+            print(ind, track_id, frame_number)
+        track_item[0, 0] = new_track_id
+        add_tracks = np.append(add_tracks, track_item, axis=0)
+        remove_tracks = np.delete(remove_tracks, ind, axis=0)
+    return add_tracks, remove_tracks
+
+
 def get_matched_disparity_info(
     track1, track2, percentile=80, max_alignment_error=8, min_match_length=10
 ):
@@ -189,6 +212,7 @@ def get_matched_disparity_info(
 def get_matches_from_candidates_disparity_infos(
     candidates_disparity_infos, min_match_length=50
 ) -> list[int]:
+    # select only one track: multiple matches
     frame_numbers = np.unique(candidates_disparity_infos[:, 2])
     matched_disparity_infos = []
     for frame_number in frame_numbers:
@@ -201,18 +225,20 @@ def get_matches_from_candidates_disparity_infos(
         matched_disparity_infos.append(matched_disparity_info)
     matched_disparity_infos = np.array(matched_disparity_infos)
     tracks_ids = np.unique(matched_disparity_infos[:, 1])
+
     # TODO hack to remove non-overlapping short tracks
-    matched_s_tracks_ids = []
+    unique_disparity_infos = []
     for track_id in tracks_ids:
-        len_matched_track = len(
-            matched_disparity_infos[matched_disparity_infos[:, 1] == track_id]
-        )
+        sel_disparity_info = matched_disparity_infos[
+            matched_disparity_infos[:, 1] == track_id
+        ]
+        len_matched_track = len(sel_disparity_info)
         if len_matched_track > min_match_length:
-            matched_s_tracks_ids.append(track_id)
-    return matched_s_tracks_ids
+            unique_disparity_infos.extend(sel_disparity_info)
+    return np.array(unique_disparity_infos)
 
 
-def match_primary_track_to_secondry_tracklets(p_track, s_tracks):
+def get_candidates_disparity_infos(p_track, s_tracks):
     assert np.unique(p_track[:, 0]).size == 1
     s_tracks_ids = np.unique(s_tracks[:, 0])
     candidates_disparity_infos = []
@@ -224,10 +250,15 @@ def match_primary_track_to_secondry_tracklets(p_track, s_tracks):
     if len(candidates_disparity_infos) == 0:
         return []
     candidates_disparity_infos = np.array(candidates_disparity_infos)
-    matched_s_tracks_ids = get_matches_from_candidates_disparity_infos(
+    return candidates_disparity_infos
+
+
+def match_primary_track_to_secondry_tracklets(p_track, s_tracks):
+    candidates_disparity_infos = get_candidates_disparity_infos(p_track, s_tracks)
+    unique_disparity_infos = get_matches_from_candidates_disparity_infos(
         candidates_disparity_infos
     )
-    return matched_s_tracks_ids
+    return unique_disparity_infos
 
 
 def make_long_tracks_from_stereo_tracklets(tracks1, tracks2):
@@ -251,9 +282,10 @@ def make_long_tracks_from_stereo_tracklets(tracks1, tracks2):
 
         # get matched tracked ids to the secondary tracks
         p_track = get_track_from_track_id(p_tracks, track_id)
-        matched_s_tracks_ids = match_primary_track_to_secondry_tracklets(
+        unique_disparity_infos = match_primary_track_to_secondry_tracklets(
             p_track, s_tracks
         )
+        matched_s_tracks_ids = np.unique(unique_disparity_infos[:, 1])
 
         # combine tracklets and add to ls_tracks and remove from s_tracks.
         # the same for p_tracks except comibne part.
@@ -265,9 +297,8 @@ def make_long_tracks_from_stereo_tracklets(tracks1, tracks2):
                 lp_tracks, track_id, s_tracks, matched_s_tracks_ids, match_id
             )
             match_id += 1
-
-            ls_tracks, s_tracks = add_remove_tracks_by_track_ids(
-                matched_s_tracks_ids, ls_tracks, s_tracks
+            ls_tracks, s_tracks = add_remove_tracks_by_disp_infos(
+                unique_disparity_infos, ls_tracks, s_tracks
             )
 
         # calculate track lengths to account for removed tracks

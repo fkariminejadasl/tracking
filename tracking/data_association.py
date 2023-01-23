@@ -834,6 +834,12 @@ def find_track_id_by_coord_and_frame_number(tracks, x, y, frame_number, toleranc
                 return track_id
 
 
+def get_track_ind_from_track_id_frame_number(
+    tracks: np.ndarray, track_id: int, frame_number: int
+) -> np.ndarray:
+    return np.where((tracks[:, 0] == track_id) & (tracks[:, 1] == frame_number))[0]
+
+
 def get_track_from_track_id(tracks: np.ndarray, track_id: int) -> np.ndarray:
     # this is a copy
     return tracks[tracks[:, 0] == track_id]
