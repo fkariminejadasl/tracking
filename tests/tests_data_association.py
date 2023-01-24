@@ -519,15 +519,12 @@ while a.size != 0:
 # [[14, 1.0], [38, 6.0], [39, 3.0], [48, 2.0], [50, 1.0], [56, 6.0]]
 
 
-fig, axs = plt.subplots(1, 2, sharex=True)
-
 p_track = da.get_track_from_track_id(annos1, 7)
 s_track = da.get_track_from_track_id(annos2, 24)
 
+fig, axs = plt.subplots(1, 2, sharex=True)
 axs[0].plot(p_track[:,1], p_track[:,8],'-*',label='p_annos')
 axs[0].plot(s_track[:,1], s_track[:,8],'-*',label='s_annos')
-axs[1].plot(p_track[:,1], p_track[:,8],'-*',label='p_annos')
-axs[1].plot(s_track[:,1], s_track[:,8],'-*',label='s_annos')
 
 for track_id in [21, 63]:
     track = da.get_track_from_track_id(tracks2, track_id)
@@ -536,5 +533,5 @@ for track_id in [21, 63]:
 for track_id in [5, 54, 71, 79, 84, 90]:
     track = da.get_track_from_track_id(tracks1, track_id)
     axs[1].plot(track[:,1], track[:,8],'-*',label=f'p_{track_id}')
-
+axs[1].legend()
 """
