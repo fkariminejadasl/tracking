@@ -105,21 +105,29 @@ def get_detections(
     det_file: Path,
     width: int,
     height: int,
+    frame_number: int = None,
 ) -> list[Detection]:
-    frame_number = int(det_file.stem.split("_")[-1]) - 1
+    if frame_number is None:
+        frame_number = int(det_file.stem.split("_")[-1]) - 1
+    score = -1
+
     detections = np.loadtxt(det_file)
-    return [
-        Detection(
+
+    dets = []
+    for det_id, det in enumerate(detections):
+        if detections.shape[1] == 6:
+            score = np.float16(f"{det[5]:.2f}")
+        item = Detection(
             x=int(round(det[1] * width)),
             y=int(round(det[2] * height)),
             w=int(round(det[3] * width)),
             h=int(round(det[4] * height)),
             frame_number=frame_number,
             det_id=det_id,
-            score=np.float16(f"{det[5]:.2f}"),
+            score=score,
         )
-        for det_id, det in enumerate(detections)
-    ]
+        dets.append(item)
+    return dets
 
 
 def tl_br_from_cen_wh(center_x, center_y, bbox_w, bbox_h) -> tuple:

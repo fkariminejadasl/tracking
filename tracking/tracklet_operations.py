@@ -130,13 +130,24 @@ def compute_two_tracks_lengths_sorted_descending(
     return tracks_lengths
 
 
-def define_primary_secondary_tracks(
+def define_primary_secondary_tracks_(
     cam_id, tracks1, long_tracks1, tracks2, long_tracks2
 ):
     if cam_id == tracks1[0, -2]:
         return tracks1, long_tracks1, tracks2, long_tracks2
     else:
         return tracks2, long_tracks2, tracks1, long_tracks1
+
+
+def define_primary_secondary_tracks(
+    cam_id,
+    tracks1,
+    tracks2,
+):
+    if cam_id == tracks1[0, -2]:
+        return tracks1, tracks2
+    else:
+        return tracks2, tracks1
 
 
 def _assing_match_id_to_tracks(tracks, tracks_ids, match_id):
@@ -150,6 +161,16 @@ def assign_match_id_to_stereo_tracks(
 ):
     _assing_match_id_to_tracks(p_tracks, [p_track_id], match_id)
     _assing_match_id_to_tracks(s_tracks, s_track_ids, match_id)
+
+
+def combine_tracks_by_track_ids(tracks_ids, tracks):
+    # tracks is changed in the loop. So no need to return it. Array is mutable.
+
+    # unique is sorted assending
+    new_track_id = np.unique(tracks[:, 0])[::-1][0] + 1
+    for track_id in tracks_ids:
+        inds = get_track_inds_from_track_id(tracks, track_id)
+        tracks[inds, 0] = new_track_id
 
 
 def add_remove_tracks_by_track_ids(tracks_ids, add_tracks, remove_tracks):
@@ -190,12 +211,15 @@ def add_remove_tracks_by_disp_infos(disp_infos, add_tracks, remove_tracks):
 def get_matched_disparity_info(
     track1, track2, percentile=80, max_alignment_error=8, min_match_length=10
 ):
+    # disparity_info: track_id1, track_id2, frame_number, align_error, disparity, match_length, percentile_error
     disparity_info = get_disparity_info_from_stereo_track(track1, track2)
     if disparity_info.size > 0:
         align_error = np.percentile(disparity_info[:, 3], percentile)
         align_error = float(f"{align_error:.2f}")
         if align_error < max_alignment_error:
-            sel_disparity_info = disparity_info[disparity_info[:, 3] < align_error]
+            sel_disparity_info = disparity_info[
+                disparity_info[:, 3] < max_alignment_error
+            ]
             match_length = sel_disparity_info.shape[0]
             if match_length > min_match_length:
                 length_and_error_repeated = np.broadcast_to(
@@ -210,6 +234,8 @@ def get_matched_disparity_info(
 def get_matches_from_candidates_disparity_infos_(
     candidates_disparity_infos, min_match_length=50
 ) -> list[int]:
+    # candidates: track_id1, track_id2, frame_number, align_error, disparity, match_length, percentile_error
+
     # select only one track: multiple matches
     frame_numbers = np.unique(candidates_disparity_infos[:, 2])
     matched_disparity_infos = []
@@ -236,29 +262,72 @@ def get_matches_from_candidates_disparity_infos_(
     return np.array(unique_disparity_infos)
 
 
-def identify_overlaps(candidates, min_match_length):
+def identify_overlaps(candidates):
+    # candidates: track_id1, track_id2, frame_number, align_error, disparity, match_length, percentile_error
+
     overlapped_ids = dict()
     tracks_ids = np.unique(candidates[:, 1])
+    matched = []
     for track_id in tracks_ids:
+        if track_id in matched:
+            continue
+        overlapped_ids[track_id] = []
         for track_id2 in tracks_ids:
-            overlapped_ids[track_id] = []
             if track_id != track_id2:
                 frame_numbers = candidates[candidates[:, 1] == track_id, 2]
                 frame_numbers2 = candidates[candidates[:, 1] == track_id2, 2]
-                diffs = set(frame_numbers).intersection(set(frame_numbers2))
-                if len(diffs) > min_match_length:
-                    overlapped_ids[track_id].append(frame_numbers2)
+                common_frames = set(frame_numbers).intersection(set(frame_numbers2))
+                if len(common_frames) > 0:
+                    overlapped_ids[track_id].append(track_id2)
+                    matched.append(track_id2)
     return overlapped_ids
+
+
+# def select_from_overlaps(track_id, matched_ids, candidates):
+#     if len(matched_ids) == 0:
+#         return track_id
+#     # select based on lengths
+#     id_lengths = []
+#     id_lengths.append([track_id, len(candidates[candidates[:, 1] == track_id, 2])])
+#     for matched_id in matched_ids:
+#         id_lengths.append([matched_id, len(candidates[candidates[:, 1] == matched_id, 2])])
+#     id_lengths = np.array(id_lengths).astype(np.int64)
+#     max_length = max(id_lengths[:,1])
+#     id_lengths[:,1] = id_lengths[:,1]/max_length
+#     max_id, max_length = max(id_lengths.items(), key=lambda x: x[1])
+#     for
+
+#     # select based on alignment error
+#     mean_align_error = np.mean(candidates[candidates[:, 1] == track_id, 3])
+#     matched_errors = {track_id: mean_align_error}
+#     for matched_id in matched_ids:
+#         matched_error = np.mean(candidates[candidates[:, 1] == matched_id, 3])
+#         matched_errors[matched_id] = matched_error
+#     sel_track_id, _ = min(matched_errors.items(), key=lambda x: x[1])
+#     return sel_track_id
 
 
 def select_from_overlaps(track_id, matched_ids, candidates):
     if len(matched_ids) == 0:
         return track_id
-    mean_align_error = np.mean(candidates[candidates[:, 1] == track_id, 3])
-    matched_errors = {track_id, mean_align_error}
-    for matched_id in matched_ids:
-        matched_error = np.mean(candidates[candidates[:, 1] == matched_id, 3])
+    # select only long tracks
+    id_lengths = []
+    for id_ in matched_ids + [track_id]:
+        length = len(candidates[candidates[:, 1] == id_, 3])
+        id_lengths.append([id_, length])
+    id_lengths = np.array(id_lengths).astype(np.int64)
+    id_lengths[:, 1] = id_lengths[:, 1] / max(id_lengths[:, 1])
+    sel_ids = id_lengths[id_lengths[:, 1] > 0.5, 0]  # fedge factor
+    if len(sel_ids) == 1:
+        return sel_ids[0]
+
+    # select based on alignment error
+    matched_errors = dict()
+    for matched_id in sel_ids:
+        candidate = candidates[candidates[:, 1] == matched_id, 3]
+        matched_error = np.mean(candidate)
         matched_errors[matched_id] = matched_error
+
     sel_track_id, _ = min(matched_errors.items(), key=lambda x: x[1])
     return sel_track_id
 
@@ -272,10 +341,10 @@ def select_from_candidates(candidates, track_ids):
 
 
 def get_matches_from_candidates_disparity_infos(
-    candidates, min_match_length=50
+    candidates,
 ) -> list[int]:
     # identify overlaps
-    overlapped_ids = identify_overlaps(candidates, min_match_length)
+    overlapped_ids = identify_overlaps(candidates)
     # select the good track and remove the other overlapped tracks
     tracks_ids = []
     for track_id, matched_ids in overlapped_ids.items():
@@ -311,7 +380,7 @@ def match_primary_track_to_secondry_tracklets(p_track, s_tracks):
     return unique_disparity_infos
 
 
-def make_long_tracks_from_stereo_tracklets(tracks1, tracks2):
+def make_long_tracks_from_stereo_tracklets_(tracks1, tracks2):
     # p: primary, s: secondary, l: long
     p_tracks = append_tracks_with_cam_id_match_id(tracks1, 1)
     s_tracks = append_tracks_with_cam_id_match_id(tracks2, 2)
@@ -360,6 +429,47 @@ def make_long_tracks_from_stereo_tracklets(tracks1, tracks2):
                 p_tracks, s_tracks
             )
     return lp_tracks, ls_tracks, p_tracks, s_tracks
+
+
+def combine_tracklets_one_iteration(p_tracks, s_tracks):
+    tracks_lengths = compute_two_tracks_lengths_sorted_descending(p_tracks, s_tracks)
+    match_id = 0
+    for track_id, cam_id, track_length in tracks_lengths:
+        # define the primary and secondary tracks: primary has longest track length
+        p_tracks, s_tracks = define_primary_secondary_tracks(cam_id, p_tracks, s_tracks)
+
+        # get matched tracked ids to the secondary tracks
+        p_track = get_track_from_track_id(p_tracks, track_id)
+        # track combined and track_id is changed.
+        if p_track.size == 0:
+            continue
+        unique_disparity_infos = match_primary_track_to_secondry_tracklets(
+            p_track, s_tracks
+        )
+
+        # combine tracklets of s_tracks
+        if len(unique_disparity_infos) != 0:
+            matched_s_tracks_ids = np.unique(unique_disparity_infos[:, 1])
+            assign_match_id_to_stereo_tracks(
+                p_tracks, track_id, s_tracks, matched_s_tracks_ids, match_id
+            )
+            match_id += 1
+            combine_tracks_by_track_ids(matched_s_tracks_ids, s_tracks)
+    return p_tracks, s_tracks
+
+
+def make_long_tracks_from_stereo_tracklets(tracks1, tracks2):
+    # p: primary, s: secondary, l: long
+    p_tracks = append_tracks_with_cam_id_match_id(tracks1, 1)
+    s_tracks = append_tracks_with_cam_id_match_id(tracks2, 2)
+
+    # run twice: tracklets are combined first. But one tracklet can still be used
+    # to combine other tracklets.
+    p_tracks, s_tracks = combine_tracklets_one_iteration(p_tracks, s_tracks)
+    p_tracks, s_tracks = combine_tracklets_one_iteration(p_tracks, s_tracks)
+    p_tracks = arrange_track_ids(p_tracks)
+    s_tracks = arrange_track_ids(s_tracks)
+    return p_tracks, s_tracks
 
 
 def get_start_ends_missing_frames(missing_frames):

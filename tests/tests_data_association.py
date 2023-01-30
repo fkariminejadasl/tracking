@@ -36,6 +36,17 @@ from tracking.stats import (
     get_stats_for_tracks,
 )
 from tracking.stereo_gt import get_matched_track_ids, load_matched_tracks_ids
+from tracking.tracklet_operations import (
+    add_remove_tracks_by_disp_infos,
+    append_tracks_with_cam_id_match_id,
+    arrange_track_ids,
+    get_candidates_disparity_infos,
+    get_matches_from_candidates_disparity_infos,
+    match_primary_track_to_secondry_tracklets,
+    remove_detects_change_track_ids,
+    remove_short_tracks,
+    select_from_overlaps,
+)
 
 data_path = Path(__file__).parent / "data"
 annos = load_tracks_from_cvat_txt_format(data_path / "04_07_22_G_2_rect_valid_gt.txt")
@@ -460,16 +471,8 @@ def test_tl_br_from_cen_wh_and_reverse():
     np.testing.assert_almost_equal(tl_br, det[3:7], decimal=0)
 
 
-from tracking.tracklet_operations import (
-    add_remove_tracks_by_disp_infos,
-    append_tracks_with_cam_id_match_id,
-    arrange_track_ids,
-    match_primary_track_to_secondry_tracklets,
-    remove_detects_change_track_ids,
-    remove_short_tracks,
-)
-
-
+# TODO: remove?
+@pytest.mark.slow
 def test_add_remove_tracks_by_disp_infos():
     annos1 = load_tracks_from_cvat_txt_format(
         data_path / "04_07_22_F_2_rect_valid_gt.txt"
@@ -492,6 +495,31 @@ def test_add_remove_tracks_by_disp_infos():
     track_item = new_s_tracks[(new_s_tracks[:, 0] == 72) & (new_s_tracks[:, 1] == 500)]
     assert track_item.size != 0
     assert ls_tracks.shape[0] + new_s_tracks.shape[0] == s_tracks.shape[0]
+
+
+def test_get_matches_from_candidates_disparity_infos():
+    annos1 = load_tracks_from_cvat_txt_format(
+        data_path / "04_07_22_F_2_rect_valid_gt.txt"
+    )
+    annos2 = annos.copy()
+    tracks1 = arrange_track_ids(
+        remove_short_tracks(remove_detects_change_track_ids(annos1), 10)
+    )
+    tracks2 = arrange_track_ids(
+        remove_short_tracks(remove_detects_change_track_ids(annos2), 10)
+    )
+
+    p_tracks = append_tracks_with_cam_id_match_id(tracks1, 1)
+    s_tracks = append_tracks_with_cam_id_match_id(tracks2, 2)
+    p_track = get_track_from_track_id(p_tracks, 20)
+    cands = get_candidates_disparity_infos(p_track, s_tracks)
+
+    sel_track_id = select_from_overlaps(4, [5, 16], cands)
+    assert sel_track_id == 16
+    sel_track_id = select_from_overlaps(72, [73], cands)
+    assert sel_track_id == 73
+    cands2 = get_matches_from_candidates_disparity_infos(cands)
+    np.testing.assert_equal(np.unique(cands2[:, 1]), np.array([16, 53, 73, 83]))
 
 
 """
