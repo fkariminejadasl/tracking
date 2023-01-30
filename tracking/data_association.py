@@ -105,21 +105,29 @@ def get_detections(
     det_file: Path,
     width: int,
     height: int,
+    frame_number: int = None,
 ) -> list[Detection]:
-    frame_number = int(det_file.stem.split("_")[-1]) - 1
+    if frame_number is None:
+        frame_number = int(det_file.stem.split("_")[-1]) - 1
+    score = -1
+
     detections = np.loadtxt(det_file)
-    return [
-        Detection(
+
+    dets = []
+    for det_id, det in enumerate(detections):
+        if detections.shape[1] == 6:
+            score = np.float16(f"{det[5]:.2f}")
+        item = Detection(
             x=int(round(det[1] * width)),
             y=int(round(det[2] * height)),
             w=int(round(det[3] * width)),
             h=int(round(det[4] * height)),
             frame_number=frame_number,
             det_id=det_id,
-            score=np.float16(f"{det[5]:.2f}"),
+            score=score,
         )
-        for det_id, det in enumerate(detections)
-    ]
+        dets.append(item)
+    return dets
 
 
 def tl_br_from_cen_wh(center_x, center_y, bbox_w, bbox_h) -> tuple:
@@ -129,6 +137,14 @@ def tl_br_from_cen_wh(center_x, center_y, bbox_w, bbox_h) -> tuple:
         int(round(center_x + bbox_w / 2)),
         int(round(center_y + bbox_h / 2)),
     )
+
+
+def cen_wh_from_tl_br(tl_x, tl_y, br_x, br_y) -> tuple:
+    width = int(round(br_x - tl_x))
+    height = int(round(br_y - tl_y))
+    center_x = int(round(width / 2 + tl_x))
+    center_y = int(round(height / 2 + tl_y))
+    return center_x, center_y, width, height
 
 
 def get_detections_array(det_file: Path, width: int, height: int) -> list[np.ndarray]:
@@ -261,7 +277,7 @@ def clean_detections_by_score(dets: list[Detection], score_thres=0.5):
     return cleaned_dets
 
 
-def _find_dets_around_a_det(det: np.ndarray, dets: np.ndarray, sp_thres=20):
+def _find_dets_around_det(det: np.ndarray, dets: np.ndarray, sp_thres=20):
     candidates = dets[
         ((abs(dets[:, 3] - det[3]) < sp_thres) & (abs(dets[:, 4] - det[4]) < sp_thres))
         | (
@@ -279,7 +295,7 @@ def clean_detections(dets: np.ndarray, ratio_thres=2.5, sp_thres=20, inters_thre
         # if det[9] / det[10] > ratio_thres:
         #     remove_inds.append(ind)
 
-        candidates = _find_dets_around_a_det(det, dets, sp_thres)
+        candidates = _find_dets_around_det(det, dets, sp_thres)
         ind_det = np.where(candidates[:, 2] == det[2])[0][0]
         candidates = np.delete(candidates, ind_det, axis=0)
 
@@ -308,7 +324,7 @@ def get_cleaned_detections(det_path: Path, width, height) -> list[Detection]:
 
 
 def match_detection(det1, dets2, sp_thres=100, min_iou=0):
-    candidates = _find_dets_around_a_det(det1, dets2, sp_thres)
+    candidates = _find_dets_around_det(det1, dets2, sp_thres)
     if len(candidates) == 0:
         return None
     ious = []
@@ -412,7 +428,7 @@ def _connect_inds_to_detection_ids(dets):
     return inds_to_det_ids, det_ids_to_inds
 
 
-def _make_a_new_track(det: Detection, new_track_id) -> Track:
+def _make_new_track(det: Detection, new_track_id) -> Track:
     color = tuple(np.random.rand(3).astype(np.float16))
     det.track_id = new_track_id
 
@@ -429,7 +445,7 @@ def _initialize_track_frame1(dets):
     tracks = {}
     ids = range(len(dets))
     for id in ids:
-        tracks[new_track_id] = _make_a_new_track(dets[id], new_track_id)
+        tracks[new_track_id] = _make_new_track(dets[id], new_track_id)
         new_track_id += 1
     return tracks, new_track_id
 
@@ -456,7 +472,7 @@ def _track_predicted_unmatched(pred_dets, pred_inds, tracks):
 def _track_current_unmatched(dets, inds, frame_number, tracks, new_track_id):
     diff_inds = set(range(len(dets))).difference(set(inds))
     for id in diff_inds:
-        tracks[new_track_id] = _make_a_new_track(dets[id], new_track_id)
+        tracks[new_track_id] = _make_new_track(dets[id], new_track_id)
         new_track_id += 1
     return tracks, new_track_id
 
@@ -596,61 +612,6 @@ def compute_tracks(
     return tracks
 
 
-def _rm_det_chang_track_id(tracks: np.ndarray, frame_number: int, track_id: int):
-    latest_track_id = np.unique(np.sort(tracks[:, 0]))[-1]
-    ind1 = np.where((tracks[:, 1] == frame_number) & (tracks[:, 0] == track_id))[0][0]
-    inds = np.where((tracks[:, 1] > frame_number) & (tracks[:, 0] == track_id))[0]
-    if len(inds) != 0:
-        tracks[inds, 0] = latest_track_id + 1
-    tracks = np.delete(tracks, ind1, axis=0)
-    return tracks
-
-
-def remove_detect_change_track_id_per_frame(tracks: np.ndarray, frame_number: int):
-    frame_tracks = tracks[tracks[:, 1] == frame_number].copy()
-    track_ids_remove = []
-    for i in range(len(frame_tracks)):
-        for j in range(i + 1, len(frame_tracks)):
-            item1 = frame_tracks[i]
-            item2 = frame_tracks[j]
-            iou = get_iou(item1[3:7], item2[3:7])
-            if iou > 0:
-                track_ids_remove.append(item1[0])
-                track_ids_remove.append(item2[0])
-
-    track_ids_remove = list(set(track_ids_remove))
-    for track_id in track_ids_remove:
-        tracks = _rm_det_chang_track_id(tracks, frame_number, track_id)
-    return tracks
-
-
-def remove_detects_change_track_ids(tracks: np.ndarray):
-    frame_numbers = np.unique(np.sort(tracks[:, 1]))
-    for frame_number in frame_numbers:
-        tracks = remove_detect_change_track_id_per_frame(tracks, frame_number)
-    return tracks
-
-
-def remove_short_tracks(tracks: np.ndarray, min_track_length: int = 50):
-    track_ids = np.unique(np.sort(tracks[:, 0]))
-    for track_id in track_ids:
-        inds = np.where(tracks[:, 0] == track_id)[0]
-        if len(inds) < min_track_length:
-            tracks = np.delete(tracks, inds, axis=0)
-    return tracks
-
-
-def arrange_track_ids(tracks: np.ndarray):
-    new_tracks = tracks.copy()
-    track_ids = np.unique(np.sort(tracks[:, 0]))
-    old_to_new_ids = {
-        track_id: new_track_id for new_track_id, track_id in enumerate(track_ids)
-    }
-    for track_id in track_ids:
-        new_tracks[tracks[:, 0] == track_id, 0] = old_to_new_ids[track_id]
-    return new_tracks
-
-
 def save_tracks_to_mot_format(
     save_file: Path, tracks: np.ndarray | dict[Track], make_zip: bool = True
 ):
@@ -684,11 +645,17 @@ def save_tracks_to_mot_format(
         shutil.rmtree(track_folder)
 
 
-def load_tracks_from_mot_format(track_file: Path) -> np.ndarray:
+def load_tracks_from_mot_format(zip_file: Path) -> np.ndarray:
     """
     mot format: frame_id, track_id, xtl, ytl, w, h, score, class, visibility
     array format: track_id, frame_id, det_id, xtl, ytl, xbr, ybr, xc, yc, w, h
     """
+    if zip_file.suffix == ".zip":
+        shutil.unpack_archive(zip_file, zip_file.parent / zip_file.stem, "zip")
+        track_file = zip_file.parent / zip_file.stem / "gt/gt.txt"
+    else:
+        track_file = zip_file
+
     tracks = []
     with open(track_file, "r") as file:
         for row in file:
@@ -717,6 +684,8 @@ def load_tracks_from_mot_format(track_file: Path) -> np.ndarray:
                 height,
             ]
             tracks.append(track)
+    if zip_file.suffix == ".zip":
+        shutil.rmtree(zip_file.parent / zip_file.stem)
     return np.round(np.array(tracks)).astype(np.int64)
 
 
@@ -835,14 +804,14 @@ def is_bbox_in_bbox(bbox1, bbox2, inters_thres=0.85) -> float:
         return False
 
 
-def interpolate_two_bboxs(bbox1, bbox2, frame_number1, frame_number2):
-    # bbox1,2: (x_topleft, y_topleft, x_bottomright, y_bottomright)
-    frames = np.arange(frame_number1 + 1, frame_number2)
-    given_frames = [frame_number1, frame_number2]
-    xs_tl = np.interp(frames, given_frames, [bbox1[0], bbox2[0]])
-    ys_tl = np.interp(frames, given_frames, [bbox1[1], bbox2[1]])
-    xs_br = np.interp(frames, given_frames, [bbox1[2], bbox2[2]])
-    ys_br = np.interp(frames, given_frames, [bbox1[3], bbox2[3]])
+def interpolate_two_bboxes(start_bbox, end_bbox, start_frame, end_frame):
+    # bbox: (x_topleft, y_topleft, x_bottomright, y_bottomright)
+    frames = np.arange(start_frame + 1, end_frame)
+    given_frames = [start_frame, end_frame]
+    xs_tl = np.interp(frames, given_frames, [start_bbox[0], end_bbox[0]])
+    ys_tl = np.interp(frames, given_frames, [start_bbox[1], end_bbox[1]])
+    xs_br = np.interp(frames, given_frames, [start_bbox[2], end_bbox[2]])
+    ys_br = np.interp(frames, given_frames, [start_bbox[3], end_bbox[3]])
     return list(zip(xs_tl, ys_tl, xs_br, ys_br))
 
 
@@ -873,8 +842,19 @@ def find_track_id_by_coord_and_frame_number(tracks, x, y, frame_number, toleranc
                 return track_id
 
 
-def get_a_track_from_track_id(tracks: np.ndarray, track_id: int) -> np.ndarray:
+def get_track_ind_from_track_id_frame_number(
+    tracks: np.ndarray, track_id: int, frame_number: int
+) -> np.ndarray:
+    return np.where((tracks[:, 0] == track_id) & (tracks[:, 1] == frame_number))[0]
+
+
+def get_track_from_track_id(tracks: np.ndarray, track_id: int) -> np.ndarray:
+    # this is a copy
     return tracks[tracks[:, 0] == track_id]
+
+
+def get_track_inds_from_track_id(tracks: np.ndarray, track_id: int) -> np.ndarray:
+    return np.where(tracks[:, 0] == track_id)[0]
 
 
 def _compute_disp_candidates(det1: Detection, dets2: Detection) -> list[int]:

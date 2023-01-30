@@ -35,7 +35,7 @@ def get_gt_object_match(atracks, annos, track_id, frame_number, thres=20, min_io
     return det_gt, det
 
 
-def get_stats_for_a_frame(annos, atracks, frame_number):
+def get_stats_for_frame(annos, atracks, frame_number):
     tp = fp = fn = 0
     gt_track_ids = np.unique(annos[annos[:, 1] == frame_number, 0])
     matched_ids = []
@@ -60,7 +60,7 @@ def get_stats_for_a_frame(annos, atracks, frame_number):
     return tp, fp, fn
 
 
-def get_stats_for_a_track(annos, atracks, track_id):
+def get_stats_for_track(annos, atracks, track_id):
     tp = fp = fn = 0
     frame_numbers = annos[annos[:, 0] == track_id, 1]
     matched_ids = []
@@ -97,6 +97,6 @@ def get_stats_for_a_track(annos, atracks, track_id):
 def get_stats_for_tracks(annos, atracks):
     stats = []
     for track_id in np.unique(annos[:, 0]):
-        tp, fp, fn, sw, uid, _ = get_stats_for_a_track(annos, atracks, track_id)
+        tp, fp, fn, sw, uid, _ = get_stats_for_track(annos, atracks, track_id)
         stats.append([track_id, tp, fp, fn, sw, uid])
     return np.array(stats).astype(np.int64)

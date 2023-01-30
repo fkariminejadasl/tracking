@@ -13,7 +13,7 @@ from tracking.stereo_gt import get_matched_track_ids
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Description of your program")
+    parser = argparse.ArgumentParser(description="Match ground-truth stereo tracks")
     parser.add_argument(
         "-r",
         "--result_folder",
@@ -56,8 +56,8 @@ def parse_args():
 
 def main():
     args = parse_args()
-    result_folder = args.result_folder.absolute()
-    data_folder = args.data_folder.absolute()
+    result_folder = args.result_folder.expanduser()
+    data_folder = args.data_folder.expanduser()
 
     tracks1 = load_tracks_from_mot_format(Path(data_folder / args.tracks1))
     tracks2 = load_tracks_from_mot_format(Path(data_folder / args.tracks2))
