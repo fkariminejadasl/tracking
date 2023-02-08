@@ -4,14 +4,10 @@ import numpy as np
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 
-from tracking.data_association import (
-    Detection,
-    Point,
-    get_detections,
-    get_frame_numbers_of_track,
-    get_track_from_track_id,
-    tl_br_from_cen_wh,
-)
+from tracking.data_association import (Detection, Point, get_detections,
+                                       get_frame_numbers_of_track,
+                                       get_track_from_track_id,
+                                       tl_br_from_cen_wh)
 from tracking.stereo_gt import get_disparity_info_from_stereo_track
 
 
@@ -68,17 +64,21 @@ def _write_frame_in_video(frame, out, frame_number, top_left, out_width, out_hei
 
 
 def show_cropped_video(
-    vc,
     output_video_file,
+    vc,
     top_left=Point(1300, 700),
     out_width=900,
     out_height=500,
+    start_frame=0,
+    end_frame=None,
+    fps=None,
 ):
     out, height, width, total_no_frames = _create_output_video(
-        output_video_file, vc, out_width, out_height
+        output_video_file, vc, out_width, out_height, out_fps=fps
     )
-
-    for frame_number in range(0, total_no_frames):
+    if end_frame is None:
+        end_frame = total_no_frames
+    for frame_number in tqdm(range(start_frame, end_frame)):
         frame = get_frame(frame_number, vc)
 
         out = _write_frame_in_video(
@@ -88,10 +88,10 @@ def show_cropped_video(
 
 
 def plot_detections_in_video(
+    output_video_file,
     filename_fixpart,
     det_folder,
     vc,
-    output_video_file,
     top_left=Point(1300, 700),
     out_width=900,
     out_height=500,
@@ -101,7 +101,7 @@ def plot_detections_in_video(
         output_video_file, vc, out_width, out_height
     )
 
-    for frame_number in range(0, total_no_frames):
+    for frame_number in tqdm(range(0, total_no_frames)):
         frame = get_frame(frame_number, vc)
 
         det_path = det_folder / f"{filename_fixpart}_{frame_number+1}.txt"
@@ -310,6 +310,7 @@ def plot_tracks_in_video(
     out.release()
 
 
+# TODO remove?
 def plot_matches_in_video(
     all_matches,
     vc1,
@@ -333,7 +334,7 @@ def plot_matches_in_video(
             output_video_file, vc1, out_width, out_height, fps
         )
     font_scale = 1
-    for frame_number in range(0, total_no_frames):
+    for frame_number in tqdm(range(0, total_no_frames)):
         frame1, frame2 = get_stereo_frames(frame_number, vc1, vc2)
 
         for track_id1, value in all_matches.items():
