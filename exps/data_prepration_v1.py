@@ -163,13 +163,3 @@ def prepare_data_for_yolo_all(
             prepare_data_for_yolo_one_vid(
                 save_path, videos_main_path, labels_main_path, video_name, "train"
             )
-
-
-# data: data8_v1
-# every 8th frame take samples only for F, G every frame. 231_cam_1 used for val.
-#
-# prepare_data_for_yolo_all(save_path, videos_main_path, labels_main_path)
-# labels: *zip in yolo format
-# vids: 04_07_22_F_2_rect_valid.mp4, 04_07_22_G_2_rect_valid.mp4, 129_cam_1.MP4, 129_cam_2.MP4,
-# 161_cam_1.MP4, 161_cam_2.MP4, 183_cam_1.MP4, 183_cam_2.MP4, 231_cam_1.MP4, 231_cam_2.MP4,
-# 261_cam_1.MP4, 349_cam_1.MP4, 349_cam_2.MP4, 406_cam_1.MP4, 406_cam_2.MP4
