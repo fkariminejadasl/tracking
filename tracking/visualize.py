@@ -1,17 +1,15 @@
+from pathlib import Path
+
 import cv2
 import matplotlib.patches as patches
 import numpy as np
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 
-from tracking.data_association import (
-    Detection,
-    Point,
-    get_detections,
-    get_frame_numbers_of_track,
-    get_track_from_track_id,
-    tl_br_from_cen_wh,
-)
+from tracking.data_association import (Detection, Point, get_detections,
+                                       get_frame_numbers_of_track,
+                                       get_track_from_track_id,
+                                       tl_br_from_cen_wh)
 from tracking.stereo_gt import get_disparity_info_from_stereo_track
 
 
@@ -68,17 +66,21 @@ def _write_frame_in_video(frame, out, frame_number, top_left, out_width, out_hei
 
 
 def show_cropped_video(
-    vc,
     output_video_file,
+    vc,
     top_left=Point(1300, 700),
     out_width=900,
     out_height=500,
+    start_frame=0,
+    end_frame=None,
+    fps=None,
 ):
     out, height, width, total_no_frames = _create_output_video(
-        output_video_file, vc, out_width, out_height
+        output_video_file, vc, out_width, out_height, out_fps=fps
     )
-
-    for frame_number in range(0, total_no_frames):
+    if end_frame is None:
+        end_frame = total_no_frames
+    for frame_number in tqdm(range(start_frame, end_frame)):
         frame = get_frame(frame_number, vc)
 
         out = _write_frame_in_video(
@@ -88,24 +90,35 @@ def show_cropped_video(
 
 
 def plot_detections_in_video(
-    filename_fixpart,
-    det_folder,
-    vc,
-    output_video_file,
-    top_left=Point(1300, 700),
-    out_width=900,
-    out_height=500,
+    output_video_file: Path,
+    video_file: Path | cv2.VideoCapture,
+    det_folder: Path,
+    filename_fixpart: str,
+    top_left=Point(0, 0),
+    out_width=None,
+    out_height=None,
     color=(0, 0, 255),
 ):
+    if isinstance(video_file, cv2.VideoCapture):
+        vc = video_file
+    else:
+        vc = cv2.VideoCapture(video_file.as_posix())
+
+    frame = get_frame(0, vc)
+    if out_width is None:
+        out_width = frame.shape[1]
+    if out_height is None:
+        out_height = frame.shape[0]
+
     out, height, width, total_no_frames = _create_output_video(
         output_video_file, vc, out_width, out_height
     )
 
-    for frame_number in range(0, total_no_frames):
+    for frame_number in tqdm(range(0, total_no_frames)):
         frame = get_frame(frame_number, vc)
 
         det_path = det_folder / f"{filename_fixpart}_{frame_number+1}.txt"
-        dets = get_detections(det_path, frame_number, width, height)
+        dets = get_detections(det_path, width, height)
 
         for det in dets:
             x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
@@ -310,6 +323,7 @@ def plot_tracks_in_video(
     out.release()
 
 
+# TODO remove?
 def plot_matches_in_video(
     all_matches,
     vc1,
@@ -333,7 +347,7 @@ def plot_matches_in_video(
             output_video_file, vc1, out_width, out_height, fps
         )
     font_scale = 1
-    for frame_number in range(0, total_no_frames):
+    for frame_number in tqdm(range(0, total_no_frames)):
         frame1, frame2 = get_stereo_frames(frame_number, vc1, vc2)
 
         for track_id1, value in all_matches.items():

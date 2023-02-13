@@ -7,13 +7,9 @@ sys.path.insert(0, path)
 
 import cv2
 
-from tracking.data_association import (
-    Point,
-    _reindex_tracks,
-    _remove_short_tracks,
-    compute_tracks,
-    save_tracks_to_mot_format,
-)
+from tracking.data_association import (Point, _reindex_tracks,
+                                       _remove_short_tracks, compute_tracks,
+                                       save_tracks_to_mot_format)
 from tracking.visualize import get_video_parameters, plot_tracks_in_video
 
 
