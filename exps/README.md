@@ -31,14 +31,15 @@ e.g. runfile.sh:
 #SBATCH --time=14:00:00
 #SBATCH -o yolo8_train4_%j.out
 
-echo "cpu pertask: $SLURM_CPUS_PER_TASK"
-echo "cpu per node: $SLURM_CPUS_ON_NODE"
-echo "cpu per gpu: $SLURM_CPUS_PER_GPU"
+echo "cpus per task: $SLURM_CPUS_PER_TASK"
+echo "cpus on node $SLURM_CPUS_ON_NODE"
+echo "cpus per gpu $SLURM_CPUS_PER_GPU"
 
 echo "start training"
 yolo detect train data=/home/username/data/data8_v1/data.yaml model=/home/username/exp/runs/detect/bgr12/weights/best.pt rect=true imgsz=1920 batch=16 epochs=400 name=bgr cache=true
 echo "end training"
 ```
+More SBATCH options and the "output environmental varibles" can be found from the [sbatch help](https://slurm.schedmd.com/sbatch.html). 
 
 **Check job is running**
 
@@ -48,6 +49,7 @@ squeue -j jobid
 squeue -u username
 # squeue with more options
 squeue -u username -o "%.18i %.9P %.18j %.8u %.2t %.10M %.6D %.10R %.20S %.4p"
+squeue -o "%.10i %.9P %.25j %.8u %.8T %.10M %.9l %.6D %.10Q %.20S %R"
 ```
 If the job is running, it will save the result in output file with the name specified by `SBATCH -o` option. NB. `%j` in the name replaced by job id. In the example `yolo8_train4_%j.out`, the output file will be olo8_train4_2137977.out. The job id is the id you get after running sbatch. 
 
@@ -61,7 +63,19 @@ So in a `runfile.sh`, the basic slurm settings are as:
 #SBATCH --partition=gpu
 #SBATCH --time=14:00:00
 ```
->NB. `--cpus-per-gpu` or `--cpus-per-task` is automatically set for 1/4 of node, which in `gpu` partition is 18. For more info, check [Snellius accounting](https://servicedesk.surf.nl/wiki/display/WIKI/Snellius+usage+and+accounting), [SBU calculating](https://servicedesk.surf.nl/wiki/display/WIKI/Estimating+SBUs).
+> NB. `--cpus-per-gpu` or `--cpus-per-task` is automatically set for 1/4 of node, which in `gpu` partition is 18. For more info, check [Snellius accounting](https://servicedesk.surf.nl/wiki/display/WIKI/Snellius+usage+and+accounting), [SBU calculating](https://servicedesk.surf.nl/wiki/display/WIKI/Estimating+SBUs).
+
+</br>
+There are more options for variables such as below. You can get the full list from the [sbatch help](https://slurm.schedmd.com/sbatch.html). 
+
+```bash
+#SBATCH --gpus-per-node=1
+#SBATCH --cpus-per-gpu=18
+#SBATCH --cpus-per-task=1
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+```
+
 
 ## Useful commands
 

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import cv2
 import matplotlib.patches as patches
 import numpy as np
@@ -88,15 +90,26 @@ def show_cropped_video(
 
 
 def plot_detections_in_video(
-    output_video_file,
-    filename_fixpart,
-    det_folder,
-    vc,
-    top_left=Point(1300, 700),
-    out_width=900,
-    out_height=500,
+    output_video_file: Path,
+    video_file: Path | cv2.VideoCapture,
+    det_folder: Path,
+    filename_fixpart: str,
+    top_left=Point(0, 0),
+    out_width=None,
+    out_height=None,
     color=(0, 0, 255),
 ):
+    if isinstance(video_file, cv2.VideoCapture):
+        vc = video_file
+    else:
+        vc = cv2.VideoCapture(video_file.as_posix())
+
+    frame = get_frame(0, vc)
+    if out_width is None:
+        out_width = frame.shape[1]
+    if out_height is None:
+        out_height = frame.shape[0]
+
     out, height, width, total_no_frames = _create_output_video(
         output_video_file, vc, out_width, out_height
     )
@@ -105,7 +118,7 @@ def plot_detections_in_video(
         frame = get_frame(frame_number, vc)
 
         det_path = det_folder / f"{filename_fixpart}_{frame_number+1}.txt"
-        dets = get_detections(det_path, frame_number, width, height)
+        dets = get_detections(det_path, width, height)
 
         for det in dets:
             x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
