@@ -1,10 +1,22 @@
 # Data
 
+**old** </br>
+Ben generated data using Roboflow. The data consists of:
+`orig/train/val/test=594/4092/400/188 image`, which they are made from
+`orig/train/val/test=594/341/100/47 images`. The train is mosaic, valid and test are crops.
+
 **data8_v1** </br>
-[description]: Every 8th frame take samples only for F, G every frame. 231_cam_1 used for val. </br>
+[description]: Every 8th frame take samples only for F, G every frame. 231_cam_1 used for val. `train/val=5880/390 images` </br>
 [code]: prepare_data_for_yolo_all(save_path, videos_main_path, labels_main_path) in `data_prepration_v1.py` </br>
 [labels]: zip files in yolo format
 [vids]: 04_07_22_F_2_rect_valid, 04_07_22_G_2_rect_valid, 129_cam_1, 129_cam_2, 161_cam_1, 161_cam_2, 183_cam_1, 183_cam_2, 231_cam_1, 231_cam_2, 261_cam_1, 349_cam_1, 349_cam_2, 406_cam_1, 406_cam_2 </br>
+
+**data8_v1_old**</br>
+Combine `data8_v1` and `old` using symbolic links.
+`train/val=9972/790 images`
+
+**data8_v2**
+Combine `data8_v1` and `orig` old data.
 
  <!-- (#594 images: 2704 x 1520 orig) -> #4092/400 (1024 x 576 train)/(960 x 540 val) -->
 
