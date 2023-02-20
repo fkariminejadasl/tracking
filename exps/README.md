@@ -107,6 +107,16 @@ Now, in the local machine, run `http://localhost:local_port`, e.g. `http://local
 
 </br>
 
+**Interactive mode**
+
+> **IMPORTANT**: This part is not recommended. Use it if you want to have a short check and want to use a bash.
+
+This is same as sbatch with runfile.sh but parameters are set in srun. In this way, the bash will be active and you are in the machine.
+
+```bash
+srun --gpus=1 --partition=gpu --partition=gpu --pty bash -il
+```
+
 **Useful commands**
 
 - `sbatch`: run a job
