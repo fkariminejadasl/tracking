@@ -106,9 +106,12 @@ def get_detections(
     width: int,
     height: int,
     frame_number: int = None,
+    zero_based: bool = False,
 ) -> list[Detection]:
     if frame_number is None:
         frame_number = int(det_file.stem.split("_")[-1]) - 1
+    if zero_based:
+        frame_number = int(det_file.stem.split("_")[-1])
     score = -1
 
     detections = np.loadtxt(det_file)
@@ -147,8 +150,12 @@ def cen_wh_from_tl_br(tl_x, tl_y, br_x, br_y) -> tuple:
     return center_x, center_y, width, height
 
 
-def get_detections_array(det_file: Path, width: int, height: int) -> list[np.ndarray]:
+def get_detections_array(
+    det_file: Path, width: int, height: int, zero_based: bool = False
+) -> list[np.ndarray]:
     frame_number = int(det_file.stem.split("_")[-1]) - 1
+    if zero_based:
+        frame_number = int(det_file.stem.split("_")[-1])
     detections = np.loadtxt(det_file)
     dets_array = []
     for det_id, det in enumerate(detections):
@@ -649,6 +656,11 @@ def load_tracks_from_mot_format(zip_file: Path) -> np.ndarray:
     """
     mot format: frame_id, track_id, xtl, ytl, w, h, score, class, visibility
     array format: track_id, frame_id, det_id, xtl, ytl, xbr, ybr, xc, yc, w, h
+    
+    input:
+        zip_file: either zip file containing track file or track file itself.
+        zip file contains gt folder with gt.txt, label.txt. This file comes from
+        cvat.
     """
     if zip_file.suffix == ".zip":
         shutil.unpack_archive(zip_file, zip_file.parent / zip_file.stem, "zip")

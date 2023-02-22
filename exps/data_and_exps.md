@@ -1,13 +1,13 @@
 # Data
 
 **old** </br>
-[data]: `train/val=4092/400 images`. `imsize=1520x2704` </br>
+[data]: `train/val=4092/400 images`. `imsize=540x960, 575x1024, 576x1024, 760x1352` </br>
 [description]: Ben generated data using Roboflow. The data consists of:
 `orig/train/val/test=594/4092/400/188 image`, which they are made from
 `orig/train/val/test=594/341/100/47 images`. The train is mosaic, valid and test are crops.</br>
 
 **data8_v1** </br>
-[data]: `train/val=5880/390 images` </br>
+[data]: `train/val=5880/390 images`. `imsizes=1080x1920, 1220x2098`</br>
 [description]: Every 8th frame take samples only for F, G every frame. 231_cam_1 used for val.  </br>
 [code]: `data_v1.py` </br>
 [labels]: zip files in yolo format
@@ -20,9 +20,15 @@
 
 
 **data8_v2**
-[data]: `train/val=6380/484 images` </br>
-[description]: Combine `data8_v1` and `orig` old data contains 594 images, where first 94 added to validation and the rest of 500 images to the training set. </br>
+[data]: `train/val=6380/484 images`. `imsizes=1080x1920, 1220x2098, 1520x2704` </br>
+[description]: Combine `data8_v1` and `orig` old data contains 594 images, where first 94 added to validation and the rest of 500 images to the training set. `imsizes=1080x1920, 1520x2704`</br>
 [code]: `data_v2.py` </br>
+
+**data8_v3**
+[data]: `train/val=19112/484 images`. `imsizes=1080x1920, 1152x2048, 1190x2048, 1220x2098, 1520x2704` </br>
+[description]: training data of `data8_v2` with `6380` images is uploaded in Roboflow and rotation `[-15, 15]` and then mosaic approximatly 3 times more data is generated. The validation is the same as `data8_v2`. </br>
+NB. The data is here is copied not symbolic linked.
+
 
  <!-- (#594 images: 2704 x 1520 orig) -> #4092/400 (1024 x 576 train)/(960 x 540 val) -->
 
@@ -289,3 +295,12 @@ Total number of tracks is `411`. Total number of images is `41,724`. Total numbe
   - `close_mosaic=10` is default, which says don't use mosaic for last 10 epoch
 - don't run two inference jobs at the same time. They are short and overwrite the result.
 - rotation applies after mosaic.
+
+**Examples**:</br>
+```bash
+yolo detect train data=~/data/data8_v2/data.yaml model=~/exp/runs/detect/bgr25/weights/best.pt imgsz=1920 batch=4 epochs=200 name=bgr cache=true close_mosaic=0 augment=True rect=False mosaic=1.0 mixup=0.0
+
+yolo detect train data=/home/~/data/data8_v1_old/data.yaml model=~/dev/yolov8/ultralytics/models/v8/yolov8s.yaml imgsz=1920 batch=8 epochs=400 name=bgr cache=true close_mosaic=0 augment=True rect=False mosaic=1.0 mixup=0.0
+
+yolo detect predict model=~/exp/runs/detect/bgr27/weights/best.pt source=~/data/89_cam_1.MP4 imgsz=1920 conf=0.3 hide_conf=true line_thickness=1 hide_labels=true save_txt=true save_conf=true save=True
+```
