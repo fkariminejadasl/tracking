@@ -6,11 +6,17 @@ import numpy as np
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 
-from tracking.data_association import (Detection, Point, get_detections,
-                                       get_frame_numbers_of_track,
-                                       get_track_from_track_id,
-                                       tl_br_from_cen_wh)
+from tracking.data_association import (
+    Detection,
+    Point,
+    get_detections,
+    get_frame_numbers_of_track,
+    get_track_from_track_id,
+    tl_br_from_cen_wh,
+)
 from tracking.stereo_gt import get_disparity_info_from_stereo_track
+
+# TODO: get_frame is too slow, should be replaced by vc.read(). Look at save_video_as_images.
 
 
 def get_video_parameters(vc: cv2.VideoCapture):
@@ -22,6 +28,20 @@ def get_video_parameters(vc: cv2.VideoCapture):
         return height, width, total_no_frames, fps
     else:
         return
+
+
+def save_video_as_images(video_file: Path, save_path: Path, step: int = 1):
+    vc = cv2.VideoCapture(video_file.as_posix())
+    assert vc.isOpened()
+    height, width, total_no_frames, fps = get_video_parameters(vc)
+    save_path.mkdir(parents=True, exist_ok=True)
+    for frame_number in tqdm(range(total_no_frames)):
+        # frame = get_frame(frame_number, vc) # too slow
+        _, frame = vc.read()
+        if frame_number % step == 0:
+            name = f"{video_file.stem}_{frame_number}.jpg"
+            cv2.imwrite((save_path / f"{name}").as_posix(), frame)
+    vc.release()
 
 
 def _create_output_video(

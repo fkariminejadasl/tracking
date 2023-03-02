@@ -21,6 +21,8 @@ def save_video_frames_on_disk(
     format: str = "jpg",
 ):
     for frame_number in tqdm(range(start_frame, end_frame, step)):
+        # get_frame is slow. This is solved in visualize.save_video_as_images. 
+        # but naming should be corrected.
         frame = get_frame(frame_number, vc)
         save_file = save_path / f"{name_prefix}frame_{frame_number:06d}.{format}"
         cv2.imwrite(save_file.as_posix(), frame)

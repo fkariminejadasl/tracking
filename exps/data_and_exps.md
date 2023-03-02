@@ -295,6 +295,7 @@ Total number of tracks is `411`. Total number of images is `41,724`. Total numbe
   - `close_mosaic=10` is default, which says don't use mosaic for last 10 epoch
 - don't run two inference jobs at the same time. They are short and overwrite the result.
 - rotation applies after mosaic.
+- number of workers more than the number of cpus per node slows down the process.
 
 **Examples**:</br>
 ```bash
