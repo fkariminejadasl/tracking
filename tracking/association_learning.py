@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import torchvision
 from torch.utils.data import Dataset, DataLoader
 from torchvision.models.resnet import Bottleneck
 from pathlib import Path
@@ -71,20 +72,55 @@ class TestDataset(Dataset):
         return image, dets, 1
 
 
-image_dir = Path("/home/fatemeh/Downloads/test_data/images")
+class AssDataset(Dataset):
+    def __init__(self, image_dir: Path, transform=None):
+        self.image_paths = list(image_dir.glob("*.jpg"))
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.image_paths)
+
+    def __getitem__(self, ind):
+        image_path = self.image_paths[ind]
+        image = cv2.imread(image_path.as_posix())[..., ::-1]
+        image1 = image[:256]
+        image2 = image[256:]
+        image1 = np.ascontiguousarray(image1)
+        image2 = np.ascontiguousarray(image2)
+        # assert image.shape == (self.req_height, self.req_width, 3)
+        print(image_path)
+        print(image.shape)
+        bbox_file = image_path.parent / f"{image_path.stem}.txt"
+        bboxs = np.loadtxt(bbox_file, skiprows=1, delimiter=",").astype(np.float64)
+        # normalize boxes: divide by image width
+        bboxs[:, 3:11:2] /= 512
+        bboxs[:, 4:11:2] /= 256
+        bbox1 = bboxs[0]
+        bboxs2 = bboxs[1:]
+        label = int(bboxs2[bboxs2[:, 0] == bbox1[0], 2][0])
+        time = int(image_path.stem.split("_")[-3])
+        # sample = {"image": image, "time": time, "label": dets}
+
+        if self.transform:
+            image = self.transform(image)
+
+        # target = dict(image_id=torch.tensor(image), boxes=dets, labels=1)
+        # return target
+        return image1, image2, bbox1, bboxs2, time, label
+
+
+image_dir = Path("/home/fatemeh/Downloads/test_data/crops")
 det_dir = Path("/home/fatemeh/Downloads/test_data/labels")
 # https://github.com/pytorch/vision/blob/main/references/detection/utils.py#L203
 def collate_fn(batch):
     return tuple(zip(*batch))
 
 
-# testloader = torch.utils.data.DataLoader(test, batch_size=8, shuffle=False, num_workers=0, collate_fn=collate_fn)
+# testloader = torch.utils.data.DataLoader(test, batch_size=8, shuffle=False, num_workers=2, collate_fn=collate_fn)
 
-# tetest_dataset = TestDataset(image_dir, det_dir)
-# test_loader = DataLoader(
-#         test_dataset, batch_size=1, shuffle=False, num_workers=1, drop_last=False
-#     )
 
+# dataset = al.AssDataset(al.image_dir)
+# loader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=1, drop_last=False)
 
 """
 Superglue wise is that: give each image separately get features, and then do sinkhorn stuff (differentiable Hungarian). 
@@ -236,6 +272,7 @@ for epoch in range(2):  # loop over the dataset multiple times
     # outputs = net(inputs)
     labels = torch.tensor(2).unsqueeze(0)  # Nx
     outputs = associate(imt, bbox, time)
+    # net(tmp[0].permute((0,3,1,2)).type(torch.float32), tmp[3].squeeze()[:, 7:].type(torch.float32), int(tmp[4]))
 
     loss = criterion(outputs, labels)
     loss.backward()
