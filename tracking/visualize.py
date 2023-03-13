@@ -16,7 +16,8 @@ from tracking.data_association import (
 )
 from tracking.stereo_gt import get_disparity_info_from_stereo_track
 
-# TODO: get_frame is too slow, should be replaced by vc.read(). Look at save_video_as_images.
+# get_frame is too slow and replaced by vc.read().
+# It seems due to vc.set(cv2.CAP_PROP_POS_FRAMES, frame_number).
 
 
 def get_video_parameters(vc: cv2.VideoCapture):
@@ -30,13 +31,22 @@ def get_video_parameters(vc: cv2.VideoCapture):
         return
 
 
-def save_video_as_images(video_file: Path, save_path: Path, step: int = 1):
+def save_video_as_images(
+    video_file: Path,
+    save_path: Path,
+    step: int = 1,
+    start_frame: int = 0,
+    end_frame=None,
+):
     vc = cv2.VideoCapture(video_file.as_posix())
     assert vc.isOpened()
     height, width, total_no_frames, fps = get_video_parameters(vc)
     save_path.mkdir(parents=True, exist_ok=True)
-    for frame_number in tqdm(range(total_no_frames)):
-        # frame = get_frame(frame_number, vc) # too slow
+
+    vc.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    if end_frame is None:
+        end_frame = total_no_frames - 1
+    for frame_number in tqdm(range(start_frame, end_frame + 1)):
         _, frame = vc.read()
         if frame_number % step == 0:
             name = f"{video_file.stem}_{frame_number}.jpg"
@@ -99,9 +109,10 @@ def show_cropped_video(
         output_video_file, vc, out_width, out_height, out_fps=fps
     )
     if end_frame is None:
-        end_frame = total_no_frames
-    for frame_number in tqdm(range(start_frame, end_frame)):
-        frame = get_frame(frame_number, vc)
+        end_frame = total_no_frames - 1
+    vc.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    for frame_number in tqdm(range(start_frame, end_frame + 1)):
+        _, frame = vc.read()
 
         out = _write_frame_in_video(
             frame, out, frame_number, top_left, out_width, out_height
@@ -124,18 +135,19 @@ def plot_detections_in_video(
     else:
         vc = cv2.VideoCapture(video_file.as_posix())
 
-    frame = get_frame(0, vc)
+    height, width, _, _ = get_video_parameters(vc)
     if out_width is None:
-        out_width = frame.shape[1]
+        out_width = width
     if out_height is None:
-        out_height = frame.shape[0]
+        out_height = height
 
     out, height, width, total_no_frames = _create_output_video(
         output_video_file, vc, out_width, out_height
     )
 
-    for frame_number in tqdm(range(0, total_no_frames)):
-        frame = get_frame(frame_number, vc)
+    vc.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    for frame_number in tqdm(range(total_no_frames)):
+        _, frame = vc.read()
 
         det_path = det_folder / f"{filename_fixpart}_{frame_number+1}.txt"
         dets = get_detections(det_path, width, height)
@@ -256,8 +268,8 @@ def plot_tracks_array_in_video(
     colors = np.random.randint(0, 255, size=(len(tracks_ids), 3))
     tracks_ids_to_inds = {track_id: i for i, track_id in enumerate(tracks_ids)}
 
-    for frame_number in tqdm(range(0, total_no_frames)):
-        frame = get_frame(frame_number, vc)
+    for frame_number in tqdm(range(total_no_frames)):
+        _, frame = vc.read()
         frame_tracks = tracks[tracks[:, 1] == frame_number]
         if frame_tracks.size == 0:
             continue
@@ -310,8 +322,8 @@ def plot_tracks_in_video(
             output_video_file, vc, out_width, out_height, fps
         )
 
-    for frame_number in tqdm(range(0, total_no_frames)):
-        frame = get_frame(frame_number, vc)
+    for frame_number in tqdm(range(total_no_frames)):
+        _, frame = vc.read()
 
         for track_id, track in tracks.items():
             frame_numbers = get_frame_numbers_of_track(track)
