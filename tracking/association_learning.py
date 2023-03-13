@@ -1,11 +1,11 @@
+from pathlib import Path
+
+import cv2
 import numpy as np
 import torch
 import torchvision
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader, Dataset
 from torchvision.models.resnet import Bottleneck
-from pathlib import Path
-import cv2
-
 
 import tracking.data_association as da
 

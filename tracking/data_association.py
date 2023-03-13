@@ -656,7 +656,7 @@ def load_tracks_from_mot_format(zip_file: Path) -> np.ndarray:
     """
     mot format: frame_id, track_id, xtl, ytl, w, h, score, class, visibility
     array format: track_id, frame_id, det_id, xtl, ytl, xbr, ybr, xc, yc, w, h
-    
+
     input:
         zip_file: either zip file containing track file or track file itself.
         zip file contains gt folder with gt.txt, label.txt. This file comes from

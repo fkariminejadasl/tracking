@@ -3,10 +3,10 @@ import sys
 from pathlib import Path
 
 import cv2
-from tqdm import tqdm
-from sklearn.neighbors import KDTree
-import numpy as np
 import matplotlib.pylab as plt
+import numpy as np
+from sklearn.neighbors import KDTree
+from tqdm import tqdm
 
 path = (Path(__file__).parents[1]).as_posix()
 sys.path.insert(0, path)
@@ -42,6 +42,45 @@ def _get_dframe(
     return dframe
 
 
+def get_next_image_paths(
+    image_path1: Path, tracks, dtime_limit: int = 4
+) -> None | list:
+    vid_name_600 = [
+        "04_07_22_F_2_rect_valid",
+        "04_07_22_G_2_rect_valid",
+    ]
+    vid_infos = {"short": [600, 1], "long": [248, 8]}  # "long": [3117, 8]}
+
+    video_name, frame_number1 = _get_video_name_and_frame_number(image_path1)
+    if video_name in vid_name_600:
+        vid_info = vid_infos["short"]
+    else:
+        vid_info = vid_infos["long"]
+
+    bboxes1 = tracks[tracks[:, 1] == frame_number1]
+    if bboxes1.size == 0:
+        return
+    image_dir = image_path1.parent
+
+    image_paths2_dtimes = []
+    dtimes = np.hstack((np.arange(-dtime_limit, 0), np.arange(1, dtime_limit + 1)))
+    for dtime in dtimes:
+        frame_number2 = frame_number1 + dtime * vid_info[1]
+        if (frame_number2 < 0) or (frame_number2 >= vid_info[0]):
+            continue
+        bboxes2 = tracks[tracks[:, 1] == frame_number2]
+        if bboxes2.size == 0:
+            continue
+        med_disp = calculate_median_disp(tracks, frame_number1, frame_number2)
+        if med_disp < accepted_disp:
+            image_path2 = image_dir / f"{video_name}_frame_{frame_number2:06d}.jpg"
+            if image_path2.exists():
+                image_paths2_dtimes.append([image_path2, dtime])
+                print(dtime)
+
+    return image_paths2_dtimes
+
+
 def get_next_image_path(image_path: Path, tracks, dtime_limit: int = 4) -> Path:
     """
     !!!! Not a great function.
@@ -56,7 +95,7 @@ def get_next_image_path(image_path: Path, tracks, dtime_limit: int = 4) -> Path:
         "04_07_22_F_2_rect_valid",
         "04_07_22_G_2_rect_valid",
     ]
-    vid_infos = {"short": [600, 1], "long": [248, 8]}#"long": [3117, 8]}
+    vid_infos = {"short": [600, 1], "long": [248, 8]}  # "long": [3117, 8]}
 
     dtime_forward = np.random.permutation(np.arange(1, dtime_limit + 1))
     dtime_backward = np.random.permutation(np.arange(-dtime_limit, 0))
@@ -82,7 +121,8 @@ def get_next_image_path(image_path: Path, tracks, dtime_limit: int = 4) -> Path:
     )
     print(dframe, med_disp)
     assert next_image.exists()
-    return next_image, int(dframe / vid_info[1])
+    dtime = int(dframe / vid_info[1])
+    return next_image, dtime
 
 
 def get_crop_image(image_path, x_tl, y_tl, x_br, y_br):
@@ -132,42 +172,17 @@ def calculate_median_disp(tracks, frame_number1, frame_number2):
         disp = np.linalg.norm(cen1 - cen2)
         disps.append(disp)
     disps = np.array(disps).astype(np.int64)
-    print(sorted(dict(list(zip(track_ids, disps))).items(), key=lambda x: x[1]))
+    # print(sorted(dict(list(zip(track_ids, disps))).items(), key=lambda x: x[1]))
     med_disp = np.median(disps)
     return med_disp
 
 
-crop_height, crop_width = 256, 512
-number_bboxes = 5
-np.random.seed(342)
-# in attach median displacement is about 21. This is about 2 frames.
-accepted_disp = 30
-dtime_limit = 4
-image_dir = Path("/home/fatemeh/Downloads/test_data/images")
-
-
-# 1. random select next image based on random d_time
-# image_path1 = Path(
-#     "/home/fatemeh/Downloads/data8_v1/train/images/183_cam_1_frame_002440.jpg" 
-# )
-for image_path1 in image_dir.glob("*.jpg"):
+def generate_data_per_image(save_dir, image_path1, image_path2, dtime, tracks):
     video_name, frame_number1 = _get_video_name_and_frame_number(image_path1)
-
-    tracks = da.load_tracks_from_mot_format(
-        Path(f"/home/fatemeh/Downloads/vids/mot/{video_name}.zip")
-    )
-
-    print(image_path1)
-    image_path2, dtime = get_next_image_path(image_path1, tracks)
-    print(image_path2)
-
-
-    _, frame_number2 = _get_video_name_and_frame_number(image_path2)
+    video_name, frame_number2 = _get_video_name_and_frame_number(image_path2)
     bboxes1 = tracks[tracks[:, 1] == frame_number1]
     bboxes2 = tracks[tracks[:, 1] == frame_number2]
 
-
-    # 2. bbox: check(accept/reject) + select
     # frame1
     track_ids1 = list(np.random.permutation(bboxes1[:, 0]))
     for track_id1 in track_ids1[0:10]:
@@ -180,6 +195,7 @@ for image_path1 in image_dir.glob("*.jpg"):
             center_x, center_y, crop_width, crop_height
         )
 
+        # TODO: not only for the center
         c_frame1 = get_crop_image(image_path1, x_tl, y_tl, x_br, y_br)
         c_bbox1 = change_origin_bboxes(bbox1.reshape((1, -1)), x_tl, y_tl)
 
@@ -191,7 +207,7 @@ for image_path1 in image_dir.glob("*.jpg"):
         print(c_frame1.shape, c_frame2.shape)
 
         # adjust number of bboxes: for smaller one are zero padded, for larger ones knn used
-       
+
         # # TODO: adjust for near border but accepted till ~ 60 pixels is accepted
         # crop_pad = np.pad(crop_image2, ((crop_height-c_frame1.shape[0],0),(0,0),(0,0)))
         # np.clip(y_tl, 0, image1.shape[0])
@@ -219,9 +235,11 @@ for image_path1 in image_dir.glob("*.jpg"):
         print(lable)
         print(c_bboxes2)
 
-        save_dir = Path("/home/fatemeh/Downloads/test_data/overview")
+        save_dir = Path(save_dir / "overview")
         save_dir.mkdir(parents=True, exist_ok=True)
-        name_stem = f"{video_name}_{frame_number1}_{frame_number2}_{dtime}_{x_tl}_{y_tl}"
+        name_stem = (
+            f"{video_name}_{frame_number1}_{frame_number2}_{dtime}_{x_tl}_{y_tl}"
+        )
 
         c_bboxes2_shift = c_bboxes2.copy()
         c_bboxes2_shift[:, [4, 6, 8]] = c_bboxes2[:, [4, 6, 8]] + 256
@@ -235,7 +253,7 @@ for image_path1 in image_dir.glob("*.jpg"):
         fig.savefig(save_dir / f"{name_stem}.jpg")
         plt.close()
 
-        save_dir = Path("/home/fatemeh/Downloads/test_data/crops")
+        save_dir = Path(save_dir / "crops")
         save_dir.mkdir(parents=True, exist_ok=True)
         cv2.imwrite((save_dir / f"{name_stem}.jpg").as_posix(), c_frame12)
         np.savetxt(
@@ -245,3 +263,35 @@ for image_path1 in image_dir.glob("*.jpg"):
             delimiter=",",
             fmt="%d",
         )
+
+
+crop_height, crop_width = 256, 512
+number_bboxes = 5
+np.random.seed(342)
+# in attach median displacement is about 21. This is about 2 frames.
+accepted_disp = 30
+dtime_limit = 4
+image_dir = Path("/home/fatemeh/Downloads/test_data/images")
+save_dir = image_dir.parent
+
+# 1. random select next image based on random d_time
+# image_path1 = Path(
+#     "/home/fatemeh/Downloads/data8_v1/train/images/183_cam_1_frame_002440.jpg"
+# )
+for image_path1 in sorted(image_dir.glob("*.jpg")):
+    video_name, frame_number1 = _get_video_name_and_frame_number(image_path1)
+    tracks = da.load_tracks_from_mot_format(
+        Path(f"/home/fatemeh/Downloads/vids/mot/{video_name}.zip")
+    )
+
+    # image_path2, dtime = get_next_image_path(image_path1, tracks)
+    image_paths2_dtimes = get_next_image_paths(image_path1, tracks)
+    if image_paths2_dtimes is None:
+        continue
+    print(image_path1)
+    for image_path2, dtime in image_paths2_dtimes:
+        print(image_path2)
+
+    # 2. generate data per image
+
+    # generate_data_per_image(save_dir, image_path1, image_path2, dtime, tracks)
