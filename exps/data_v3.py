@@ -133,8 +133,6 @@ def get_crop_image(image_path, x_tl, y_tl, x_br, y_br):
     cx_tl = np.clip(x_tl, 0, im_width)
     cx_br = np.clip(x_br, 0, im_width)
     c_image = image[cy_tl:cy_br, cx_tl:cx_br]
-    print(x_tl, y_tl, x_br, y_br)
-    print(cx_tl, cy_tl, cx_br, cy_br)
     padx_tl, pady_tl, padx_br, pady_br = map(
         abs, [cx_tl - x_tl, cy_tl - y_tl, cx_br - x_br, cy_br - y_br]
     )
@@ -185,6 +183,53 @@ def calculate_median_disp(tracks, frame_number1, frame_number2):
     return med_disp
 
 
+def save_result(save_dir, name_stem, c_bboxes2, c_bbox1, c_frame1, c_frame2):
+    overview_dir = Path(save_dir / "overview")
+    overview_dir.mkdir(parents=True, exist_ok=True)
+    c_bboxes2_shift = c_bboxes2.copy()
+    c_bboxes2_shift[:, [4, 6, 8]] = c_bboxes2[:, [4, 6, 8]] + crop_height
+    c_bboxes12 = np.concatenate((c_bbox1, c_bboxes2_shift), axis=0)
+    c_frame12 = np.concatenate((c_frame1, c_frame2), axis=0)
+    visualize.plot_detections_in_image(
+        da.make_dets_from_array(c_bboxes12), c_frame12, "r", "track_id"
+    )
+    fig = plt.gcf()
+    fig.set_figwidth(4.8)
+    fig.savefig(overview_dir / f"{name_stem}.jpg")
+    plt.close()
+
+    crops_dir = Path(save_dir / "crops")
+    crops_dir.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite((crops_dir / f"{name_stem}.jpg").as_posix(), c_frame12)
+    np.savetxt(
+        crops_dir / f"{name_stem}.txt",
+        np.concatenate((c_bbox1, c_bboxes2), axis=0),
+        header="track_id,frame_number,det_id,xtl,ytl,xbr,ybr,cenx,ceny,w,h",
+        delimiter=",",
+        fmt="%d",
+    )
+
+
+def adjust_number_boxes(c_bboxes2, track_id1):
+    if c_bboxes2.shape[0] < number_bboxes:
+        c_bboxes2 = zero_padding_bboxes(c_bboxes2, number_bboxes)
+    if c_bboxes2.shape[0] > number_bboxes:
+        kdt = KDTree(c_bboxes2[:, 7:9])
+        ind = np.where(c_bboxes2[:, 0] == track_id1)[0]
+        _, inds = kdt.query(c_bboxes2[ind, 7:9], k=number_bboxes)
+        c_bboxes2 = c_bboxes2[inds[0]]
+    return c_bboxes2
+
+
+def make_label(c_bboxes2, track_id1):
+    assert c_bboxes2.shape[0] == number_bboxes
+    inds = np.random.permutation(number_bboxes)
+    c_bboxes2 = c_bboxes2[inds]
+    c_bboxes2[:, 2] = np.arange(number_bboxes)
+    lable = c_bboxes2[c_bboxes2[:, 0] == track_id1, 2]
+    print("label: ", lable)
+
+
 def generate_data_per_image(save_dir, image_path1, image_path2, dtime, tracks):
     video_name, frame_number1 = _get_video_name_and_frame_number(image_path1)
     video_name, frame_number2 = _get_video_name_and_frame_number(image_path2)
@@ -200,69 +245,27 @@ def generate_data_per_image(save_dir, image_path1, image_path2, dtime, tracks):
         # Jitter: The crop is not only in the image center
         center_x += int(np.random.normal(jitter_loc, jitter_scale, 1))
         center_y += int(np.random.normal(jitter_loc, jitter_scale, 1))
-        print(track_id1, center_x, center_y)
-        x_tl, y_tl, x_br, y_br = da.tl_br_from_cen_wh(
-            center_x, center_y, crop_width, crop_height
-        )
+        print("track_id1, center_x, center_y: ", track_id1, center_x, center_y)
+        xy_tl_br = da.tl_br_from_cen_wh(center_x, center_y, crop_width, crop_height)
 
         # the cutting limits can be outside image borders. They are padded.
-        c_frame1 = get_crop_image(image_path1, x_tl, y_tl, x_br, y_br)
-        c_bbox1 = change_origin_bboxes(bbox1.reshape((1, -1)), x_tl, y_tl)
+        c_frame1 = get_crop_image(image_path1, *xy_tl_br)
+        c_bbox1 = change_origin_bboxes(bbox1.reshape((1, -1)), *xy_tl_br[:2])
 
         # frame2
-        c_frame2 = get_crop_image(image_path2, x_tl, y_tl, x_br, y_br)
-        c_bboxes2 = get_crop_bboxes(bboxes2, x_tl, y_tl, x_br, y_br)
-        track_ids2 = c_bboxes2[:, 0]
-        print(c_bboxes2)
-        print(c_frame1.shape, c_frame2.shape)
+        c_frame2 = get_crop_image(image_path2, *xy_tl_br)
+        c_bboxes2 = get_crop_bboxes(bboxes2, *xy_tl_br)
 
-        # adjust number of bboxes: for smaller one are zero padded, for larger ones knn used
         if track_id1 not in c_bboxes2[:, 0]:
-            print("======>", track_id1)
+            print("track_id1 not in c_bboxs2 ======>", track_id1)
             continue
-        if c_bboxes2.shape[0] < number_bboxes:
-            c_bboxes2 = zero_padding_bboxes(c_bboxes2, number_bboxes)
-        if c_bboxes2.shape[0] > number_bboxes:
-            kdt = KDTree(c_bboxes2[:, 7:9])
-            ind = np.where(c_bboxes2[:, 0] == track_id1)[0]
-            _, inds = kdt.query(c_bboxes2[ind, 7:9], k=number_bboxes)
-            c_bboxes2 = c_bboxes2[inds[0]]
+        # adjust number of bboxes: for smaller one are zero padded, for larger ones knn used
+        c_bboxes2 = adjust_number_boxes(c_bboxes2, track_id1)
 
-        # make a label
-        inds = np.random.permutation(c_bboxes2.shape[0])
-        c_bboxes2 = c_bboxes2[inds]
-        c_bboxes2[:, 2] = np.arange(number_bboxes)
-        lable = c_bboxes2[c_bboxes2[:, 0] == track_id1, 2]
-        print(lable)
-        print(c_bboxes2)
+        make_label(c_bboxes2, track_id1)
 
-        overview_dir = Path(save_dir / "overview")
-        overview_dir.mkdir(parents=True, exist_ok=True)
-        name_stem = (
-            f"{video_name}_{frame_number1}_{frame_number2}_{dtime}_{x_tl}_{y_tl}"
-        )
-        c_bboxes2_shift = c_bboxes2.copy()
-        c_bboxes2_shift[:, [4, 6, 8]] = c_bboxes2[:, [4, 6, 8]] + 256
-        c_bboxes12 = np.concatenate((c_bbox1, c_bboxes2_shift), axis=0)
-        c_frame12 = np.concatenate((c_frame1, c_frame2), axis=0)
-        visualize.plot_detections_in_image(
-            da.make_dets_from_array(c_bboxes12), c_frame12, "r", "track_id"
-        )
-        fig = plt.gcf()
-        fig.set_figwidth(4.8)
-        fig.savefig(overview_dir / f"{name_stem}.jpg")
-        plt.close()
-
-        crops_dir = Path(save_dir / "crops")
-        crops_dir.mkdir(parents=True, exist_ok=True)
-        cv2.imwrite((crops_dir / f"{name_stem}.jpg").as_posix(), c_frame12)
-        np.savetxt(
-            crops_dir / f"{name_stem}.txt",
-            np.concatenate((c_bbox1, c_bboxes2), axis=0),
-            header="track_id,frame_number,det_id,xtl,ytl,xbr,ybr,cenx,ceny,w,h",
-            delimiter=",",
-            fmt="%d",
-        )
+        name_stem = f"{video_name}_{frame_number1}_{frame_number2}_{dtime}_{xy_tl_br[0]}_{xy_tl_br[1]}"
+        save_result(save_dir, name_stem, c_bboxes2, c_bbox1, c_frame1, c_frame2)
 
 
 crop_height, crop_width = 256, 512
@@ -295,9 +298,5 @@ for image_path1 in sorted(image_dir.glob("*.jpg")):
         print(image_path2)
 
     # 2. generate data per image
-
     generate_data_per_image(save_dir, image_path1, image_path2, dtime, tracks)
     break
-
-
-# df["gpsRecord"][0]["longitude"] # df["longitude"].values[0]
