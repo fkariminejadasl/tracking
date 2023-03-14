@@ -126,9 +126,20 @@ def get_next_image_path(image_path: Path, tracks, dtime_limit: int = 4) -> Path:
 
 
 def get_crop_image(image_path, x_tl, y_tl, x_br, y_br):
-    frame = cv2.imread(image_path.as_posix())
-    c_frame = frame[y_tl:y_br, x_tl:x_br]
-    return c_frame
+    image = cv2.imread(image_path.as_posix())
+    im_height, im_width, _ = image.shape
+    cy_tl = np.clip(y_tl, 0, im_height)
+    cy_br = np.clip(y_br, 0, im_height)
+    cx_tl = np.clip(x_tl, 0, im_width)
+    cx_br = np.clip(x_br, 0, im_width)
+    c_image = image[cy_tl:cy_br, cx_tl:cx_br]
+    print(x_tl, y_tl, x_br, y_br)
+    print(cx_tl, cy_tl, cx_br, cy_br)
+    padx_tl, pady_tl, padx_br, pady_br = map(
+        abs, [cx_tl - x_tl, cy_tl - y_tl, cx_br - x_br, cy_br - y_br]
+    )
+    c_image = np.pad(c_image, ((pady_tl, pady_br), (padx_tl, padx_br), (0, 0)))
+    return c_image
 
 
 def change_origin_bboxes(bboxes, x_tl, y_tl):
@@ -138,16 +149,13 @@ def change_origin_bboxes(bboxes, x_tl, y_tl):
     return c_bboxes
 
 
-def get_crop_bboxes(image_path, x_tl, y_tl, x_br, y_br, tracks):
-    _, frame_number = _get_video_name_and_frame_number(image_path)
-
-    image_bboxes = tracks[tracks[:, 1] == frame_number]
-    c_bboxes = image_bboxes[
+def get_crop_bboxes(bboxes, x_tl, y_tl, x_br, y_br):
+    c_bboxes = bboxes[
         (
-            (image_bboxes[:, 7] >= x_tl)
-            & (image_bboxes[:, 7] < x_br)
-            & (image_bboxes[:, 8] >= y_tl)
-            & (image_bboxes[:, 8] < y_br)
+            (bboxes[:, 7] >= x_tl)
+            & (bboxes[:, 7] < x_br)
+            & (bboxes[:, 8] >= y_tl)
+            & (bboxes[:, 8] < y_br)
         )
     ]
     c_bboxes = change_origin_bboxes(c_bboxes, x_tl, y_tl)
@@ -183,40 +191,33 @@ def generate_data_per_image(save_dir, image_path1, image_path2, dtime, tracks):
     bboxes1 = tracks[tracks[:, 1] == frame_number1]
     bboxes2 = tracks[tracks[:, 1] == frame_number2]
 
-    # frame1
+    # TODO: data augmentation
     track_ids1 = list(np.random.permutation(bboxes1[:, 0]))
-    for track_id1 in track_ids1[0:10]:
-
-        # track_id1 = track_ids1.pop()
+    for track_id1 in track_ids1:
+        # frame1
         bbox1 = bboxes1[bboxes1[:, 0] == track_id1][0]
         center_x, center_y = bbox1[7], bbox1[8]
+        # Jitter: The crop is not only in the image center
+        center_x += int(np.random.normal(jitter_loc, jitter_scale, 1))
+        center_y += int(np.random.normal(jitter_loc, jitter_scale, 1))
         print(track_id1, center_x, center_y)
         x_tl, y_tl, x_br, y_br = da.tl_br_from_cen_wh(
             center_x, center_y, crop_width, crop_height
         )
 
-        # TODO: not only for the center
+        # the cutting limits can be outside image borders. They are padded.
         c_frame1 = get_crop_image(image_path1, x_tl, y_tl, x_br, y_br)
         c_bbox1 = change_origin_bboxes(bbox1.reshape((1, -1)), x_tl, y_tl)
 
         # frame2
         c_frame2 = get_crop_image(image_path2, x_tl, y_tl, x_br, y_br)
-        c_bboxes2 = get_crop_bboxes(image_path2, x_tl, y_tl, x_br, y_br, tracks)
+        c_bboxes2 = get_crop_bboxes(bboxes2, x_tl, y_tl, x_br, y_br)
         track_ids2 = c_bboxes2[:, 0]
         print(c_bboxes2)
         print(c_frame1.shape, c_frame2.shape)
 
         # adjust number of bboxes: for smaller one are zero padded, for larger ones knn used
-
-        # # TODO: adjust for near border but accepted till ~ 60 pixels is accepted
-        # crop_pad = np.pad(crop_image2, ((crop_height-c_frame1.shape[0],0),(0,0),(0,0)))
-        # np.clip(y_tl, 0, image1.shape[0])
-
-        if (
-            (track_id1 not in c_bboxes2[:, 0])
-            | (c_frame1.shape != (crop_height, crop_width, 3))
-            | (c_frame2.shape != (crop_height, crop_width, 3))
-        ):
+        if track_id1 not in c_bboxes2[:, 0]:
             print("======>", track_id1)
             continue
         if c_bboxes2.shape[0] < number_bboxes:
@@ -235,12 +236,11 @@ def generate_data_per_image(save_dir, image_path1, image_path2, dtime, tracks):
         print(lable)
         print(c_bboxes2)
 
-        save_dir = Path(save_dir / "overview")
-        save_dir.mkdir(parents=True, exist_ok=True)
+        overview_dir = Path(save_dir / "overview")
+        overview_dir.mkdir(parents=True, exist_ok=True)
         name_stem = (
             f"{video_name}_{frame_number1}_{frame_number2}_{dtime}_{x_tl}_{y_tl}"
         )
-
         c_bboxes2_shift = c_bboxes2.copy()
         c_bboxes2_shift[:, [4, 6, 8]] = c_bboxes2[:, [4, 6, 8]] + 256
         c_bboxes12 = np.concatenate((c_bbox1, c_bboxes2_shift), axis=0)
@@ -250,14 +250,14 @@ def generate_data_per_image(save_dir, image_path1, image_path2, dtime, tracks):
         )
         fig = plt.gcf()
         fig.set_figwidth(4.8)
-        fig.savefig(save_dir / f"{name_stem}.jpg")
+        fig.savefig(overview_dir / f"{name_stem}.jpg")
         plt.close()
 
-        save_dir = Path(save_dir / "crops")
-        save_dir.mkdir(parents=True, exist_ok=True)
-        cv2.imwrite((save_dir / f"{name_stem}.jpg").as_posix(), c_frame12)
+        crops_dir = Path(save_dir / "crops")
+        crops_dir.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite((crops_dir / f"{name_stem}.jpg").as_posix(), c_frame12)
         np.savetxt(
-            save_dir / f"{name_stem}.txt",
+            crops_dir / f"{name_stem}.txt",
             np.concatenate((c_bbox1, c_bboxes2), axis=0),
             header="track_id,frame_number,det_id,xtl,ytl,xbr,ybr,cenx,ceny,w,h",
             delimiter=",",
@@ -271,6 +271,8 @@ np.random.seed(342)
 # in attach median displacement is about 21. This is about 2 frames.
 accepted_disp = 30
 dtime_limit = 4
+jitter_loc = 50
+jitter_scale = 10
 image_dir = Path("/home/fatemeh/Downloads/test_data/images")
 save_dir = image_dir.parent
 
@@ -294,4 +296,8 @@ for image_path1 in sorted(image_dir.glob("*.jpg")):
 
     # 2. generate data per image
 
-    # generate_data_per_image(save_dir, image_path1, image_path2, dtime, tracks)
+    generate_data_per_image(save_dir, image_path1, image_path2, dtime, tracks)
+    break
+
+
+# df["gpsRecord"][0]["longitude"] # df["longitude"].values[0]
