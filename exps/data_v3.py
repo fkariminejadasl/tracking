@@ -230,6 +230,15 @@ def make_label(c_bboxes2, track_id1):
     print("label: ", lable)
 
 
+def geometric_transformation(bbox1):
+    center_x, center_y = bbox1[7], bbox1[8]
+    # Jitter: The crop is not only in the image center
+    center_x += int(np.random.normal(jitter_loc, jitter_scale, 1))
+    center_y += int(np.random.normal(jitter_loc, jitter_scale, 1))
+    xy_tl_br = da.tl_br_from_cen_wh(center_x, center_y, crop_width, crop_height)
+    return xy_tl_br
+
+
 def generate_data_per_image(save_dir, image_path1, image_path2, dtime, tracks):
     video_name, frame_number1 = _get_video_name_and_frame_number(image_path1)
     video_name, frame_number2 = _get_video_name_and_frame_number(image_path2)
@@ -237,35 +246,28 @@ def generate_data_per_image(save_dir, image_path1, image_path2, dtime, tracks):
     bboxes2 = tracks[tracks[:, 1] == frame_number2]
 
     # TODO: data augmentation
-    track_ids1 = list(np.random.permutation(bboxes1[:, 0]))
+    track_ids1 = bboxes1[:, 0]
     for track_id1 in track_ids1:
-        # frame1
-        bbox1 = bboxes1[bboxes1[:, 0] == track_id1][0]
-        center_x, center_y = bbox1[7], bbox1[8]
-        # Jitter: The crop is not only in the image center
-        center_x += int(np.random.normal(jitter_loc, jitter_scale, 1))
-        center_y += int(np.random.normal(jitter_loc, jitter_scale, 1))
-        print("track_id1, center_x, center_y: ", track_id1, center_x, center_y)
-        xy_tl_br = da.tl_br_from_cen_wh(center_x, center_y, crop_width, crop_height)
+        for i in range(2):
+            bbox1 = bboxes1[bboxes1[:, 0] == track_id1][0]
+            xy_tl_br = geometric_transformation(bbox1)
 
-        # the cutting limits can be outside image borders. They are padded.
-        c_frame1 = get_crop_image(image_path1, *xy_tl_br)
-        c_bbox1 = change_origin_bboxes(bbox1.reshape((1, -1)), *xy_tl_br[:2])
+            # the cutting limits can be outside image borders. They are padded.
+            c_frame1 = get_crop_image(image_path1, *xy_tl_br)
+            c_bbox1 = change_origin_bboxes(bbox1.reshape((1, -1)), *xy_tl_br[:2])
+            c_frame2 = get_crop_image(image_path2, *xy_tl_br)
+            c_bboxes2 = get_crop_bboxes(bboxes2, *xy_tl_br)
 
-        # frame2
-        c_frame2 = get_crop_image(image_path2, *xy_tl_br)
-        c_bboxes2 = get_crop_bboxes(bboxes2, *xy_tl_br)
+            if track_id1 not in c_bboxes2[:, 0]:
+                print("track_id1 not in c_bboxs2 ======>", track_id1)
+                continue
+            # adjust number of bboxes: for smaller one are zero padded, for larger ones knn used
+            c_bboxes2 = adjust_number_boxes(c_bboxes2, track_id1)
 
-        if track_id1 not in c_bboxes2[:, 0]:
-            print("track_id1 not in c_bboxs2 ======>", track_id1)
-            continue
-        # adjust number of bboxes: for smaller one are zero padded, for larger ones knn used
-        c_bboxes2 = adjust_number_boxes(c_bboxes2, track_id1)
+            make_label(c_bboxes2, track_id1)
 
-        make_label(c_bboxes2, track_id1)
-
-        name_stem = f"{video_name}_{frame_number1}_{frame_number2}_{dtime}_{xy_tl_br[0]}_{xy_tl_br[1]}"
-        save_result(save_dir, name_stem, c_bboxes2, c_bbox1, c_frame1, c_frame2)
+            name_stem = f"{video_name}_{frame_number1}_{frame_number2}_{dtime}_{xy_tl_br[0]}_{xy_tl_br[1]}"
+            save_result(save_dir, name_stem, c_bboxes2, c_bbox1, c_frame1, c_frame2)
 
 
 crop_height, crop_width = 256, 512
