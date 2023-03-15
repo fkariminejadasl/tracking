@@ -1,4 +1,3 @@
-import shutil
 import sys
 from pathlib import Path
 
@@ -20,26 +19,6 @@ def _get_video_name_and_frame_number(image_path: Path) -> tuple[str, int]:
     video_name = split_name[0]
     frame_number = int(split_name[1])
     return video_name, frame_number
-
-
-def _get_dframe(
-    frame_number,
-    dtime_backward,
-    dtime_forward,
-    dtime_fb,
-    dtime_limit,
-    total_n_frames,
-    step,
-):
-    dframe_limit = dtime_limit * step
-    if frame_number > total_n_frames - 1 - dframe_limit:
-        dtime = dtime_backward[0]
-    elif frame_number < dframe_limit:
-        dtime = dtime_forward[0]
-    else:
-        dtime = dtime_fb[0]
-    dframe = dtime * step
-    return dframe
 
 
 def get_next_image_paths(
@@ -79,50 +58,6 @@ def get_next_image_paths(
                 print(dtime)
 
     return image_paths2_dtimes
-
-
-def get_next_image_path(image_path: Path, tracks, dtime_limit: int = 4) -> Path:
-    """
-    !!!! Not a great function.
-    - It assumes all the images have detections
-    - It assumes training or validation set contains all images (sampled by step).
-    Otherwise, _get_dframe will fail.
-    """
-
-    video_name, frame_number1 = _get_video_name_and_frame_number(image_path)
-
-    vid_name_600 = [
-        "04_07_22_F_2_rect_valid",
-        "04_07_22_G_2_rect_valid",
-    ]
-    vid_infos = {"short": [600, 1], "long": [248, 8]}  # "long": [3117, 8]}
-
-    dtime_forward = np.random.permutation(np.arange(1, dtime_limit + 1))
-    dtime_backward = np.random.permutation(np.arange(-dtime_limit, 0))
-    dtime_fb = np.random.permutation(np.hstack((dtime_forward, dtime_backward)))
-    if video_name in vid_name_600:
-        vid_info = vid_infos["short"]
-    else:
-        vid_info = vid_infos["long"]
-    dframe = _get_dframe(
-        frame_number1, dtime_backward, dtime_forward, dtime_fb, dtime_limit, *vid_info
-    )
-    print(dframe)
-
-    frame_number2 = frame_number1 + dframe
-    bboxes1 = tracks[tracks[:, 1] == frame_number1]
-    bboxes2 = tracks[tracks[:, 1] == frame_number2]
-    med_disp = calculate_median_disp(tracks, frame_number1, frame_number2)
-    if med_disp > accepted_disp:
-        dframe = vid_info[1]
-
-    next_image = (
-        image_path.parent / f"{video_name}_frame_{frame_number1 + dframe:06d}.jpg"
-    )
-    print(dframe, med_disp)
-    assert next_image.exists()
-    dtime = int(dframe / vid_info[1])
-    return next_image, dtime
 
 
 def get_crop_image(image_path, x_tl, y_tl, x_br, y_br):
@@ -285,7 +220,7 @@ save_dir = image_dir.parent
 # image_path1 = Path(
 #     "/home/fatemeh/Downloads/data8_v1/train/images/183_cam_1_frame_002440.jpg"
 # )
-for image_path1 in sorted(image_dir.glob("*.jpg")):
+for image_path1 in tqdm(sorted(image_dir.glob("*.jpg"))):
     video_name, frame_number1 = _get_video_name_and_frame_number(image_path1)
     tracks = da.load_tracks_from_mot_format(
         Path(f"/home/fatemeh/Downloads/vids/mot/{video_name}.zip")
