@@ -236,7 +236,6 @@ def transform_image_bboxes(im: np.ndarray, bboxs, a=10, tt=np.array([30, 10]), s
     tim = torchvision.transforms.functional.affine(
         im, -a, tuple(tt), s, 0, interpolation=interpolation
     )
-    # tim = torchvision.transforms.functional.rotate(im, a)
     return np.array(tim), tbboxs
 
 
@@ -329,5 +328,5 @@ for image_path1 in tqdm(sorted(image_dir.glob("*.jpg"))):
         print(image_path2)
 
     # 2. generate data per image
-    generate_data_per_image(save_dir, image_path1, image_path2, dtime, tracks)
+    # generate_data_per_image(save_dir, image_path1, image_path2, dtime, tracks)
     break

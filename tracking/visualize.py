@@ -540,6 +540,7 @@ def _plot_detections(dets: list[Detection], ax, color="r", text="det_id"):
 
 
 def _plot_bboxs(bboxes, ax, color="r"):
+    """bboxes: list of [id, x_tl, y_tl, x_br, y_br]"""
     for bbox in bboxes:
         text, x_tl, y_tl, x_br, y_br = bbox
         ax.text(
@@ -561,6 +562,7 @@ def _plot_bboxs(bboxes, ax, color="r"):
 
 
 def plot_detections_in_image(dets, image, color="r", text="det_id"):
+    """dets: is either Detection format or a list of [id, x_tl, y_tl, x_br, y_br]"""
     _, ax = plt.subplots(1, 1)
     show_one_frame(ax, image)
     if isinstance(dets[0], Detection):

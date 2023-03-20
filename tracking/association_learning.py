@@ -72,6 +72,13 @@ class TestDataset(Dataset):
         return image, dets, 1
 
 
+def denormalize_bboxs(bboxes, im_width, im_height):
+    bboxs = bboxes.copy()
+    bboxs[:, 3:11:2] *= im_width
+    bboxs[:, 4:11:2] *= im_height
+    return bboxs
+
+
 class AssDataset(Dataset):
     def __init__(self, image_dir: Path, transform=None):
         self.image_paths = list(image_dir.glob("*.jpg"))
@@ -83,8 +90,8 @@ class AssDataset(Dataset):
     def __getitem__(self, ind):
         image_path = self.image_paths[ind]
         image = cv2.imread(image_path.as_posix())[..., ::-1]
-        image1 = image[:256]
-        image2 = image[256:]
+        image1 = image[:256].transpose((2, 1, 0))
+        image2 = image[256:].transpose((2, 1, 0))
         image1 = np.ascontiguousarray(image1)
         image2 = np.ascontiguousarray(image2)
         # assert image.shape == (self.req_height, self.req_width, 3)
@@ -93,11 +100,13 @@ class AssDataset(Dataset):
         bbox_file = image_path.parent / f"{image_path.stem}.txt"
         bboxs = np.loadtxt(bbox_file, skiprows=1, delimiter=",").astype(np.float64)
         # normalize boxes: divide by image width
-        bboxs[:, 3:11:2] /= 512
-        bboxs[:, 4:11:2] /= 256
-        bbox1 = bboxs[0]
+        bboxs[:, 3:11:2] /= 512  # TODO
+        bboxs[:, 4:11:2] /= 256  # TODO
+        bbox1 = bboxs[0:1]
         bboxs2 = bboxs[1:]
-        label = int(bboxs2[bboxs2[:, 0] == bbox1[0], 2][0])
+        label = int(bboxs2[bboxs2[:, 0] == bbox1[0, 0], 2][0])
+        bbox1 = bbox1[:, [3, 4, 5, 6]]
+        bboxs2 = bboxs2[:, [3, 4, 5, 6]]
         time = int(image_path.stem.split("_")[-3])
         # sample = {"image": image, "time": time, "label": dets}
 
@@ -106,7 +115,7 @@ class AssDataset(Dataset):
 
         # target = dict(image_id=torch.tensor(image), boxes=dets, labels=1)
         # return target
-        return image1, image2, bbox1, bboxs2, time, label
+        return image1, bbox1, image2, bboxs2, time, label
 
 
 image_dir = Path("/home/fatemeh/Downloads/test_data/crops")
@@ -148,7 +157,7 @@ writer = tensorboard.SummaryWriter(path / "tensorboard")
 """
 
 
-class ConcatNet(torch.nn.Module):
+class ConcatNet2(torch.nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
         self.image_fc = torch.nn.Linear(in_channels, 30)
@@ -175,8 +184,7 @@ class ConcatNet(torch.nn.Module):
         x = self.fc3(x)
         return x
 
-
-class AssociationNet(torch.nn.Module):
+class AssociationNet2(torch.nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
         backbone = torchvision.models.resnet18(
@@ -189,6 +197,61 @@ class AssociationNet(torch.nn.Module):
     def forward(self, image: torch.Tensor, bbox: torch.Tensor, time: int):
         emb = self.backbone(image)
         emb = self.conate(emb, bbox, time)
+        return emb
+
+class ConcatNet(torch.nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.image_fc = torch.nn.Linear(in_channels, 30)
+        self.bbox1_fc = torch.nn.Linear(1 * 4, 30)
+        self.bbox2_fc = torch.nn.Linear(5 * 4, 30)
+        self.time_fc = torch.nn.Linear(1, 30)
+        self.fc1 = torch.nn.Linear(150, 90)
+        self.fc2 = torch.nn.Linear(90, 90)
+        self.fc3 = torch.nn.Linear(90, out_channels)
+        self.relu = torch.nn.ReLU()
+
+    def forward(
+        self,
+        emb1: torch.Tensor,
+        bbox1: torch.Tensor,
+        emb2: torch.Tensor,
+        bboxs2: torch.Tensor,
+        time: int,
+    ):
+        time = torch.tensor(time, dtype=torch.float32)
+        time = time.repeat(emb1.shape[0], 1)
+        time = self.relu(self.time_fc(time))
+
+        bbox1 = bbox1.flatten().unsqueeze(0)
+        bbox1 = self.relu(self.bbox1_fc(bbox1))
+        bboxs2 = bboxs2.flatten().unsqueeze(0)
+        bboxs2 = self.relu(self.bbox2_fc(bboxs2))
+
+        emb1 = self.relu(self.image_fc(emb1))
+        emb2 = self.relu(self.image_fc(emb2))
+        x = torch.cat((emb1, bbox1, emb2, bboxs2, time), -1)
+
+        x = self.relu(self.fc1(x))
+        x = self.relu(self.fc2(x))
+        x = self.fc3(x)
+        return x
+
+
+class AssociationNet(torch.nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        backbone = torchvision.models.resnet18(
+            weights=torchvision.models.ResNet18_Weights.DEFAULT
+        )
+        concat = ConcatNet(1000, 5)
+        self.backbone = backbone
+        self.conate = concat
+
+    def forward(self, image1: torch.Tensor, bbox1: torch.Tensor, image2: torch.Tensor, bboxs2: torch.Tensor, time: int):
+        emb1 = self.backbone(image1)
+        emb2 = self.backbone(image2)
+        emb = self.conate(emb1, bbox1, emb2, bboxs2, time)
         return emb
 
 
@@ -273,6 +336,7 @@ for epoch in range(2):  # loop over the dataset multiple times
     labels = torch.tensor(2).unsqueeze(0)  # Nx
     outputs = associate(imt, bbox, time)
     # net(tmp[0].permute((0,3,1,2)).type(torch.float32), tmp[3].squeeze()[:, 7:].type(torch.float32), int(tmp[4]))
+    output = net(item[0].type(torch.float32), item[1].type(torch.float32), item[2].type(torch.float32), item[3].type(torch.float32), int(item[4]))
 
     loss = criterion(outputs, labels)
     loss.backward()
