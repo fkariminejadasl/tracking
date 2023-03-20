@@ -4,6 +4,8 @@ from pathlib import Path
 import cv2
 import matplotlib.pylab as plt
 import numpy as np
+from PIL import Image
+import torchvision
 from sklearn.neighbors import KDTree
 from tqdm import tqdm
 
@@ -60,8 +62,7 @@ def get_next_image_paths(
     return image_paths2_dtimes
 
 
-def get_crop_image(image_path, x_tl, y_tl, x_br, y_br):
-    image = cv2.imread(image_path.as_posix())
+def get_crop_image(image, x_tl, y_tl, x_br, y_br):
     im_height, im_width, _ = image.shape
     cy_tl = np.clip(y_tl, 0, im_height)
     cy_br = np.clip(y_br, 0, im_height)
@@ -118,15 +119,15 @@ def calculate_median_disp(tracks, frame_number1, frame_number2):
     return med_disp
 
 
-def save_result(save_dir, name_stem, c_bboxes2, c_bbox1, c_frame1, c_frame2):
+def save_result(save_dir, name_stem, c_image1, c_bbox1, c_image2, c_bboxes2):
     overview_dir = Path(save_dir / "overview")
     overview_dir.mkdir(parents=True, exist_ok=True)
     c_bboxes2_shift = c_bboxes2.copy()
     c_bboxes2_shift[:, [4, 6, 8]] = c_bboxes2[:, [4, 6, 8]] + crop_height
     c_bboxes12 = np.concatenate((c_bbox1, c_bboxes2_shift), axis=0)
-    c_frame12 = np.concatenate((c_frame1, c_frame2), axis=0)
+    c_image12 = np.concatenate((c_image1, c_image2), axis=0)
     visualize.plot_detections_in_image(
-        da.make_dets_from_array(c_bboxes12), c_frame12, "r", "track_id"
+        da.make_dets_from_array(c_bboxes12), c_image12, "r", "track_id"
     )
     fig = plt.gcf()
     fig.set_figwidth(4.8)
@@ -135,7 +136,7 @@ def save_result(save_dir, name_stem, c_bboxes2, c_bbox1, c_frame1, c_frame2):
 
     crops_dir = Path(save_dir / "crops")
     crops_dir.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite((crops_dir / f"{name_stem}.jpg").as_posix(), c_frame12)
+    cv2.imwrite((crops_dir / f"{name_stem}.jpg").as_posix(), c_image12)
     np.savetxt(
         crops_dir / f"{name_stem}.txt",
         np.concatenate((c_bbox1, c_bboxes2), axis=0),
@@ -165,6 +166,80 @@ def make_label(c_bboxes2, track_id1):
     print("label: ", lable)
 
 
+def reconstruct_bboxes(bboxs, ids):
+    """bboxs is array with track_id, x_tl, y_tl, x_tr, y_tr, x_br, y_br, x_bl, y_bl
+    It returns: track_id, frame_number, id, x_tl, y_tl, x_br, y_br, x_cen, y_cen, w, h
+    """
+    bboxs = np.array(
+        [
+            (
+                min(bbox[1], bbox[3], bbox[5], bbox[7]),
+                min(bbox[2], bbox[4], bbox[6], bbox[8]),
+                max(bbox[1], bbox[3], bbox[5], bbox[7]),
+                max(bbox[2], bbox[4], bbox[6], bbox[8]),
+            )
+            for bbox in bboxs
+        ]
+    )
+    cen_whs = np.array(
+        [da.cen_wh_from_tl_br(*bbox) for bbox in bboxs]
+    ).astype(np.int64)
+    bboxs = bboxs.astype(np.int64)
+    return np.concatenate((ids, bboxs, cen_whs), axis=1)
+
+
+def deconstruct_bboxes(bboxs):
+    """from bboxes take four corners: xy_tl, xy_tr, xy_br, xy_bl
+    bbox: track_id, frame_number, id, x_tl, y_tl, x_br, y_br, x_cen, y_cen, w, h
+    return: track_id, xy_tl, xy_tr, xy_br, xy_bl"""
+
+    return np.array(
+        [
+            (
+                bbox[0],
+                bbox[3],
+                bbox[4],
+                bbox[3] + bbox[9],
+                bbox[4],
+                bbox[5],
+                bbox[6],
+                bbox[3],
+                bbox[4] + bbox[10],
+            )
+            for bbox in bboxs
+        ]
+    ).astype(np.int64)
+
+
+def transform_image_bboxes(im: np.ndarray, bboxs, a=10, tt=np.array([30, 10]), s=0.75):
+    im_cen_x, im_cen_y = im.shape[1] // 2, im.shape[0] // 2
+    im_cen = np.array([im_cen_x, im_cen_y])
+    cos = np.cos(np.deg2rad(a))
+    sin = np.sin(np.deg2rad(a))
+    r = s * np.array([[cos, -sin], [sin, cos]])
+
+    ids = bboxs[:, :3].copy()
+    bboxs = deconstruct_bboxes(bboxs)
+    tbboxs = np.concatenate(
+        (
+            bboxs[:, 0:1],
+            (bboxs[:, 1:3] - im_cen) @ r + tt + im_cen,
+            (bboxs[:, 3:5] - im_cen) @ r + tt + im_cen,
+            (bboxs[:, 5:7] - im_cen) @ r + tt + im_cen,
+            (bboxs[:, 7:9] - im_cen) @ r + tt + im_cen,
+        ),
+        axis=1,
+    )
+    tbboxs = reconstruct_bboxes(tbboxs, ids)
+    im = Image.fromarray(im)  # opencv to pil
+    interpolation = torchvision.transforms.InterpolationMode.BILINEAR
+    tim = torchvision.transforms.functional.affine(
+        im, -a, tuple(tt), s, 0, interpolation=interpolation
+    )
+    # tim = torchvision.transforms.functional.rotate(im, a)
+    return np.array(tim), tbboxs
+
+
 def geometric_transformation(bbox1):
     center_x, center_y = bbox1[7], bbox1[8]
     # Jitter: The crop is not only in the image center
@@ -174,40 +249,59 @@ def geometric_transformation(bbox1):
     return xy_tl_br
 
 
+def trans_augmentation(image1, bbox1, image2, bboxes2, save_dir, name_stem):
+    xy_tl_br = geometric_transformation(bbox1)
+    # the cutting limits can be outside image borders. They are padded.
+    c_image1 = get_crop_image(image1, *xy_tl_br)
+    c_bbox1 = change_origin_bboxes(bbox1.reshape((1, -1)), *xy_tl_br[:2])
+    c_image2 = get_crop_image(image2, *xy_tl_br)
+    c_bboxes2 = get_crop_bboxes(bboxes2, *xy_tl_br)
+
+    post_augmentation(
+        c_image1, c_bbox1, c_image2, c_bboxes2, xy_tl_br, save_dir, name_stem
+    )
+
+
+def post_augmentation(
+    c_image1, c_bbox1, c_image2, c_bboxes2, xy_tl_br, save_dir, name_stem
+):
+    """all steps needed after augmentation to save data"""
+
+    track_id1 = c_bbox1[0, 0]
+    if track_id1 not in c_bboxes2[:, 0]:
+        print("track_id1 not in c_bboxs2 ======>", track_id1)
+        return
+
+    # adjust number of bboxes: for smaller one are zero padded, for larger ones knn used
+    c_bboxes2 = adjust_number_boxes(c_bboxes2, track_id1)
+
+    make_label(c_bboxes2, track_id1)
+
+    name_stem = f"{name_stem}_{xy_tl_br[0]}_{xy_tl_br[1]}"
+    save_result(save_dir, name_stem, c_image1, c_bbox1, c_image2, c_bboxes2)
+
+
 def generate_data_per_image(save_dir, image_path1, image_path2, dtime, tracks):
     video_name, frame_number1 = _get_video_name_and_frame_number(image_path1)
     video_name, frame_number2 = _get_video_name_and_frame_number(image_path2)
+    image1 = cv2.imread(image_path1.as_posix())
+    image2 = cv2.imread(image_path2.as_posix())
     bboxes1 = tracks[tracks[:, 1] == frame_number1]
     bboxes2 = tracks[tracks[:, 1] == frame_number2]
+    name_stem = f"{video_name}_{frame_number1}_{frame_number2}_{dtime}"
+    print("image_path1: ", image_path1)
+    print("image_path2: ", image_path2)
 
-    # TODO: data augmentation
-    track_ids1 = bboxes1[:, 0]
-    for track_id1 in track_ids1:
-        for i in range(2):
-            bbox1 = bboxes1[bboxes1[:, 0] == track_id1][0]
-            xy_tl_br = geometric_transformation(bbox1)
-
-            # the cutting limits can be outside image borders. They are padded.
-            c_frame1 = get_crop_image(image_path1, *xy_tl_br)
-            c_bbox1 = change_origin_bboxes(bbox1.reshape((1, -1)), *xy_tl_br[:2])
-            c_frame2 = get_crop_image(image_path2, *xy_tl_br)
-            c_bboxes2 = get_crop_bboxes(bboxes2, *xy_tl_br)
-
-            if track_id1 not in c_bboxes2[:, 0]:
-                print("track_id1 not in c_bboxs2 ======>", track_id1)
-                continue
-            # adjust number of bboxes: for smaller one are zero padded, for larger ones knn used
-            c_bboxes2 = adjust_number_boxes(c_bboxes2, track_id1)
-
-            make_label(c_bboxes2, track_id1)
-
-            name_stem = f"{video_name}_{frame_number1}_{frame_number2}_{dtime}_{xy_tl_br[0]}_{xy_tl_br[1]}"
-            save_result(save_dir, name_stem, c_bboxes2, c_bbox1, c_frame1, c_frame2)
+    for bbox1 in bboxes1:
+        # data augmentation
+        for i in range(1):
+            trans_augmentation(image1, bbox1, image2, bboxes2, save_dir, name_stem)
+            trans_augmentation(image1, bbox1, image2, bboxes2, save_dir, name_stem)
 
 
 crop_height, crop_width = 256, 512
 number_bboxes = 5
-np.random.seed(342)
+np.random.seed(3421)
 # in attach median displacement is about 21. This is about 2 frames.
 accepted_disp = 30
 dtime_limit = 4

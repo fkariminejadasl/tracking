@@ -6,10 +6,14 @@ import numpy as np
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 
-from tracking.data_association import (Detection, Point, get_detections,
-                                       get_frame_numbers_of_track,
-                                       get_track_from_track_id,
-                                       tl_br_from_cen_wh)
+from tracking.data_association import (
+    Detection,
+    Point,
+    get_detections,
+    get_frame_numbers_of_track,
+    get_track_from_track_id,
+    tl_br_from_cen_wh,
+)
 from tracking.stereo_gt import get_disparity_info_from_stereo_track
 
 # get_frame is too slow and replaced by vc.read().
@@ -535,10 +539,34 @@ def _plot_detections(dets: list[Detection], ax, color="r", text="det_id"):
         ax.add_patch(rect)
 
 
+def _plot_bboxs(bboxes, ax, color="r"):
+    for bbox in bboxes:
+        text, x_tl, y_tl, x_br, y_br = bbox
+        ax.text(
+            x_tl,
+            y_tl,
+            text,
+            color="r",
+            fontsize=12,
+        )
+        rect = patches.Rectangle(
+            (x_tl, y_tl),
+            x_br - x_tl,
+            y_br - y_tl,
+            linewidth=1,
+            edgecolor=color,
+            facecolor="none",
+        )
+        ax.add_patch(rect)
+
+
 def plot_detections_in_image(dets, image, color="r", text="det_id"):
     _, ax = plt.subplots(1, 1)
     show_one_frame(ax, image)
-    _plot_detections(dets, ax, color=color, text=text)
+    if isinstance(dets[0], Detection):
+        _plot_detections(dets, ax, color=color, text=text)
+    else:
+        _plot_bboxs(dets, ax, color="r")
 
 
 def plot_detections_in_stereo(frame1, frame2, dets1, dets2, image_width):
