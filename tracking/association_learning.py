@@ -199,6 +199,8 @@ class AssociationNet2(torch.nn.Module):
         emb = self.conate(emb, bbox, time)
         return emb
 
+
+
 class ConcatNet(torch.nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
@@ -237,14 +239,34 @@ class ConcatNet(torch.nn.Module):
         x = self.fc3(x)
         return x
 
+class PartResnet(torch.nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        self.part = torch.nn.Sequential(
+            model.conv1,
+            model.bn1,
+            model.relu,
+            model.maxpool,
+            model.layer1,
+            model.layer2,
+            model.layer3,
+            model.layer4,
+            model.avgpool,
+        )
+
+    def forward(self, x):
+        x = self.part(x).flatten(1)
+        return x
 
 class AssociationNet(torch.nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
-        backbone = torchvision.models.resnet18(
+        resnet = torchvision.models.resnet18(
             weights=torchvision.models.ResNet18_Weights.DEFAULT
         )
-        concat = ConcatNet(1000, 5)
+        backbone = PartResnet(resnet)
+
+        concat = ConcatNet(512, 2)
         self.backbone = backbone
         self.conate = concat
 
@@ -317,7 +339,7 @@ time = 5
 bbox = torch.rand(5, 4)
 
 
-associate = AssociationNet(1000, 5)
+associate = AssociationNet(512, 2)
 
 
 
