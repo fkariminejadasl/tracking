@@ -4,8 +4,8 @@ from pathlib import Path
 import cv2
 import matplotlib.pylab as plt
 import numpy as np
-from PIL import Image
 import torchvision
+from PIL import Image
 from sklearn.neighbors import KDTree
 from tqdm import tqdm
 
@@ -162,8 +162,9 @@ def make_label(c_bboxes2, track_id1):
     inds = np.random.permutation(number_bboxes)
     c_bboxes2 = c_bboxes2[inds]
     c_bboxes2[:, 2] = np.arange(number_bboxes)
-    lable = c_bboxes2[c_bboxes2[:, 0] == track_id1, 2]
-    print("label: ", lable)
+    label = c_bboxes2[c_bboxes2[:, 0] == track_id1, 2]
+    print("label: ", label)
+    return c_bboxes2
 
 
 def reconstruct_bboxes(bboxs, ids):
@@ -181,9 +182,7 @@ def reconstruct_bboxes(bboxs, ids):
             for bbox in bboxs
         ]
     )
-    cen_whs = np.array(
-        [da.cen_wh_from_tl_br(*bbox) for bbox in bboxs]
-    ).astype(np.int64)
+    cen_whs = np.array([da.cen_wh_from_tl_br(*bbox) for bbox in bboxs]).astype(np.int64)
     bboxs = bboxs.astype(np.int64)
     return np.concatenate((ids, bboxs, cen_whs), axis=1)
 
@@ -274,7 +273,7 @@ def post_augmentation(
     # adjust number of bboxes: for smaller one are zero padded, for larger ones knn used
     c_bboxes2 = adjust_number_boxes(c_bboxes2, track_id1)
 
-    make_label(c_bboxes2, track_id1)
+    c_bboxes2 = make_label(c_bboxes2, track_id1)
 
     name_stem = f"{name_stem}_{xy_tl_br[0]}_{xy_tl_br[1]}"
     save_result(save_dir, name_stem, c_image1, c_bbox1, c_image2, c_bboxes2)
@@ -328,5 +327,5 @@ for image_path1 in tqdm(sorted(image_dir.glob("*.jpg"))):
         print(image_path2)
 
     # 2. generate data per image
-    # generate_data_per_image(save_dir, image_path1, image_path2, dtime, tracks)
+    generate_data_per_image(save_dir, image_path1, image_path2, dtime, tracks)
     break

@@ -118,8 +118,6 @@ class AssDataset(Dataset):
         return image1, bbox1, image2, bboxs2, time, label
 
 
-image_dir = Path("/home/fatemeh/Downloads/test_data/crops")
-det_dir = Path("/home/fatemeh/Downloads/test_data/labels")
 # https://github.com/pytorch/vision/blob/main/references/detection/utils.py#L203
 def collate_fn(batch):
     return tuple(zip(*batch))
@@ -127,9 +125,6 @@ def collate_fn(batch):
 
 # testloader = torch.utils.data.DataLoader(test, batch_size=8, shuffle=False, num_workers=2, collate_fn=collate_fn)
 
-
-# dataset = al.AssDataset(al.image_dir)
-# loader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=1, drop_last=False)
 
 """
 Superglue wise is that: give each image separately get features, and then do sinkhorn stuff (differentiable Hungarian). 
@@ -184,6 +179,7 @@ class ConcatNet2(torch.nn.Module):
         x = self.fc3(x)
         return x
 
+
 class AssociationNet2(torch.nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
@@ -198,7 +194,6 @@ class AssociationNet2(torch.nn.Module):
         emb = self.backbone(image)
         emb = self.conate(emb, bbox, time)
         return emb
-
 
 
 class ConcatNet(torch.nn.Module):
@@ -219,15 +214,14 @@ class ConcatNet(torch.nn.Module):
         bbox1: torch.Tensor,
         emb2: torch.Tensor,
         bboxs2: torch.Tensor,
-        time: int,
+        time: torch.Tensor,
     ):
-        time = torch.tensor(time, dtype=torch.float32)
-        time = time.repeat(emb1.shape[0], 1)
+        time = time.unsqueeze(1).type(torch.float32)  # N -> Nx1
         time = self.relu(self.time_fc(time))
 
-        bbox1 = bbox1.flatten().unsqueeze(0)
+        bbox1 = bbox1.flatten(1).type(torch.float32)
         bbox1 = self.relu(self.bbox1_fc(bbox1))
-        bboxs2 = bboxs2.flatten().unsqueeze(0)
+        bboxs2 = bboxs2.flatten(1).type(torch.float32)
         bboxs2 = self.relu(self.bbox2_fc(bboxs2))
 
         emb1 = self.relu(self.image_fc(emb1))
@@ -238,6 +232,7 @@ class ConcatNet(torch.nn.Module):
         x = self.relu(self.fc2(x))
         x = self.fc3(x)
         return x
+
 
 class PartResnet(torch.nn.Module):
     def __init__(self, model):
@@ -258,6 +253,7 @@ class PartResnet(torch.nn.Module):
         x = self.part(x).flatten(1)
         return x
 
+
 class AssociationNet(torch.nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
@@ -266,14 +262,21 @@ class AssociationNet(torch.nn.Module):
         )
         backbone = PartResnet(resnet)
 
-        concat = ConcatNet(512, 2)
+        concat = ConcatNet(in_channels, out_channels)
         self.backbone = backbone
-        self.conate = concat
+        self.concat = concat
 
-    def forward(self, image1: torch.Tensor, bbox1: torch.Tensor, image2: torch.Tensor, bboxs2: torch.Tensor, time: int):
+    def forward(
+        self,
+        image1: torch.Tensor,
+        bbox1: torch.Tensor,
+        image2: torch.Tensor,
+        bboxs2: torch.Tensor,
+        time: int,
+    ):
         emb1 = self.backbone(image1)
         emb2 = self.backbone(image2)
-        emb = self.conate(emb1, bbox1, emb2, bboxs2, time)
+        emb = self.concat(emb1, bbox1, emb2, bboxs2, time)
         return emb
 
 
@@ -328,44 +331,54 @@ def train():
 
 
 """
-import cv2
-import numpy as np
-import torchvision
-
+# quick model test
 im = cv2.imread("/home/fatemeh/Downloads/vids/tttt.jpg")[..., ::-1]
 im = np.ascontiguousarray(im)
 imt = torchvision.transforms.functional.to_tensor(im).unsqueeze(0)
 time = 5
-bbox = torch.rand(5, 4)
+bbox = torch.rand(1, 4)
+bboxs = torch.rand(5, 4)
+net = AssociationNet(512, 2)
+net(imt, torch.rand(1, 4), imt, bbox, time)
+"""
 
+image_dir = Path("/home/fatemeh/Downloads/test_data/crops")
+dataset = AssDataset(image_dir)
+loader = DataLoader(
+    dataset, batch_size=32, shuffle=False, num_workers=1, drop_last=False
+)
+# item = next(iter(loader))
 
-associate = AssociationNet(512, 2)
+model = AssociationNet(512, 5)
+model.backbone.requires_grad_(False)
+model.train()
 
-
-
-# device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 criterion = torch.nn.CrossEntropyLoss()
-# optimizer = torch.optim.SGD(associate.parameters(), lr=0.001, momentum=0.9)
-optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, associate.parameters()), lr=0.001, momentum=0.9)
+optimizer = torch.optim.SGD(
+    filter(lambda p: p.requires_grad, model.parameters()), lr=0.001, momentum=0.9
+)
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1, gamma=0.95)
 
-for epoch in range(2):  # loop over the dataset multiple times
-
-    optimizer.zero_grad()
-
-    # forward + backward + optimize
-    # outputs = net(inputs)
-    labels = torch.tensor(2).unsqueeze(0)  # Nx
-    outputs = associate(imt, bbox, time)
-    # net(tmp[0].permute((0,3,1,2)).type(torch.float32), tmp[3].squeeze()[:, 7:].type(torch.float32), int(tmp[4]))
-    output = net(item[0].type(torch.float32), item[1].type(torch.float32), item[2].type(torch.float32), item[3].type(torch.float32), int(item[4]))
-
-    loss = criterion(outputs, labels)
-    loss.backward()
-    optimizer.step()
+for epoch in range(2):
 
     running_loss = 0.0
-    running_loss += loss.item()
-    print(running_loss, loss.item())
+    for item in loader:
 
-"""
+        optimizer.zero_grad()
+
+        outputs = model(
+            item[0].type(torch.float32),
+            item[1],
+            item[2].type(torch.float32),
+            item[3],
+            item[4],
+        )
+
+        loss = criterion(outputs, item[5])
+        loss.backward()
+        optimizer.step()
+
+        running_loss += loss.item()
+        print(running_loss, loss.item())
+    print(f"epoch: {epoch}, total loss: {running_loss}")
