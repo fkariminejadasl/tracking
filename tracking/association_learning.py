@@ -9,67 +9,9 @@ from torchvision.models.resnet import Bottleneck
 
 import tracking.data_association as da
 
-
-class TestDataset2(Dataset):
-    def __init__(self, image_dir: Path, det_dir: Path, transform=None):
-        self.image_files = list(image_dir.glob("*"))
-        self.det_dir = det_dir
-        self.transform = transform
-
-    def __len__(self):
-        return len(self.image_files)
-
-    def __getitem__(self, ind):
-        image_file = self.image_files[ind]
-        image = cv2.imread(image_file.as_posix())[..., ::-1]
-        image = np.ascontiguousarray(image)
-
-        if self.transform:
-            image = self.transform(image)
-
-        bbox = np.random.rand(5, 4).astype(np.float32)
-        label = np.arange(5)
-        time = np.random.permutation(5)[0]
-        result = {"image": image_file.stem, "time": time}
-        print(image_file.stem)
-        return result
-
-
-class TestDataset(Dataset):
-    def __init__(self, image_dir: Path, det_dir: Path, transform=None):
-        self.req_height, self.req_width = 1080, 1920
-        self.image_files = list(image_dir.glob("*"))
-        self.det_dir = det_dir
-        self.transform = transform
-
-    def __len__(self):
-        return len(self.image_files)
-
-    def __getitem__(self, ind):
-        image_file = self.image_files[ind]
-        image = cv2.imread(image_file.as_posix())[..., ::-1]
-
-        # crop to rquired size
-        height, width, _ = image.shape
-        height_cut = height - self.req_height
-        width_cut1 = int((width - self.req_width) / 2)
-        width_cut2 = self.req_width + width_cut1
-        image = image[height_cut:, width_cut1:width_cut2, :]
-        image = np.ascontiguousarray(image)
-        # assert image.shape == (self.req_height, self.req_width, 3)
-        # print(image_file)
-        # print(image.shape)
-        det_file = self.det_dir / f"{image_file.stem}.txt"
-        dets = da.get_detections(det_file, width, height, zero_based=True)
-        time = int(image_file.stem.split("_")[-1])
-        # sample = {"image": image, "time": time, "label": dets}
-
-        if self.transform:
-            image = self.transform(image)
-
-        # target = dict(image_id=torch.tensor(image), boxes=dets, labels=1)
-        # return target
-        return image, dets, 1
+seed = 1234
+np.random.seed(seed)
+torch.manual_seed(seed)
 
 
 def denormalize_bboxs(bboxes, im_width, im_height):
@@ -94,9 +36,7 @@ class AssDataset(Dataset):
         image2 = image[256:].transpose((2, 1, 0))
         image1 = np.ascontiguousarray(image1)
         image2 = np.ascontiguousarray(image2)
-        # assert image.shape == (self.req_height, self.req_width, 3)
-        print(image_path)
-        print(image.shape)
+
         bbox_file = image_path.parent / f"{image_path.stem}.txt"
         bboxs = np.loadtxt(bbox_file, skiprows=1, delimiter=",").astype(np.float64)
         # normalize boxes: divide by image width
@@ -116,84 +56,6 @@ class AssDataset(Dataset):
         # target = dict(image_id=torch.tensor(image), boxes=dets, labels=1)
         # return target
         return image1, bbox1, image2, bboxs2, time, label
-
-
-# https://github.com/pytorch/vision/blob/main/references/detection/utils.py#L203
-def collate_fn(batch):
-    return tuple(zip(*batch))
-
-
-# testloader = torch.utils.data.DataLoader(test, batch_size=8, shuffle=False, num_workers=2, collate_fn=collate_fn)
-
-
-"""
-Superglue wise is that: give each image separately get features, and then do sinkhorn stuff (differentiable Hungarian). 
-There is no location or time encoding. Image encode locations and time implicitly encoded in the other image.
-"""
-
-"""
-model = torchvision.models.resnet18(weights=torchvision.models.ResNet18_Weights.DEFAULT)
-model.conv1 = torch.nn.Conv2d(
-    6, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False
-)
-model.fc = torch.nn.Linear(in_features=512, out_features=5, bias=True)
-
-
-def load(checkpoint_path) -> None:
-    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
-    return model
-
-
-def save(checkpoint_path, model) -> None:
-    torch.save(model.state_dict(), checkpoint_path)
-
-
-writer = tensorboard.SummaryWriter(path / "tensorboard")
-"""
-
-
-class ConcatNet2(torch.nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super().__init__()
-        self.image_fc = torch.nn.Linear(in_channels, 30)
-        self.bbox_fc = torch.nn.Linear(5 * 4, 30)
-        self.time_fc = torch.nn.Linear(1, 30)
-        self.fc1 = torch.nn.Linear(90, 90)
-        self.fc2 = torch.nn.Linear(90, 90)
-        self.fc3 = torch.nn.Linear(90, out_channels)
-        self.relu = torch.nn.ReLU()
-
-    def forward(self, emb: torch.Tensor, bbox: torch.Tensor, time: int):
-        time = torch.tensor(time, dtype=torch.float32)
-        time = time.repeat(emb.shape[0], 1)
-        time = self.relu(self.time_fc(time))
-
-        bbox = bbox.flatten().unsqueeze(0)
-        bbox = self.relu(self.bbox_fc(bbox))
-
-        emb = self.relu(self.image_fc(emb))
-        x = torch.cat((emb, bbox, time), -1)
-
-        x = self.relu(self.fc1(x))
-        x = self.relu(self.fc2(x))
-        x = self.fc3(x)
-        return x
-
-
-class AssociationNet2(torch.nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super().__init__()
-        backbone = torchvision.models.resnet18(
-            weights=torchvision.models.ResNet18_Weights.DEFAULT
-        )
-        concat = ConcatNet(1000, 5)
-        self.backbone = backbone
-        self.conate = concat
-
-    def forward(self, image: torch.Tensor, bbox: torch.Tensor, time: int):
-        emb = self.backbone(image)
-        emb = self.conate(emb, bbox, time)
-        return emb
 
 
 class ConcatNet(torch.nn.Module):
@@ -288,46 +150,72 @@ def transform(x: np.ndarray) -> torch.Tensor:
     return x
 
 
-def train_one_step():
-    # get the inputs; data is a list of [inputs, labels]
-    # inputs, labels = data
-    inputs, labels = data[0].to(device), data[1].to(device)
+def train_one_epoch(loader, model, optimizer, criterion, device, epoch):
+    model.train()
+    running_loss = 0
+    running_accuracy = 0
+    print("train: ", len(loader.dataset))
+    for i, item in enumerate(loader):
+        optimizer.zero_grad()
 
-    # zero the parameter gradients
-    optimizer.zero_grad()
+        outputs = model(
+            item[0].type(torch.float32).to(device),
+            item[1].to(device),
+            item[2].type(torch.float32).to(device),
+            item[3].to(device),
+            item[4].to(device),
+        )  # N x C
 
-    # forward + backward + optimize
-    outputs = net(inputs)
-    loss = criterion(outputs, labels)
-    loss.backward()
-    optimizer.step()
-    return loss
+        loss = criterion(outputs, item[5].to(device))  # 1
+        loss.backward()
+        optimizer.step()
+
+        accuracy = (torch.argmax(output.data, 1) == item[-1]).sum().item()  #
+        running_accuracy += accuracy
+        running_loss += loss.item()
+
+        # print(
+        #     f"train: epoch: {epoch}, total loss: {loss.item()}, accuracy: {accuracy * 100/len(item[-1])}, no. correct: {accuracy}, bs:{len(item[-1])}"
+        # )
+
+    print(
+        f"train: epoch: {epoch}, total loss: {running_loss/(i+1)}, accuracy: {running_accuracy /len(loader.dataset)* 100}, no. correct: {running_accuracy}, length data:{len(loader.dataset)}"
+    )
 
 
-def train():
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    net = Net()
-    print(net)
+@torch.no_grad()
+def evaluate(loader, model, criterion, device, epoch):
+    model.eval()
+    running_loss = 0
+    running_accuracy = 0
+    print("eval: ", len(loader.dataset))
+    for i, item in enumerate(loader):
+        outputs = model(
+            item[0].type(torch.float32).to(device),
+            item[1].to(device),
+            item[2].type(torch.float32).to(device),
+            item[3].to(device),
+            item[4].to(device),
+        )  # N x C
 
-    net.to(device)
-    print(device)
+        loss = criterion(outputs, item[5].to(device))  # 1
 
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, 1, gamma=0.95)
+        accuracy = (torch.argmax(output.data, 1) == item[-1]).sum().item()  #
+        running_accuracy += accuracy
+        running_loss += loss.item()
+        # print(
+        #     f"eval: epoch: {epoch}, total loss: {loss.item()}, accuracy: {accuracy * 100/len(item[-1])}, no. correct: {accuracy}, bs:{len(item[-1])}"
+        # )
 
-    for epoch in range(2):  # loop over the dataset multiple times
-        loss = train_one_step(data, device, net, criterion, optimizer, scheduler)
-        running_loss = 0.0
-        for i, data in enumerate(trainloader, 0):
+    print(
+        f"eval: epoch: {epoch}, total loss: {running_loss/(i+1)}, accuracy: {running_accuracy /len(loader.dataset)* 100}, no. correct: {running_accuracy}, length data:{len(loader.dataset)}"
+    )
 
-            # print statistics
-            running_loss += loss.item()
-            if i % 2000 == 1999:  # print every 2000 mini-batches
-                print(f"[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
-                running_loss = 0.0
 
-    print("Finished Training")
+"""
+Superglue wise is that: give each image separately get features, and then do sinkhorn stuff (differentiable Hungarian). 
+There is no location or time encoding. Image encode locations and time implicitly encoded in the other image.
+"""
 
 
 """
@@ -344,41 +232,48 @@ net(imt, torch.rand(1, 4), imt, bbox, time)
 
 image_dir = Path("/home/fatemeh/Downloads/test_data/crops")
 dataset = AssDataset(image_dir)
-loader = DataLoader(
-    dataset, batch_size=32, shuffle=False, num_workers=1, drop_last=False
+len_dataset = len(dataset)
+len_train = int(len_dataset * .8)
+len_eval = len_dataset - len_train
+indices = torch.randperm(len(dataset)).tolist()
+train_dataset = torch.utils.data.Subset(dataset, indices[:len_train])
+eval_dataset = torch.utils.data.Subset(dataset, indices[len_train:])
+
+train_loader = DataLoader(
+    train_dataset, batch_size=24, shuffle=False, num_workers=1, drop_last=False
 )
-# item = next(iter(loader))
-
-model = AssociationNet(512, 5)
-model.backbone.requires_grad_(False)
-model.train()
-
+eval_loader = DataLoader(
+    eval_dataset, batch_size=8, shuffle=False, num_workers=1, drop_last=False
+)
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+model = AssociationNet(512, 5).to(device)
+model.backbone.requires_grad_(False)
+
+
 criterion = torch.nn.CrossEntropyLoss()
 optimizer = torch.optim.SGD(
     filter(lambda p: p.requires_grad, model.parameters()), lr=0.001, momentum=0.9
 )
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1, gamma=0.95)
 
+print(len_train, len_eval)
+print(len(train_loader), len(eval_loader))
+print(len(train_loader.dataset), len(eval_loader.dataset))
 for epoch in range(2):
+    print("training")
+    train_one_epoch(train_loader, model, optimizer, criterion, device, epoch)
+    scheduler.step()
+    print("evaluating")
+    evaluate(eval_loader, model, criterion, device, epoch)
 
-    running_loss = 0.0
-    for item in loader:
 
-        optimizer.zero_grad()
+"""
+def load(checkpoint_path) -> None:
+    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+    return model
 
-        outputs = model(
-            item[0].type(torch.float32),
-            item[1],
-            item[2].type(torch.float32),
-            item[3],
-            item[4],
-        )
 
-        loss = criterion(outputs, item[5])
-        loss.backward()
-        optimizer.step()
-
-        running_loss += loss.item()
-        print(running_loss, loss.item())
-    print(f"epoch: {epoch}, total loss: {running_loss}")
+def save(checkpoint_path, model) -> None:
+    torch.save(model.state_dict(), checkpoint_path)
+"""
