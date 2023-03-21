@@ -8,30 +8,45 @@ import pytest
 path = (Path(__file__).parents[1]).as_posix()
 sys.path.insert(0, path)
 
-from tracking.data_association import (bipartite_local_matching,
-                                       clean_detections, compute_tracks,
-                                       get_detections, get_detections_array,
-                                       get_detections_with_disparity, get_iou,
-                                       hungarian_global_matching,
-                                       is_bbox_in_bbox, load_disparities,
-                                       load_tracks_from_cvat_txt_format,
-                                       load_tracks_from_mot_format,
-                                       make_array_from_dets,
-                                       make_array_from_tracks,
-                                       make_dets_from_array,
-                                       make_tracks_from_array,
-                                       match_detections,
-                                       save_tracks_to_cvat_txt_format,
-                                       save_tracks_to_mot_format)
-from tracking.stats import (get_gt_object_match, get_stats_for_frame,
-                            get_stats_for_track, get_stats_for_tracks)
+from tracking.data_association import (
+    bipartite_local_matching,
+    clean_detections,
+    compute_tracks,
+    get_detections,
+    get_detections_array,
+    get_detections_with_disparity,
+    get_iou,
+    hungarian_global_matching,
+    is_bbox_in_bbox,
+    load_disparities,
+    load_tracks_from_cvat_txt_format,
+    load_tracks_from_mot_format,
+    make_array_from_dets,
+    make_array_from_tracks,
+    make_dets_from_array,
+    make_tracks_from_array,
+    match_detections,
+    save_tracks_to_cvat_txt_format,
+    save_tracks_to_mot_format,
+)
+from tracking.stats import (
+    get_gt_object_match,
+    get_stats_for_frame,
+    get_stats_for_track,
+    get_stats_for_tracks,
+)
 from tracking.stereo_gt import get_matched_track_ids, load_matched_tracks_ids
 from tracking.tracklet_operations import (
-    add_remove_tracks_by_disp_infos, append_tracks_with_cam_id_match_id,
-    arrange_track_ids, get_candidates_disparity_infos,
+    add_remove_tracks_by_disp_infos,
+    append_tracks_with_cam_id_match_id,
+    arrange_track_ids,
+    get_candidates_disparity_infos,
     get_matches_from_candidates_disparity_infos,
-    match_primary_track_to_secondry_tracklets, remove_detects_change_track_ids,
-    remove_short_tracks, select_from_overlaps)
+    match_primary_track_to_secondry_tracklets,
+    remove_detects_change_track_ids,
+    remove_short_tracks,
+    select_from_overlaps,
+)
 
 data_path = Path(__file__).parent / "data"
 annos = load_tracks_from_cvat_txt_format(data_path / "04_07_22_G_2_rect_valid_gt.txt")
@@ -366,13 +381,17 @@ def test_get_matched_track_ids():
     np.testing.assert_equal(matches[:, :2], desired[:, :2])
 
 
-from tracking.data_association import (cen_wh_from_tl_br,
-                                       get_track_from_track_id,
-                                       interpolate_two_bboxes,
-                                       tl_br_from_cen_wh)
+from tracking.data_association import (
+    cen_wh_from_tl_br,
+    get_track_from_track_id,
+    interpolate_two_bboxes,
+    tl_br_from_cen_wh,
+)
 from tracking.stereo_gt import get_disparity_info_from_stereo_track
-from tracking.tracklet_operations import (add_remove_tracks,
-                                          get_start_ends_missing_frames)
+from tracking.tracklet_operations import (
+    add_remove_tracks,
+    get_start_ends_missing_frames,
+)
 
 
 # TODO maybe remove

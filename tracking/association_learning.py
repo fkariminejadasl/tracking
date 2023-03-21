@@ -4,10 +4,8 @@ import cv2
 import numpy as np
 import torch
 import torchvision
+from PIL import Image
 from torch.utils.data import DataLoader, Dataset
-from torchvision.models.resnet import Bottleneck
-
-import tracking.data_association as da
 
 seed = 1234
 np.random.seed(seed)
@@ -166,16 +164,18 @@ def train_one_epoch(loader, model, optimizer, criterion, device, epoch):
             item[4].to(device),
         )  # N x C
 
-        loss = criterion(outputs, item[5].to(device))  # 1
+        labels = item[5].to(device)
+        loss = criterion(outputs, labels)  # 1
         loss.backward()
         optimizer.step()
 
-        accuracy = (torch.argmax(output.data, 1) == item[-1]).sum().item()  #
+        accuracy = (torch.argmax(outputs.data, 1) == labels).sum().item()
         running_accuracy += accuracy
         running_loss += loss.item()
 
+        # batch_size = len(labels)
         # print(
-        #     f"train: epoch: {epoch}, total loss: {loss.item()}, accuracy: {accuracy * 100/len(item[-1])}, no. correct: {accuracy}, bs:{len(item[-1])}"
+        #     f"train: epoch: {epoch}, total loss: {loss.item()}, accuracy: {accuracy * 100/batch_size}, no. correct: {accuracy}, bs:{batch_size}"
         # )
 
     print(
@@ -198,13 +198,16 @@ def evaluate(loader, model, criterion, device, epoch):
             item[4].to(device),
         )  # N x C
 
-        loss = criterion(outputs, item[5].to(device))  # 1
+        labels = item[5].to(device)
+        loss = criterion(outputs, labels)  # 1
 
-        accuracy = (torch.argmax(output.data, 1) == item[-1]).sum().item()  #
+        accuracy = (torch.argmax(outputs.data, 1) == labels).sum().item()
         running_accuracy += accuracy
         running_loss += loss.item()
+
+        # batch_size = len(labels)
         # print(
-        #     f"eval: epoch: {epoch}, total loss: {loss.item()}, accuracy: {accuracy * 100/len(item[-1])}, no. correct: {accuracy}, bs:{len(item[-1])}"
+        #     f"eval: epoch: {epoch}, total loss: {loss.item()}, accuracy: {accuracy * 100/batch_size}, no. correct: {accuracy}, bs:{batch_size}"
         # )
 
     print(
@@ -233,7 +236,7 @@ net(imt, torch.rand(1, 4), imt, bbox, time)
 image_dir = Path("/home/fatemeh/Downloads/test_data/crops")
 dataset = AssDataset(image_dir)
 len_dataset = len(dataset)
-len_train = int(len_dataset * .8)
+len_train = int(len_dataset * 0.8)
 len_eval = len_dataset - len_train
 indices = torch.randperm(len(dataset)).tolist()
 train_dataset = torch.utils.data.Subset(dataset, indices[:len_train])
