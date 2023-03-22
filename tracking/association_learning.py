@@ -1,10 +1,14 @@
+import sys
+from datetime import datetime
 from pathlib import Path
 
 import cv2
 import numpy as np
 import torch
 import torchvision
+import tqdm
 from PIL import Image
+from torch.utils import tensorboard
 from torch.utils.data import DataLoader, Dataset
 
 seed = 1234
@@ -30,10 +34,9 @@ class AssDataset(Dataset):
     def __getitem__(self, ind):
         image_path = self.image_paths[ind]
         image = cv2.imread(image_path.as_posix())[..., ::-1]
-        image1 = image[:256].transpose((2, 1, 0))
-        image2 = image[256:].transpose((2, 1, 0))
-        image1 = np.ascontiguousarray(image1)
-        image2 = np.ascontiguousarray(image2)
+        image = np.ascontiguousarray(image)
+        image1 = image[:256]
+        image2 = image[256:]
 
         bbox_file = image_path.parent / f"{image_path.stem}.txt"
         bboxs = np.loadtxt(bbox_file, skiprows=1, delimiter=",").astype(np.float64)
@@ -49,7 +52,11 @@ class AssDataset(Dataset):
         # sample = {"image": image, "time": time, "label": dets}
 
         if self.transform:
-            image = self.transform(image)
+            image1 = self.transform(Image.fromarray(image1))
+            image2 = self.transform(Image.fromarray(image2))
+        else:
+            image1 = image1.transpose((2, 1, 0))
+            image2 = image2.transpose((2, 1, 0))
 
         # target = dict(image_id=torch.tensor(image), boxes=dets, labels=1)
         # return target
@@ -140,19 +147,36 @@ class AssociationNet(torch.nn.Module):
         return emb
 
 
-def transform(x: np.ndarray) -> torch.Tensor:
-    x = Image.fromarray(x)
-    x = torchvision.transforms.functional.rotate(x, 30)
-    x = torchvision.transforms.functional.to_grayscale(x)
-    x = torchvision.transforms.functional.to_tensor(x)
-    return x
+# def transform(x: np.ndarray) -> torch.Tensor:
+#     x = Image.fromarray(x)
+#     x = torchvision.transforms.functional.rotate(x, 30)
+#     x = torchvision.transforms.functional.to_grayscale(x)
+#     x = torchvision.transforms.functional.to_tensor(x)
+#     return x
+
+transform = torchvision.transforms.Compose(
+    [
+        torchvision.transforms.ToTensor(),
+        torchvision.transforms.Normalize(
+            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+        ),
+    ]
+)
 
 
-def train_one_epoch(loader, model, optimizer, criterion, device, epoch):
+def write_info_in_tensorboard(writer, epoch, loss, accuracy, stage):
+    loss_scalar_dict = dict()
+    acc_scalar_dict = dict()
+    loss_scalar_dict[stage] = loss
+    acc_scalar_dict[stage] = accuracy
+    writer.add_scalars("loss", loss_scalar_dict, epoch)
+    writer.add_scalars("accuracy", acc_scalar_dict, epoch)
+
+
+def train_one_epoch(loader, model, criterion, device, epoch, writer, optimizer):
     model.train()
     running_loss = 0
     running_accuracy = 0
-    print("train: ", len(loader.dataset))
     for i, item in enumerate(loader):
         optimizer.zero_grad()
 
@@ -178,17 +202,19 @@ def train_one_epoch(loader, model, optimizer, criterion, device, epoch):
         #     f"train: epoch: {epoch}, total loss: {loss.item()}, accuracy: {accuracy * 100/batch_size}, no. correct: {accuracy}, bs:{batch_size}"
         # )
 
+    total_loss = running_loss / (i + 1)
+    total_accuracy = running_accuracy / len(loader.dataset) * 100
     print(
-        f"train: epoch: {epoch}, total loss: {running_loss/(i+1)}, accuracy: {running_accuracy /len(loader.dataset)* 100}, no. correct: {running_accuracy}, length data:{len(loader.dataset)}"
+        f"train: epoch: {epoch}, total loss: {total_loss:.4f}, accuracy: {total_accuracy:.2f}, no. correct: {running_accuracy}, length data:{len(loader.dataset)}"
     )
+    write_info_in_tensorboard(writer, epoch, total_loss, total_accuracy, stage="train")
 
 
 @torch.no_grad()
-def evaluate(loader, model, criterion, device, epoch):
+def evaluate(loader, model, criterion, device, epoch, writer):
     model.eval()
     running_loss = 0
     running_accuracy = 0
-    print("eval: ", len(loader.dataset))
     for i, item in enumerate(loader):
         outputs = model(
             item[0].type(torch.float32).to(device),
@@ -210,9 +236,28 @@ def evaluate(loader, model, criterion, device, epoch):
         #     f"eval: epoch: {epoch}, total loss: {loss.item()}, accuracy: {accuracy * 100/batch_size}, no. correct: {accuracy}, bs:{batch_size}"
         # )
 
+    total_loss = running_loss / (i + 1)
+    total_accuracy = running_accuracy / len(loader.dataset) * 100
     print(
-        f"eval: epoch: {epoch}, total loss: {running_loss/(i+1)}, accuracy: {running_accuracy /len(loader.dataset)* 100}, no. correct: {running_accuracy}, length data:{len(loader.dataset)}"
+        f"train: epoch: {epoch}, total loss: {total_loss:.4f}, accuracy: {total_accuracy:.2f}, no. correct: {running_accuracy}, length data:{len(loader.dataset)}"
     )
+    write_info_in_tensorboard(writer, epoch, total_loss, total_accuracy, stage="valid")
+
+
+def load_model(checkpoint_path) -> None:
+    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+    return model
+
+
+def save_model(checkpoint_path, exp, epoch, model, optimizer, scheduler) -> None:
+    checkpoint = {
+        "epoch": epoch,
+        "model": model.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "scheduler": scheduler.state_dict(),
+        "date": datetime.now().isoformat(),
+    }
+    torch.save(checkpoint, checkpoint_path / f"{exp}_{epoch}.pth")
 
 
 """
@@ -234,7 +279,11 @@ net(imt, torch.rand(1, 4), imt, bbox, time)
 """
 
 image_dir = Path("/home/fatemeh/Downloads/test_data/crops")
-dataset = AssDataset(image_dir)
+save_path = Path("/home/fatemeh/test")
+exp = sys.argv[1]
+no_epochs = int(sys.argv[2])
+
+dataset = AssDataset(image_dir, transform=transform)
 len_dataset = len(dataset)
 len_train = int(len_dataset * 0.8)
 len_eval = len_dataset - len_train
@@ -251,8 +300,7 @@ eval_loader = DataLoader(
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 model = AssociationNet(512, 5).to(device)
-model.backbone.requires_grad_(False)
-
+# model.backbone.requires_grad_(False)
 
 criterion = torch.nn.CrossEntropyLoss()
 optimizer = torch.optim.SGD(
@@ -261,22 +309,14 @@ optimizer = torch.optim.SGD(
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1, gamma=0.95)
 
 print(len_train, len_eval)
-print(len(train_loader), len(eval_loader))
-print(len(train_loader.dataset), len(eval_loader.dataset))
-for epoch in range(2):
-    print("training")
-    train_one_epoch(train_loader, model, optimizer, criterion, device, epoch)
-    scheduler.step()
-    print("evaluating")
-    evaluate(eval_loader, model, criterion, device, epoch)
+with tensorboard.SummaryWriter(save_path / f"tensorboard/{exp}") as writer:
+    for epoch in tqdm.tqdm(range(no_epochs)):
+        train_one_epoch(
+            train_loader, model, criterion, device, epoch, writer, optimizer
+        )
+        scheduler.step()
+        evaluate(eval_loader, model, criterion, device, epoch, writer)
 
-
-"""
-def load(checkpoint_path) -> None:
-    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
-    return model
-
-
-def save(checkpoint_path, model) -> None:
-    torch.save(model.state_dict(), checkpoint_path)
-"""
+save_model(
+    save_path, exp, epoch + 1, model, optimizer, scheduler
+)  # 1-based save for epoch
