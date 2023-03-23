@@ -139,29 +139,12 @@ class AssociationNet(torch.nn.Module):
         bbox1: torch.Tensor,
         image2: torch.Tensor,
         bboxs2: torch.Tensor,
-        time: int,
+        time: torch.Tensor,
     ):
         emb1 = self.backbone(image1)
         emb2 = self.backbone(image2)
         emb = self.concat(emb1, bbox1, emb2, bboxs2, time)
         return emb
-
-
-# def transform(x: np.ndarray) -> torch.Tensor:
-#     x = Image.fromarray(x)
-#     x = torchvision.transforms.functional.rotate(x, 30)
-#     x = torchvision.transforms.functional.to_grayscale(x)
-#     x = torchvision.transforms.functional.to_tensor(x)
-#     return x
-
-transform = torchvision.transforms.Compose(
-    [
-        torchvision.transforms.ToTensor(),
-        torchvision.transforms.Normalize(
-            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-        ),
-    ]
-)
 
 
 def write_info_in_tensorboard(writer, epoch, loss, accuracy, stage):
@@ -244,8 +227,8 @@ def evaluate(loader, model, criterion, device, epoch, writer):
     write_info_in_tensorboard(writer, epoch, total_loss, total_accuracy, stage="valid")
 
 
-def load_model(checkpoint_path) -> None:
-    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+def load_model(checkpoint_path, model, device) -> None:
+    model.load_state_dict(torch.load(checkpoint_path, map_location=device)["model"])
     return model
 
 
@@ -265,24 +248,30 @@ Superglue wise is that: give each image separately get features, and then do sin
 There is no location or time encoding. Image encode locations and time implicitly encoded in the other image.
 """
 
-
 """
 # quick model test
-im = cv2.imread("/home/fatemeh/Downloads/vids/tttt.jpg")[..., ::-1]
-im = np.ascontiguousarray(im)
-imt = torchvision.transforms.functional.to_tensor(im).unsqueeze(0)
-time = 5
-bbox = torch.rand(1, 4)
-bboxs = torch.rand(5, 4)
-net = AssociationNet(512, 2)
-net(imt, torch.rand(1, 4), imt, bbox, time)
+im = torch.zeros((1, 3, 512, 256), dtype=torch.float32)
+bbox = torch.zeros((1, 1, 4), dtype=torch.float32)
+bboxs = torch.zeros((1, 5, 4), dtype=torch.float32)
+time = torch.tensor([0])
+net = AssociationNet(512, 5)
+net(im, bbox, im, bboxs, time)
 """
 
 image_dir = Path("/home/fatemeh/Downloads/test_data/crops")
 save_path = Path("/home/fatemeh/test")
-exp = sys.argv[1]
-no_epochs = int(sys.argv[2])
+exp = 1  # sys.argv[1]
+no_epochs = 10  # int(sys.argv[2])
 
+"""
+transform = torchvision.transforms.Compose(
+    [
+        torchvision.transforms.ToTensor(),
+        torchvision.transforms.Normalize(
+            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+        ),
+    ]
+)
 dataset = AssDataset(image_dir, transform=transform)
 len_dataset = len(dataset)
 len_train = int(len_dataset * 0.8)
@@ -320,3 +309,4 @@ with tensorboard.SummaryWriter(save_path / f"tensorboard/{exp}") as writer:
 save_model(
     save_path, exp, epoch + 1, model, optimizer, scheduler
 )  # 1-based save for epoch
+"""

@@ -19,14 +19,14 @@ homepage = "https://github.com/fkariminejadasl/tracking"
 #repository = "https://github.com/fkariminejadasl/tracking"
 
 [build-system]
-requires = [
-    "hatchling",
-]
+requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.black]
 line-length = 88
 #line-length = 120
+[tool.isort]
+profile = "black"
 
 # https://docs.pytest.org/en/stable/how-to/mark.html
 [tool.pytest.ini_options]
