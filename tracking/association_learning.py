@@ -16,11 +16,18 @@ np.random.seed(seed)
 torch.manual_seed(seed)
 
 
-def denormalize_bboxs(bboxes, im_width, im_height):
+def denormalize_bboxs(bboxes: np.ndarray, im_width, im_height) -> np.ndarray:
     bboxs = bboxes.copy()
-    bboxs[:, 3:11:2] *= im_width
-    bboxs[:, 4:11:2] *= im_height
+    bboxs[:, ::2] *= im_width
+    bboxs[:, 1::2] *= im_height
+    bboxs = np.hstack((np.arange(len(bboxs))[:, None], bboxs))
     return bboxs
+
+
+def denormalize_image(image: torch.Tensor) -> np.ndarray:
+    image = image.numpy().transpose((1, 2, 0))
+    image = 255 * (image - image.min()) / (image.max() - image.min())
+    return image.astype(np.uint8)
 
 
 class AssDataset(Dataset):
@@ -33,6 +40,7 @@ class AssDataset(Dataset):
 
     def __getitem__(self, ind):
         image_path = self.image_paths[ind]
+        print(image_path)
         image = cv2.imread(image_path.as_posix())[..., ::-1]
         image = np.ascontiguousarray(image)
         image1 = image[:256]
@@ -180,15 +188,15 @@ def train_one_epoch(loader, model, criterion, device, epoch, writer, optimizer):
         running_accuracy += accuracy
         running_loss += loss.item()
 
-        # batch_size = len(labels)
-        # print(
-        #     f"train: epoch: {epoch}, total loss: {loss.item()}, accuracy: {accuracy * 100/batch_size}, no. correct: {accuracy}, bs:{batch_size}"
-        # )
+        batch_size = len(labels)
+        print(
+            f"train: epoch/total: {epoch}/{no_epochs}, total loss: {loss.item():.4f}, accuracy: {accuracy * 100/batch_size:.2f}, no. correct: {accuracy}, bs:{batch_size}"
+        )
 
     total_loss = running_loss / (i + 1)
     total_accuracy = running_accuracy / len(loader.dataset) * 100
     print(
-        f"train: epoch: {epoch}, total loss: {total_loss:.4f}, accuracy: {total_accuracy:.2f}, no. correct: {running_accuracy}, length data:{len(loader.dataset)}"
+        f"train: epoch/total: {epoch}/{no_epochs}, total loss: {total_loss:.4f}, accuracy: {total_accuracy:.2f}, no. correct: {running_accuracy}, length data:{len(loader.dataset)}"
     )
     write_info_in_tensorboard(writer, epoch, total_loss, total_accuracy, stage="train")
 
@@ -214,15 +222,15 @@ def evaluate(loader, model, criterion, device, epoch, writer):
         running_accuracy += accuracy
         running_loss += loss.item()
 
-        # batch_size = len(labels)
-        # print(
-        #     f"eval: epoch: {epoch}, total loss: {loss.item()}, accuracy: {accuracy * 100/batch_size}, no. correct: {accuracy}, bs:{batch_size}"
-        # )
+        batch_size = len(labels)
+        print(
+            f"eval: epoch/total: {epoch}/{no_epochs}, total loss: {loss.item():.4f}, accuracy: {accuracy * 100/batch_size:.2f}, no. correct: {accuracy}, bs:{batch_size}"
+        )
 
     total_loss = running_loss / (i + 1)
     total_accuracy = running_accuracy / len(loader.dataset) * 100
     print(
-        f"train: epoch: {epoch}, total loss: {total_loss:.4f}, accuracy: {total_accuracy:.2f}, no. correct: {running_accuracy}, length data:{len(loader.dataset)}"
+        f"eval: epoch/total: {epoch}/{no_epochs}, total loss: {total_loss:.4f}, accuracy: {total_accuracy:.2f}, no. correct: {running_accuracy}, length data:{len(loader.dataset)}"
     )
     write_info_in_tensorboard(writer, epoch, total_loss, total_accuracy, stage="valid")
 
@@ -260,10 +268,10 @@ net(im, bbox, im, bboxs, time)
 
 image_dir = Path("/home/fatemeh/Downloads/test_data/crops")
 save_path = Path("/home/fatemeh/test")
-exp = 1  # sys.argv[1]
-no_epochs = 10  # int(sys.argv[2])
+exp = 3  # sys.argv[1]
+no_epochs = 50  # int(sys.argv[2])
 
-"""
+
 transform = torchvision.transforms.Compose(
     [
         torchvision.transforms.ToTensor(),
@@ -274,7 +282,7 @@ transform = torchvision.transforms.Compose(
 )
 dataset = AssDataset(image_dir, transform=transform)
 len_dataset = len(dataset)
-len_train = int(len_dataset * 0.8)
+len_train = int(len_dataset * 0.5)  # 0.8
 len_eval = len_dataset - len_train
 indices = torch.randperm(len(dataset)).tolist()
 train_dataset = torch.utils.data.Subset(dataset, indices[:len_train])
@@ -296,7 +304,7 @@ optimizer = torch.optim.SGD(
     filter(lambda p: p.requires_grad, model.parameters()), lr=0.001, momentum=0.9
 )
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1, gamma=0.95)
-
+"""
 print(len_train, len_eval)
 with tensorboard.SummaryWriter(save_path / f"tensorboard/{exp}") as writer:
     for epoch in tqdm.tqdm(range(no_epochs)):
