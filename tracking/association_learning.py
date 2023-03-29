@@ -1,4 +1,3 @@
-import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -6,9 +5,7 @@ import cv2
 import numpy as np
 import torch
 import torchvision
-import tqdm
 from PIL import Image
-from torch.utils import tensorboard
 from torch.utils.data import DataLoader, Dataset
 
 seed = 1234
@@ -54,10 +51,9 @@ class AssDataset(Dataset):
         bbox1 = bboxs[0:1]
         bboxs2 = bboxs[1:]
         label = int(bboxs2[bboxs2[:, 0] == bbox1[0, 0], 2][0])
-        bbox1 = bbox1[:, [3, 4, 5, 6]]
-        bboxs2 = bboxs2[:, [3, 4, 5, 6]]
-        time = int(image_path.stem.split("_")[-3])
-        # sample = {"image": image, "time": time, "label": dets}
+        bbox1 = bbox1[:, [3, 4, 5, 6]].astype(np.float32)
+        bboxs2 = bboxs2[:, [3, 4, 5, 6]].astype(np.float32)
+        time = np.float32(int(image_path.stem.split("_")[-3]) / 4.0)  # TODO
 
         if self.transform:
             image1 = self.transform(Image.fromarray(image1))
@@ -66,8 +62,6 @@ class AssDataset(Dataset):
             image1 = image1.transpose((2, 1, 0))
             image2 = image2.transpose((2, 1, 0))
 
-        # target = dict(image_id=torch.tensor(image), boxes=dets, labels=1)
-        # return target
         return image1, bbox1, image2, bboxs2, time, label
 
 
@@ -91,12 +85,12 @@ class ConcatNet(torch.nn.Module):
         bboxs2: torch.Tensor,
         time: torch.Tensor,
     ):
-        time = time.unsqueeze(1).type(torch.float32)  # N -> Nx1
+        time = time.unsqueeze(1)  # N -> Nx1
         time = self.relu(self.time_fc(time))
 
-        bbox1 = bbox1.flatten(1).type(torch.float32)
+        bbox1 = bbox1.flatten(1)
         bbox1 = self.relu(self.bbox1_fc(bbox1))
-        bboxs2 = bboxs2.flatten(1).type(torch.float32)
+        bboxs2 = bboxs2.flatten(1)
         bboxs2 = self.relu(self.bbox2_fc(bboxs2))
 
         emb1 = self.relu(self.image_fc(emb1))
@@ -164,10 +158,12 @@ def write_info_in_tensorboard(writer, epoch, loss, accuracy, stage):
     writer.add_scalars("accuracy", acc_scalar_dict, epoch)
 
 
-def train_one_epoch(loader, model, criterion, device, epoch, writer, optimizer):
+def train_one_epoch(
+    loader, model, criterion, device, epoch, no_epochs, writer, optimizer
+):
     model.train()
     running_loss = 0
-    running_accuracy = 0
+    running_corrects = 0
     for i, item in enumerate(loader):
         optimizer.zero_grad()
 
@@ -184,28 +180,28 @@ def train_one_epoch(loader, model, criterion, device, epoch, writer, optimizer):
         loss.backward()
         optimizer.step()
 
-        accuracy = (torch.argmax(outputs.data, 1) == labels).sum().item()
-        running_accuracy += accuracy
+        corrects = (torch.argmax(outputs.data, 1) == labels).sum().item()
+        running_corrects += corrects
         running_loss += loss.item()
 
         batch_size = len(labels)
         print(
-            f"train: epoch/total: {epoch}/{no_epochs}, total loss: {loss.item():.4f}, accuracy: {accuracy * 100/batch_size:.2f}, no. correct: {accuracy}, bs:{batch_size}"
+            f"train: epoch/total: {epoch}/{no_epochs}, total loss: {loss.item():.4f}, accuracy: {corrects * 100/batch_size:.2f}, no. correct: {corrects}, bs:{batch_size}"
         )
 
     total_loss = running_loss / (i + 1)
-    total_accuracy = running_accuracy / len(loader.dataset) * 100
+    total_accuracy = running_corrects / len(loader.dataset) * 100
     print(
-        f"train: epoch/total: {epoch}/{no_epochs}, total loss: {total_loss:.4f}, accuracy: {total_accuracy:.2f}, no. correct: {running_accuracy}, length data:{len(loader.dataset)}"
+        f"train: epoch/total: {epoch}/{no_epochs}, total loss: {total_loss:.4f}, accuracy: {total_accuracy:.2f}, no. correct: {running_corrects}, length data:{len(loader.dataset)}"
     )
     write_info_in_tensorboard(writer, epoch, total_loss, total_accuracy, stage="train")
 
 
 @torch.no_grad()
-def evaluate(loader, model, criterion, device, epoch, writer):
+def evaluate(loader, model, criterion, device, epoch, no_epochs, writer):
     model.eval()
     running_loss = 0
-    running_accuracy = 0
+    running_corrects = 0
     for i, item in enumerate(loader):
         outputs = model(
             item[0].type(torch.float32).to(device),
@@ -218,21 +214,22 @@ def evaluate(loader, model, criterion, device, epoch, writer):
         labels = item[5].to(device)
         loss = criterion(outputs, labels)  # 1
 
-        accuracy = (torch.argmax(outputs.data, 1) == labels).sum().item()
-        running_accuracy += accuracy
+        corrects = (torch.argmax(outputs.data, 1) == labels).sum().item()
+        running_corrects += corrects
         running_loss += loss.item()
 
         batch_size = len(labels)
         print(
-            f"eval: epoch/total: {epoch}/{no_epochs}, total loss: {loss.item():.4f}, accuracy: {accuracy * 100/batch_size:.2f}, no. correct: {accuracy}, bs:{batch_size}"
+            f"eval: epoch/total: {epoch}/{no_epochs}, total loss: {loss.item():.4f}, accuracy: {corrects * 100/batch_size:.2f}, no. correct: {corrects}, bs:{batch_size}"
         )
 
     total_loss = running_loss / (i + 1)
-    total_accuracy = running_accuracy / len(loader.dataset) * 100
+    total_accuracy = running_corrects / len(loader.dataset) * 100
     print(
-        f"eval: epoch/total: {epoch}/{no_epochs}, total loss: {total_loss:.4f}, accuracy: {total_accuracy:.2f}, no. correct: {running_accuracy}, length data:{len(loader.dataset)}"
+        f"eval: epoch/total: {epoch}/{no_epochs}, total loss: {total_loss:.4f}, accuracy: {total_accuracy:.2f}, no. correct: {running_corrects}, length data:{len(loader.dataset)}"
     )
     write_info_in_tensorboard(writer, epoch, total_loss, total_accuracy, stage="valid")
+    return total_accuracy
 
 
 def load_model(checkpoint_path, model, device) -> None:
@@ -240,7 +237,9 @@ def load_model(checkpoint_path, model, device) -> None:
     return model
 
 
-def save_model(checkpoint_path, exp, epoch, model, optimizer, scheduler) -> None:
+def save_model(
+    checkpoint_path, exp, epoch, model, optimizer, scheduler, best=False
+) -> None:
     checkpoint = {
         "epoch": epoch,
         "model": model.state_dict(),
@@ -248,7 +247,10 @@ def save_model(checkpoint_path, exp, epoch, model, optimizer, scheduler) -> None
         "scheduler": scheduler.state_dict(),
         "date": datetime.now().isoformat(),
     }
-    torch.save(checkpoint, checkpoint_path / f"{exp}_{epoch}.pth")
+    name = f"{exp}_{epoch}.pth"
+    if best:
+        name = f"{exp}_{epoch}_best.pth"
+    torch.save(checkpoint, checkpoint_path / name)
 
 
 """
@@ -264,57 +266,4 @@ bboxs = torch.zeros((1, 5, 4), dtype=torch.float32)
 time = torch.tensor([0])
 net = AssociationNet(512, 5)
 net(im, bbox, im, bboxs, time)
-"""
-
-image_dir = Path("/home/fatemeh/Downloads/test_data/crops")
-save_path = Path("/home/fatemeh/test")
-exp = 3  # sys.argv[1]
-no_epochs = 50  # int(sys.argv[2])
-
-
-transform = torchvision.transforms.Compose(
-    [
-        torchvision.transforms.ToTensor(),
-        torchvision.transforms.Normalize(
-            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-        ),
-    ]
-)
-dataset = AssDataset(image_dir, transform=transform)
-len_dataset = len(dataset)
-len_train = int(len_dataset * 0.5)  # 0.8
-len_eval = len_dataset - len_train
-indices = torch.randperm(len(dataset)).tolist()
-train_dataset = torch.utils.data.Subset(dataset, indices[:len_train])
-eval_dataset = torch.utils.data.Subset(dataset, indices[len_train:])
-
-train_loader = DataLoader(
-    train_dataset, batch_size=24, shuffle=False, num_workers=1, drop_last=False
-)
-eval_loader = DataLoader(
-    eval_dataset, batch_size=8, shuffle=False, num_workers=1, drop_last=False
-)
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-model = AssociationNet(512, 5).to(device)
-# model.backbone.requires_grad_(False)
-
-criterion = torch.nn.CrossEntropyLoss()
-optimizer = torch.optim.SGD(
-    filter(lambda p: p.requires_grad, model.parameters()), lr=0.001, momentum=0.9
-)
-scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1, gamma=0.95)
-"""
-print(len_train, len_eval)
-with tensorboard.SummaryWriter(save_path / f"tensorboard/{exp}") as writer:
-    for epoch in tqdm.tqdm(range(no_epochs)):
-        train_one_epoch(
-            train_loader, model, criterion, device, epoch, writer, optimizer
-        )
-        scheduler.step()
-        evaluate(eval_loader, model, criterion, device, epoch, writer)
-
-save_model(
-    save_path, exp, epoch + 1, model, optimizer, scheduler
-)  # 1-based save for epoch
 """
