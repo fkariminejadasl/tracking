@@ -13,3 +13,5 @@ python-dateutil>=2.8.2
 scipy>=1.9.2
 six>=1.16.0
 hatchling==1.11.1
+torch
+torchvision

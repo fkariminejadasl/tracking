@@ -37,7 +37,6 @@ class AssDataset(Dataset):
 
     def __getitem__(self, ind):
         image_path = self.image_paths[ind]
-        print(image_path)
         image = cv2.imread(image_path.as_posix())[..., ::-1]
         image = np.ascontiguousarray(image)
         image1 = image[:256]
@@ -249,7 +248,7 @@ def save_model(
     }
     name = f"{exp}_{epoch}.pth"
     if best:
-        name = f"{exp}_{epoch}_best.pth"
+        name = f"{exp}_best.pth"
     torch.save(checkpoint, checkpoint_path / name)
 
 

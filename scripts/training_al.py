@@ -21,7 +21,7 @@ torch.manual_seed(seed)
 
 image_dir = Path("/home/fatemeh/Downloads/test_data/crops")
 save_path = Path("/home/fatemeh/Downloads/test_data")
-exp = 1  # sys.argv[1]
+exp = 2  # sys.argv[1]
 no_epochs = 500  # int(sys.argv[2])
 
 
@@ -42,7 +42,7 @@ train_dataset = torch.utils.data.Subset(dataset, indices[:len_train])
 eval_dataset = torch.utils.data.Subset(dataset, indices[len_train:])
 
 train_loader = DataLoader(
-    train_dataset, batch_size=24, shuffle=False, num_workers=1, drop_last=False
+    train_dataset, batch_size=24, shuffle=True, num_workers=1, drop_last=False
 )
 eval_loader = DataLoader(
     eval_dataset, batch_size=8, shuffle=False, num_workers=1, drop_last=False
@@ -61,7 +61,7 @@ scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1000, gamma=0.1)
 print(len_train, len_eval)
 best_accuracy = 0
 with tensorboard.SummaryWriter(save_path / f"tensorboard/{exp}") as writer:
-    for epoch in tqdm.tqdm(range(no_epochs)):
+    for epoch in tqdm.tqdm(range(1, no_epochs+1)):
         train_one_epoch(
             train_loader, model, criterion, device, epoch, no_epochs, writer, optimizer
         )
@@ -73,9 +73,10 @@ with tensorboard.SummaryWriter(save_path / f"tensorboard/{exp}") as writer:
             best_accuracy = accuracy
             # 1-based save for epoch
             save_model(
-                save_path, exp, epoch + 1, model, optimizer, scheduler, best=True
+                save_path, exp, epoch, model, optimizer, scheduler, best=True
             )
+            print(f"best model accuracy: {best_accuracy:.2f} at epoch: {epoch}")
         # scheduler.step()
 
 # 1-based save for epoch
-save_model(save_path, exp, epoch + 1, model, optimizer, scheduler)
+save_model(save_path, exp, epoch, model, optimizer, scheduler)
