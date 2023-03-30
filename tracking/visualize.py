@@ -37,6 +37,7 @@ def save_video_as_images(
     step: int = 1,
     start_frame: int = 0,
     end_frame=None,
+    format: str = "06d",
 ):
     vc = cv2.VideoCapture(video_file.as_posix())
     assert vc.isOpened()
@@ -49,7 +50,7 @@ def save_video_as_images(
     for frame_number in tqdm(range(start_frame, end_frame + 1)):
         _, frame = vc.read()
         if frame_number % step == 0:
-            name = f"{video_file.stem}_{frame_number}.jpg"
+            name = f"{video_file.stem}_frame_{frame_number:{format}}.jpg"
             cv2.imwrite((save_path / f"{name}").as_posix(), frame)
     vc.release()
 

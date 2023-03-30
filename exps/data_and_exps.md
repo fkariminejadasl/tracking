@@ -1,5 +1,7 @@
 # Data
 
+## Data for detection
+
 **old** </br>
 [data]: `train/val=4092/400 images`. `imsize=540x960, 575x1024, 576x1024, 760x1352` </br>
 [description]: Ben generated data using Roboflow. The data consists of:
@@ -29,6 +31,9 @@
 [description]: training data of `data8_v2` with `6380` images is uploaded in Roboflow and rotation `[-15, 15]` and then mosaic approximatly 3 times more data is generated. The validation is the same as `data8_v2`. </br>
 NB. The data is here is copied not symbolic linked.
 
+## Data for association learning
+
+**data_al_v1** </br>
 
  <!-- (#594 images: 2704 x 1520 orig) -> #4092/400 (1024 x 576 train)/(960 x 540 val) -->
 

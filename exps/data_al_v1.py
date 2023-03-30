@@ -30,7 +30,7 @@ def get_next_image_paths(
         "04_07_22_F_2_rect_valid",
         "04_07_22_G_2_rect_valid",
     ]
-    vid_infos = {"short": [600, 1], "long": [248, 8]}  # "long": [3117, 8]}
+    vid_infos = {"short": [600, 1], "long": [3117, 8]}  # 248
 
     video_name, frame_number1 = _get_video_name_and_frame_number(image_path1)
     if video_name in vid_name_600:
@@ -57,7 +57,6 @@ def get_next_image_paths(
             image_path2 = image_dir / f"{video_name}_frame_{frame_number2:06d}.jpg"
             if image_path2.exists():
                 image_paths2_dtimes.append([image_path2, dtime])
-                print(dtime)
 
     return image_paths2_dtimes
 
@@ -162,8 +161,7 @@ def make_label(c_bboxes2, track_id1):
     inds = np.random.permutation(number_bboxes)
     c_bboxes2 = c_bboxes2[inds]
     c_bboxes2[:, 2] = np.arange(number_bboxes)
-    label = c_bboxes2[c_bboxes2[:, 0] == track_id1, 2]
-    print("label: ", label)
+    # label = c_bboxes2[c_bboxes2[:, 0] == track_id1, 2]
     return c_bboxes2
 
 
@@ -267,7 +265,6 @@ def post_augmentation(
 
     track_id1 = c_bbox1[0, 0]
     if track_id1 not in c_bboxes2[:, 0]:
-        print("track_id1 not in c_bboxs2 ======>", track_id1)
         return
 
     # adjust number of bboxes: for smaller one are zero padded, for larger ones knn used
@@ -287,8 +284,6 @@ def generate_data_per_image(save_dir, image_path1, image_path2, dtime, tracks):
     bboxes1 = tracks[tracks[:, 1] == frame_number1]
     bboxes2 = tracks[tracks[:, 1] == frame_number2]
     name_stem = f"{video_name}_{frame_number1}_{frame_number2}_{dtime}"
-    print("image_path1: ", image_path1)
-    print("image_path2: ", image_path2)
 
     for bbox1 in bboxes1:
         # data augmentation
@@ -305,27 +300,37 @@ accepted_disp = 30
 dtime_limit = 4
 jitter_loc = 50
 jitter_scale = 10
-image_dir = Path("/home/fatemeh/Downloads/test_data/images")
+image_dir = Path(
+    "/home/fatemeh/Downloads/data_al_v1/images"
+)  # /home/fatemeh/Downloads/test_data/images #/home/fatemeh/Downloads/data8_v1/train/images
 save_dir = image_dir.parent
 
-# 1. random select next image based on random d_time
-# image_path1 = Path(
-#     "/home/fatemeh/Downloads/data8_v1/train/images/183_cam_1_frame_002440.jpg"
-# )
+# 0. generate images from video
+"""
+video_paths = Path("/home/fatemeh/Downloads/vids/all")
+image_dir = Path("/home/fatemeh/Downloads/data_al_v1/images")
+vid_name_600 = [
+    "04_07_22_F_2_rect_valid",
+    "04_07_22_G_2_rect_valid",
+]
+for video_path in video_paths.glob("*"):
+    step = 8
+    if video_path.stem in vid_name_600:
+        step = 1
+    print(video_path)
+    visualize.save_video_as_images(video_path, image_dir, step=step)
+"""
 for image_path1 in tqdm(sorted(image_dir.glob("*.jpg"))):
     video_name, frame_number1 = _get_video_name_and_frame_number(image_path1)
     tracks = da.load_tracks_from_mot_format(
         Path(f"/home/fatemeh/Downloads/vids/mot/{video_name}.zip")
     )
 
-    # image_path2, dtime = get_next_image_path(image_path1, tracks)
+    # 1. per image select surrounding images
     image_paths2_dtimes = get_next_image_paths(image_path1, tracks)
     if image_paths2_dtimes is None:
         continue
-    print(image_path1)
     for image_path2, dtime in image_paths2_dtimes:
-        print(image_path2)
-
-    # 2. generate data per image
-    generate_data_per_image(save_dir, image_path1, image_path2, dtime, tracks)
-    break
+        # 2. generate data per image pair
+        generate_data_per_image(save_dir, image_path1, image_path2, dtime, tracks)
+        # break
