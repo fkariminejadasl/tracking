@@ -287,9 +287,7 @@ def generate_data_per_image(save_dir, image_path1, image_path2, dtime, tracks):
 
     for bbox1 in bboxes1:
         # data augmentation
-        for i in range(1):
-            trans_augmentation(image1, bbox1, image2, bboxes2, save_dir, name_stem)
-            trans_augmentation(image1, bbox1, image2, bboxes2, save_dir, name_stem)
+        trans_augmentation(image1, bbox1, image2, bboxes2, save_dir, name_stem)
 
 
 crop_height, crop_width = 256, 512
@@ -300,37 +298,41 @@ accepted_disp = 30
 dtime_limit = 4
 jitter_loc = 50
 jitter_scale = 10
-image_dir = Path(
-    "/home/fatemeh/Downloads/data_al_v1/images"
-)  # /home/fatemeh/Downloads/test_data/images #/home/fatemeh/Downloads/data8_v1/train/images
-save_dir = image_dir.parent
 
-# 0. generate images from video
-"""
 video_paths = Path("/home/fatemeh/Downloads/vids/all")
-image_dir = Path("/home/fatemeh/Downloads/data_al_v1/images")
+track_paths = Path("/home/fatemeh/Downloads/vids/mot")
+main_dir = Path("/home/fatemeh/Downloads/data_al_v1")
+
+valid_vid_name = "406_cam_1"
+test_vid_name = "406_cam_2"
 vid_name_600 = [
     "04_07_22_F_2_rect_valid",
     "04_07_22_G_2_rect_valid",
 ]
+
+# 1. generate images from video
 for video_path in video_paths.glob("*"):
+    video_name = video_path.stem
+    stage = "train"
+    if video_name == valid_vid_name:
+        stage = "valid"
+    if video_name == test_vid_name:
+        stage = "test"
+    # /home/fatemeh/Downloads/test_data/images, /home/fatemeh/Downloads/data8_v1/train/images
+    image_dir = main_dir / f"{stage}/images"
+    save_dir = image_dir.parent
     step = 8
     if video_path.stem in vid_name_600:
         step = 1
-    print(video_path)
+    print(f"Image:{image_dir},\nVideo: {video_path}")
     visualize.save_video_as_images(video_path, image_dir, step=step)
-"""
-for image_path1 in tqdm(sorted(image_dir.glob("*.jpg"))):
-    video_name, frame_number1 = _get_video_name_and_frame_number(image_path1)
-    tracks = da.load_tracks_from_mot_format(
-        Path(f"/home/fatemeh/Downloads/vids/mot/{video_name}.zip")
-    )
 
-    # 1. per image select surrounding images
-    image_paths2_dtimes = get_next_image_paths(image_path1, tracks)
-    if image_paths2_dtimes is None:
-        continue
-    for image_path2, dtime in image_paths2_dtimes:
-        # 2. generate data per image pair
-        generate_data_per_image(save_dir, image_path1, image_path2, dtime, tracks)
-        # break
+    tracks = da.load_tracks_from_mot_format(track_paths / f"{video_name}.zip")
+    for image_path1 in tqdm(sorted(image_dir.glob(f"{video_name}*.jpg"))):
+        # 2. per image select surrounding images
+        image_paths2_dtimes = get_next_image_paths(image_path1, tracks)
+        if image_paths2_dtimes is None:
+            continue
+        for image_path2, dtime in image_paths2_dtimes:
+            # 3. generate data per image pair
+            generate_data_per_image(save_dir, image_path1, image_path2, dtime, tracks)
