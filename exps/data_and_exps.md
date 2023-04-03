@@ -36,7 +36,7 @@ NB. The data is here is copied not symbolic linked.
 ## Data for association learning
 
 **data_al_v1** </br>
-[data]: `train/valid/test=959,354/26,823/26,338 images, which is 75G/2,9G/2,8G of data.`. `imsizes=256x5121`</br>
+[data]: `train/valid/test=959,354/26,823/26,338 images, which is 77G/2,9G/2,8G of data.`. `imsizes=256x512`</br>
 [description]: validation video: 406_cam_1, test vido: 406_cam_2 and the rest for trianing. <\br>
 [code]: `data_al_v1.py` <\br>
 NB. Generating data part is slow. I had to do multiprocessing per video. Multiprocessing per image resulted much more speed up.
