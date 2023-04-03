@@ -1,3 +1,4 @@
+import multiprocessing
 import sys
 from pathlib import Path
 
@@ -290,29 +291,9 @@ def generate_data_per_image(save_dir, image_path1, image_path2, dtime, tracks):
         trans_augmentation(image1, bbox1, image2, bboxes2, save_dir, name_stem)
 
 
-crop_height, crop_width = 256, 512
-number_bboxes = 5
-np.random.seed(3421)
-# in attach median displacement is about 21. This is about 2 frames.
-accepted_disp = 30
-dtime_limit = 4
-jitter_loc = 50
-jitter_scale = 10
-
-video_paths = Path("/home/fatemeh/Downloads/vids/all")
-track_paths = Path("/home/fatemeh/Downloads/vids/mot")
-main_dir = Path("/home/fatemeh/Downloads/data_al_v1")
-
-valid_vid_name = "406_cam_1"
-test_vid_name = "406_cam_2"
-vid_name_600 = [
-    "04_07_22_F_2_rect_valid",
-    "04_07_22_G_2_rect_valid",
-]
-
-# 1. generate images from video
-for video_path in video_paths.glob("*"):
+def generate_data_per_video(video_path: Path):
     video_name = video_path.stem
+
     stage = "train"
     if video_name == valid_vid_name:
         stage = "valid"
@@ -336,3 +317,64 @@ for video_path in video_paths.glob("*"):
         for image_path2, dtime in image_paths2_dtimes:
             # 3. generate data per image pair
             generate_data_per_image(save_dir, image_path1, image_path2, dtime, tracks)
+
+
+crop_height, crop_width = 256, 512
+number_bboxes = 5
+np.random.seed(3421)
+# in attach median displacement is about 21. This is about 2 frames.
+accepted_disp = 30
+dtime_limit = 4
+jitter_loc = 50
+jitter_scale = 10
+
+video_paths = Path("/home/fatemeh/Downloads/vids/all")
+track_paths = Path("/home/fatemeh/Downloads/vids/mot")
+main_dir = Path("/home/fatemeh/Downloads/data_al_v1")
+
+valid_vid_name = "406_cam_1"
+test_vid_name = "406_cam_2"
+vid_name_600 = [
+    "04_07_22_F_2_rect_valid",
+    "04_07_22_G_2_rect_valid",
+]
+
+
+"""
+# speed up the process (two other videos were being processed.)
+# Here is the processing times for different videos: 
+# 1:06, 1:06, 1:07, 1:08, 1:14, 1:15, 1:22, 1:26, 1:36, 2:11, 2:32, 3:00, 5:42
+paths = [p for p in video_paths.glob("*") if p.stem not in ["231_cam_2", "04_07_22_G_2_rect_valid"]]
+with multiprocessing.Pool(processes=13) as pool:
+    results = pool.map(generate_data_per_video, paths)
+"""
+
+
+"""
+# generate data for part of 04_07_22_G_2_rect_valid
+# 04_07_22_G_2_rect_valid stopped on the frame number 497. 
+# This part was very quick, few minutes. Previously 5 hours to generate data up to frame 497,
+# with single process 
+def generate_crops_for_next_image(image_path1):
+    print(image_path1)
+    image_paths2_dtimes = get_next_image_paths(image_path1, tracks)
+    if image_paths2_dtimes:
+        for image_path2, dtime in image_paths2_dtimes:
+            # 3. generate data per image pair
+            generate_data_per_image(save_dir, image_path1, image_path2, dtime, tracks)
+
+video_name = "04_07_22_G_2_rect_valid"
+stage = "train"
+image_dir = main_dir / f"{stage}/images"
+save_dir = image_dir.parent
+tracks = da.load_tracks_from_mot_format(track_paths / f"{video_name}.zip")
+
+image_paths1 = []
+for frame_number in range(497, 600):
+    image_path1 = image_dir/f"{video_name}_frame_{frame_number:06d}.jpg"
+    image_paths1.append(image_path1)
+
+
+with multiprocessing.Pool(processes=16) as pool:
+    results = pool.map(generate_crops_for_next_image, tqdm(image_paths1))
+"""

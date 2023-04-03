@@ -6,7 +6,8 @@
 [data]: `train/val=4092/400 images`. `imsize=540x960, 575x1024, 576x1024, 760x1352` </br>
 [description]: Ben generated data using Roboflow. The data consists of:
 `orig/train/val/test=594/4092/400/188 image`, which they are made from
-`orig/train/val/test=594/341/100/47 images`. The train is mosaic, valid and test are crops.</br>
+`orig/train/val/test=594/341/100/47 images`. The train is mosaic, valid and test are crops.
+The original image size is `1520x2704`</br>
 
 **data8_v1** </br>
 [data]: `train/val=5880/390 images`. `imsizes=1080x1920, 1220x2098`</br>
@@ -31,11 +32,15 @@
 [description]: training data of `data8_v2` with `6380` images is uploaded in Roboflow and rotation `[-15, 15]` and then mosaic approximatly 3 times more data is generated. The validation is the same as `data8_v2`. </br>
 NB. The data is here is copied not symbolic linked.
 
+
 ## Data for association learning
 
 **data_al_v1** </br>
-
- <!-- (#594 images: 2704 x 1520 orig) -> #4092/400 (1024 x 576 train)/(960 x 540 val) -->
+[data]: `train/valid/test=959,354/26,823/26,338 images, which is 75G/2,9G/2,8G of data.`. `imsizes=256x5121`</br>
+[description]: validation video: 406_cam_1, test vido: 406_cam_2 and the rest for trianing. <\br>
+[code]: `data_al_v1.py` <\br>
+NB. Generating data part is slow. I had to do multiprocessing per video. Multiprocessing per image resulted much more speed up.
+But it was only done for part of 04_07_22_G_2_rect_valid, which was previously failed.
 
 # Data Statistics
 
