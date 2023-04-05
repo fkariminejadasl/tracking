@@ -378,3 +378,11 @@ for frame_number in range(497, 600):
 with multiprocessing.Pool(processes=16) as pool:
     results = pool.map(generate_crops_for_next_image, tqdm(image_paths1))
 """
+
+"""
+cd ~/Downloads
+unzip crop_one.zip -d crop_test 2>&1 > /dev/null
+date +%H:%M;zip -r crop_one.zip overview 2>&1 > /dev/null ;date +%H:%M
+# on snellius
+date +%H:%M:%S; UNZIP_DISABLE_ZIPBOMB_DETECTION=TRUE unzip data_al_v1.zip 2>&1 > /dev/null ; date +H:%M:%S
+"""

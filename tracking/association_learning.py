@@ -7,6 +7,7 @@ import torch
 import torchvision
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
 
 seed = 1234
 np.random.seed(seed)
@@ -157,9 +158,18 @@ def write_info_in_tensorboard(writer, epoch, loss, accuracy, stage):
     writer.add_scalars("accuracy", acc_scalar_dict, epoch)
 
 
+import time
+
+
 def train_one_epoch(
     loader, model, criterion, device, epoch, no_epochs, writer, optimizer
 ):
+    data_len = len(loader.dataset)
+    batch_size = next(iter(loader))[-1].shape[0]
+    no_batches = int(np.ceil(data_len / batch_size))
+    print(f"train: number of batches: {no_batches:,}")
+    start_time = time.time()
+
     model.train()
     running_loss = 0
     running_corrects = 0
@@ -183,13 +193,15 @@ def train_one_epoch(
         running_corrects += corrects
         running_loss += loss.item()
 
-        batch_size = len(labels)
-        print(
-            f"train: epoch/total: {epoch}/{no_epochs}, total loss: {loss.item():.4f}, accuracy: {corrects * 100/batch_size:.2f}, no. correct: {corrects}, bs:{batch_size}"
-        )
+        if i % 100 == 0 and i != 0:
+            print(f"{i}, {time.time()-start_time:.1f}")
+            print(
+                f"train: current/total: {i+1}/{no_batches}, total loss: {loss.item():.4f}, accuracy: {corrects * 100/batch_size:.2f}, no. correct: {corrects}, bs:{batch_size}"
+            )
+            start_time = time.time()
 
     total_loss = running_loss / (i + 1)
-    total_accuracy = running_corrects / len(loader.dataset) * 100
+    total_accuracy = running_corrects / data_len * 100
     print(
         f"train: epoch/total: {epoch}/{no_epochs}, total loss: {total_loss:.4f}, accuracy: {total_accuracy:.2f}, no. correct: {running_corrects}, length data:{len(loader.dataset)}"
     )
@@ -198,6 +210,9 @@ def train_one_epoch(
 
 @torch.no_grad()
 def evaluate(loader, model, criterion, device, epoch, no_epochs, writer):
+    data_len = len(loader.dataset)
+    batch_size = next(iter(loader))[-1].shape[0]
+    no_batches = int(np.ceil(data_len / batch_size))
     model.eval()
     running_loss = 0
     running_corrects = 0
@@ -217,13 +232,12 @@ def evaluate(loader, model, criterion, device, epoch, no_epochs, writer):
         running_corrects += corrects
         running_loss += loss.item()
 
-        batch_size = len(labels)
-        print(
-            f"eval: epoch/total: {epoch}/{no_epochs}, total loss: {loss.item():.4f}, accuracy: {corrects * 100/batch_size:.2f}, no. correct: {corrects}, bs:{batch_size}"
-        )
+        # print(
+        #     f"eval: current/total: {i+1}/{no_batches}, total loss: {loss.item():.4f}, accuracy: {corrects * 100/batch_size:.2f}, no. correct: {corrects}, bs:{batch_size}"
+        # )
 
     total_loss = running_loss / (i + 1)
-    total_accuracy = running_corrects / len(loader.dataset) * 100
+    total_accuracy = running_corrects / data_len * 100
     print(
         f"eval: epoch/total: {epoch}/{no_epochs}, total loss: {total_loss:.4f}, accuracy: {total_accuracy:.2f}, no. correct: {running_corrects}, length data:{len(loader.dataset)}"
     )

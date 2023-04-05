@@ -24,13 +24,14 @@ The original image size is `1520x2704`</br>
 
 **data8_v2**
 [data]: `train/val=6380/484 images`. `imsizes=1080x1920, 1220x2098, 1520x2704` </br>
-[description]: Combine `data8_v1` and `orig` old data contains 594 images, where first 94 added to validation and the rest of 500 images to the training set. `imsizes=1080x1920, 1520x2704`</br>
+[description]: Combine `data8_v1` and `orig` old data contains 594 images, where first 94 added to validation and the rest of 500 images to the training set. `imsizes=1080x1920, 1520x2704`
+NB. Since the old data is used, they are symbolically linked.</br>
 [code]: `data_v2.py` </br>
 
 **data8_v3**
 [data]: `train/val=19112/484 images`. `imsizes=1080x1920, 1152x2048, 1190x2048, 1220x2098, 1520x2704` </br>
 [description]: training data of `data8_v2` with `6380` images is uploaded in Roboflow and rotation `[-15, 15]` and then mosaic approximatly 3 times more data is generated. The validation is the same as `data8_v2`. </br>
-NB. The data is here is copied not symbolic linked.
+NB. The data is here is copied so they are not symbolically linked.
 
 
 ## Data for association learning
