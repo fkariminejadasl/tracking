@@ -1,3 +1,4 @@
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -156,9 +157,6 @@ def write_info_in_tensorboard(writer, epoch, loss, accuracy, stage):
     acc_scalar_dict[stage] = accuracy
     writer.add_scalars("loss", loss_scalar_dict, epoch)
     writer.add_scalars("accuracy", acc_scalar_dict, epoch)
-
-
-import time
 
 
 def train_one_epoch(

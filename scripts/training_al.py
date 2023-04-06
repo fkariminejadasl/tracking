@@ -20,11 +20,10 @@ seed = 1234
 np.random.seed(seed)
 torch.manual_seed(seed)
 
-# image_dir = Path("/home/fatemeh/Downloads/test_data/crops")
 main_dir = Path("/home/fatemeh/Downloads/data_al_v1")
 save_path = Path("/home/fatemeh/Downloads/test_data")
-exp = 2  # sys.argv[1]
-no_epochs = 1  # int(sys.argv[2])
+exp = 3  # sys.argv[1]
+no_epochs = 100  # int(sys.argv[2])
 
 
 transform = torchvision.transforms.Compose(
@@ -35,12 +34,13 @@ transform = torchvision.transforms.Compose(
         ),
     ]
 )
-
+"""
 train_dataset = AssDataset(main_dir / "train/crops", transform=transform)
 eval_dataset = AssDataset(main_dir / "valid/crops", transform=transform)
 len_train, len_eval = len(train_dataset), len(eval_dataset)
 
 """
+image_dir = Path("/home/fatemeh/Downloads/test_data/crops")
 dataset = AssDataset(image_dir, transform=transform)
 len_dataset = len(dataset)
 len_train = int(len_dataset * 0.5)  # 0.8
@@ -48,7 +48,7 @@ len_eval = len_dataset - len_train
 indices = torch.randperm(len(dataset)).tolist()
 train_dataset = torch.utils.data.Subset(dataset, indices[:len_train])
 eval_dataset = torch.utils.data.Subset(dataset, indices[len_train:])
-"""
+
 
 train_loader = DataLoader(
     train_dataset, batch_size=48, shuffle=True, num_workers=1, drop_last=False
