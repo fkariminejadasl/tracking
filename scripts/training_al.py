@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import torchvision
 import tqdm
+import wandb
 from torch.utils import tensorboard
 from torch.utils.data import DataLoader
 
@@ -16,14 +17,16 @@ from tracking.association_learning import (
     train_one_epoch,
 )
 
+wandb.init(project="uncategorized")
+
 seed = 1234
 np.random.seed(seed)
 torch.manual_seed(seed)
 
 main_dir = Path("/home/fatemeh/Downloads/data_al_v1")
 save_path = Path("/home/fatemeh/Downloads/test_data")
-exp = 3  # sys.argv[1]
-no_epochs = 100  # int(sys.argv[2])
+exp = 2  # sys.argv[1]
+no_epochs = 1  # int(sys.argv[2])
 
 
 transform = torchvision.transforms.Compose(
@@ -34,7 +37,7 @@ transform = torchvision.transforms.Compose(
         ),
     ]
 )
-"""
+
 train_dataset = AssDataset(main_dir / "train/crops", transform=transform)
 eval_dataset = AssDataset(main_dir / "valid/crops", transform=transform)
 len_train, len_eval = len(train_dataset), len(eval_dataset)
@@ -48,10 +51,10 @@ len_eval = len_dataset - len_train
 indices = torch.randperm(len(dataset)).tolist()
 train_dataset = torch.utils.data.Subset(dataset, indices[:len_train])
 eval_dataset = torch.utils.data.Subset(dataset, indices[len_train:])
-
+"""
 
 train_loader = DataLoader(
-    train_dataset, batch_size=48, shuffle=True, num_workers=1, drop_last=False
+    train_dataset, batch_size=48, shuffle=True, num_workers=3, drop_last=False
 )
 eval_loader = DataLoader(
     eval_dataset, batch_size=48, shuffle=False, num_workers=1, drop_last=False
