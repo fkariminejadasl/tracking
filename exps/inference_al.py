@@ -31,22 +31,29 @@ def zero_padding_images(image, crop_w, crop_h):
     return image
 
 VISUALIZE = True
-step = 8
-frame_number = 64
-time = 1
-frame_number2 = frame_number + step * time
 main_dir = Path("/home/fatemeh/Downloads/fish/data8_v3/train")
+video_paths = Path("/home/fatemeh/Downloads/fish/vids/all")
+track_paths = Path("/home/fatemeh/Downloads/fish/vids/mot")
 vid_name = "406_cam_1"
-im = cv2.imread(f"{main_dir}/images/{vid_name}_frame_{frame_number:06d}.jpg")[:,:,::-1]
-im2 = cv2.imread(f"{main_dir}/images/{vid_name}_frame_{frame_number2:06d}.jpg")[:,:,::-1]
-dets = da.get_detections_array(main_dir/f"labels/{vid_name}_frame_{frame_number:06d}.txt", im.shape[1], im.shape[0])
-dets2 = da.get_detections_array(main_dir/f"labels/{vid_name}_frame_{frame_number2:06d}.txt", im.shape[1], im.shape[0])
+step = 8
 
 device = 'cuda'
 model = al.AssociationNet(512, 5).to(device)
 model.load_state_dict(torch.load("/home/fatemeh/Downloads/result_snellius/al/1_best.pth")["model"])
 transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor(),torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),])
 crop_w, crop_h = 512, 256
+
+frame_number = 2344# 64, 2318, 2338
+time = 1
+frame_number2 = frame_number + step * time
+im = cv2.imread(f"{main_dir}/images/{vid_name}_frame_{frame_number:06d}.jpg")[:,:,::-1]
+im2 = cv2.imread(f"{main_dir}/images/{vid_name}_frame_{frame_number2:06d}.jpg")[:,:,::-1]
+dets = da.get_detections_array(main_dir/f"labels/{vid_name}_frame_{frame_number:06d}.txt", im.shape[1], im.shape[0])
+dets2 = da.get_detections_array(main_dir/f"labels/{vid_name}_frame_{frame_number2:06d}.txt", im.shape[1], im.shape[0])
+# tracks = da.load_tracks_from_mot_format(track_paths / f"{vid_name}.zip")
+# dets = tracks[tracks[:,1]==frame_number-1].copy()
+# dets2 = tracks[tracks[:,1]==frame_number2-1].copy()
+
 kdt = KDTree(dets2[:, 7:9])
 _, inds = kdt.query(dets2[:,7:9], k=5)
 
@@ -54,22 +61,16 @@ if VISUALIZE:
     visualize.plot_detections_in_image(da.make_dets_from_array(dets), im[...,::-1]);plt.show(block=False)
     visualize.plot_detections_in_image(da.make_dets_from_array(dets2), im2[...,::-1]);plt.show(block=False)
     print(inds)
+    # visualize.plot_detections_in_image(dets[:,[0,3,4,5,6]], im[...,::-1]);plt.show(block=False)
+    # visualize.plot_detections_in_image(dets2[:,[0,3,4,5,6]], im2[...,::-1]);plt.show(block=False)
 
-# for ind in inds:
-#     for time in range(-4,5):
-# vid_name = "04_07_22_F_2_rect_valid";frame_number=349; frame_number2=350;step=1
-ind = [16, 11, 15, 18, 1]; time = 1 # small fish on top of large fish       80/100 {-4: 1, -3: 1, -2: 1, -1: 1, 0: 1, 1: 1, 2: 1, 3: 1, 4: 1}
-ind = [11, 16, 18, 15, 10]; time = 1 # big fish on behind the small fish    80/100 {-4: 1, -3: 1, -2: 1, -1: 1, 0: 1, 1: 1, 2: 1, 3: 1, 4: 1}
-ind = [10, 18, 11, 16, 15]; time = 1 # comouflage                           97/100
-ind = [ 7,  6,  8,  9, 19]; time = 1  # similar fish around                 67/100
-ind = [ 5,  4, 19,  3, 20]; time = 1  # similar fish around + comouflage    85/100 only one with jitter True is good and not the default
+# # vid_name = "04_07_22_F_2_rect_valid";frame_number=349; frame_number2=350;step=1
+# ind = [16, 11, 15, 18, 1]; time = 1 # small fish on top of large fish       80/100 {-4: 1, -3: 1, -2: 1, -1: 1, 0: 1, 1: 1, 2: 1, 3: 1, 4: 1}
+# ind = [11, 16, 18, 15, 10]; time = 1 # big fish on behind the small fish    80/100 {-4: 1, -3: 1, -2: 1, -1: 1, 0: 1, 1: 1, 2: 1, 3: 1, 4: 1}
+# ind = [10, 18, 11, 16, 15]; time = 1 # comouflage                           97/100
+# ind = [ 7,  6,  8,  9, 19]; time = 1  # similar fish around                 67/100
+# ind = [ 5,  4, 19,  3, 20]; time = 1  # similar fish around + comouflage    85/100 only one with jitter True is good and not the default
 
-
-frame_number2 = frame_number + step * time
-im2 = cv2.imread(f"{main_dir}/images/{vid_name}_frame_{frame_number2:06d}.jpg")[:,:,::-1]
-dets2 = da.get_detections_array(main_dir/f"labels/{vid_name}_frame_{frame_number2:06d}.txt", im.shape[1], im.shape[0])
-
-# ind = [7, 1, 3, 4, 2]
 def temporal_performance(jitter_x = 45, jitter_y = 65, jitter = False):
     count = dict(zip(np.arange(-4,5),np.arange(-4,5)*0))
     for time in range(-4,5):
@@ -107,15 +108,18 @@ def temporal_performance(jitter_x = 45, jitter_y = 65, jitter = False):
     visualize.plot_detections_in_image(detc, imc[...,::-1]);plt.show(block=False)
     visualize.plot_detections_in_image(detsc2, imc2[...,::-1]);plt.show(block=False)
 
-def spatial_performance():
+def spatial_performance(VISUALIZE=False):
     count = 0
+    jitters = []
     for i in range(100):
         bbox1 = deepcopy(dets[ind[0], 2:7][None,:])
+        # bbox1 = deepcopy(dets[ind[0], [0,3,4,5,6]][None,:])
         jitter_x, jitter_y = np.random.normal(50, 10, 2)
         crop_x, crop_y = max(0, int(bbox1[0, 1]+jitter_x-crop_w/2)), max(0, int(bbox1[0, 2]+jitter_y-crop_h/2))
         # crop_x, crop_y = max(0, int(bbox1[0, 1]-crop_w/2)), max(0, int(bbox1[0, 2]-crop_h/2))
         bbox1 = change_center_bboxs(bbox1, crop_x, crop_y)
         bboxes2 = deepcopy(dets2[ind, 2:7])
+        # bboxes2 = deepcopy(dets2[ind, [0,3,4,5,6]])
         bboxes2 = change_center_bboxs(bboxes2, crop_x, crop_y) # enter
         detc = bbox1.copy()
         detsc2 = bboxes2.copy() # enter
@@ -135,11 +139,22 @@ def spatial_performance():
         argmax = torch.argmax(output, axis=1).item()
         if argmax == 0:
             count += 1
+            jitters.append([jitter_x, jitter_y, 1, ind[0]])
+        else:
+            jitters.append([jitter_x, jitter_y, 0, ind[0]])
         print(frame_number2, ind, argmax, list(output.detach().cpu().numpy()[0]))
     print(count)
-    visualize.plot_detections_in_image(detc, imc[...,::-1]);plt.show(block=False)
-    visualize.plot_detections_in_image(detsc2, imc2[...,::-1]);plt.show(block=False)
+    if VISUALIZE:
+        visualize.plot_detections_in_image(detc, imc[...,::-1]);plt.show(block=False)
+        visualize.plot_detections_in_image(detsc2, imc2[...,::-1]);plt.show(block=False)
+    return count, np.array(jitters).astype(np.float32)
 
+# plt.plot(jitters[jitters[:,2]==0, 0], jitters[jitters[:,2]==0, 1], 'bo');plt.plot(jitters[jitters[:,2]==1, 0], jitters[jitters[:,2]==1, 1], 'r*');plt.show(block=False)
+
+# fish_jitters = np.empty((0, 4), dtype=np.float32)
+# for ind in inds:
+#     count, jitters = spatial_performance()
+#     fish_jitters = np.concatenate((jitters, fish_jitters),axis=0)
 
 """
 im = cv2.imread("/home/fatemeh/Downloads/fish/data8_v3/train/images/406_cam_1_frame_000064.jpg")[:,:,::-1]
