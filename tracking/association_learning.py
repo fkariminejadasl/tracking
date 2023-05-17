@@ -274,7 +274,7 @@ There is no location or time encoding. Image encode locations and time implicitl
 im = torch.zeros((1, 3, 512, 256), dtype=torch.float32)
 bbox = torch.zeros((1, 1, 4), dtype=torch.float32)
 bboxs = torch.zeros((1, 5, 4), dtype=torch.float32)
-time = torch.tensor([0])
+time = torch.tensor([0]).to(torch.float32)
 net = AssociationNet(512, 5)
 net(im, bbox, im, bboxs, time)
 """

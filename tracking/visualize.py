@@ -35,23 +35,96 @@ def save_video_as_images(
     video_file: Path,
     save_path: Path,
     step: int = 1,
-    start_frame: int = 0,
+    start_frame=None,
     end_frame=None,
     format: str = "06d",
 ):
     vc = cv2.VideoCapture(video_file.as_posix())
     assert vc.isOpened()
     height, width, total_no_frames, fps = get_video_parameters(vc)
+    if start_frame is None:
+        start_frame = 0
+    if end_frame is None:
+        end_frame = total_no_frames - 1
+
     save_path.mkdir(parents=True, exist_ok=True)
 
     vc.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-    if end_frame is None:
-        end_frame = total_no_frames - 1
-    for frame_number in tqdm(range(start_frame, end_frame + 1)):
+    for frame_number in tqdm(range(start_frame, end_frame + 1, 1)):
         _, frame = vc.read()
         if frame_number % step == 0:
             name = f"{video_file.stem}_frame_{frame_number:{format}}.jpg"
             cv2.imwrite((save_path / f"{name}").as_posix(), frame)
+    vc.release()
+
+
+def save_video_with_tracks_as_images(
+    tracks: np.ndarray,
+    video_file: Path,
+    save_path: Path,
+    step: int = 1,
+    start_frame=None,
+    end_frame=None,
+    format: str = "06d",
+):
+    vc = cv2.VideoCapture(video_file.as_posix())
+    assert vc.isOpened()
+    height, width, total_no_frames, fps = get_video_parameters(vc)
+    if start_frame is None:
+        start_frame = 0
+    if end_frame is None:
+        end_frame = total_no_frames - 1
+
+    tracks_ids = np.unique(tracks[:, 0])
+    colors = np.random.randint(0, 255, size=(len(tracks_ids), 3))
+    tracks_ids_to_inds = {track_id: i for i, track_id in enumerate(tracks_ids)}
+    show_det_id = False
+    black = True
+
+    save_path.mkdir(parents=True, exist_ok=True)
+
+    vc.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    for frame_number in tqdm(range(start_frame, end_frame + 1, 1)):
+        _, frame = vc.read()
+        if frame_number % step == 0:
+            frame_tracks = tracks[tracks[:, 1] == frame_number]
+            if frame_tracks.size == 0:
+                continue
+            for det in frame_tracks:
+                det_id = det[2]
+                track_id = det[0]
+                color = colors[tracks_ids_to_inds[track_id]]
+                color = tuple(map(int, color))
+                color = (color[2], color[1], color[0])
+
+                x_tl, y_tl, x_br, y_br = det[3:7]
+                _plot_cv2_bbox(
+                    frame,
+                    x_tl,
+                    y_tl,
+                    x_br,
+                    y_br,
+                    color,
+                    show_det_id,
+                    track_id,
+                    det_id,
+                    black,
+                )
+
+            cv2.putText(
+                frame,
+                f"{frame_number}",
+                (15, 25),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1,  # font scale
+                (0, 0, 0),  # color
+                1,  # Thinckness
+                2,  # line type
+            )
+
+            name = f"{video_file.stem}_frame_{frame_number:{format}}.jpg"
+            cv2.imwrite((save_path / f"{name}").as_posix(), frame)
+
     vc.release()
 
 
@@ -248,13 +321,16 @@ def plot_tracks_array_in_video(
     output_video_file,
     tracks: np.ndarray,
     vc,
-    top_left=Point(1300, 700),
+    top_left=Point(0, 0),
     out_width=900,
     out_height=500,
     total_no_frames: int = 0,
     fps: int = None,
     show_det_id=False,
     black=True,
+    start_frame=None,
+    end_frame=None,
+    step=1,
 ):
     if total_no_frames != 0:
         out, height, width, _ = _create_output_video(
@@ -269,7 +345,11 @@ def plot_tracks_array_in_video(
     colors = np.random.randint(0, 255, size=(len(tracks_ids), 3))
     tracks_ids_to_inds = {track_id: i for i, track_id in enumerate(tracks_ids)}
 
-    for frame_number in tqdm(range(total_no_frames)):
+    if start_frame is None:
+        start_frame = 0
+    if end_frame is None:
+        end_frame = total_no_frames - 1
+    for frame_number in tqdm(range(start_frame, end_frame + step, step)):
         _, frame = vc.read()
         frame_tracks = tracks[tracks[:, 1] == frame_number]
         if frame_tracks.size == 0:

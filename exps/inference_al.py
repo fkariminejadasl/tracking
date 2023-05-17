@@ -7,6 +7,8 @@ import numpy as np
 import matplotlib.pylab as plt
 from sklearn.neighbors import KDTree
 from tracking import association_learning as al, visualize, data_association as da
+import time as ttime
+from tqdm import tqdm
 
 def normalize_bboxs(bboxs, crop_w, crop_h):
     assert bboxs.shape[1] == 5
@@ -30,12 +32,21 @@ def zero_padding_images(image, crop_w, crop_h):
     image = np.pad(image, ((0, pad_y), (0, pad_x), (0,0)))
     return image
 
-VISUALIZE = True
-main_dir = Path("/home/fatemeh/Downloads/fish/data8_v3/train")
-video_paths = Path("/home/fatemeh/Downloads/fish/vids/all")
-track_paths = Path("/home/fatemeh/Downloads/fish/vids/mot")
-vid_name = "406_cam_1"
-step = 8
+def save_overview_images_dets(save_dir: Path, name_stem: str, image1, bbox1, image2, bboxs2, crop_h):
+    assert bbox1.shape[1] == 5
+    assert bboxs2.shape[1] == 5
+    overview_dir = Path(save_dir / "overview")
+    if not overview_dir.exists():
+        overview_dir.mkdir(parents=True, exist_ok=True)
+    bboxs2_shift = bboxs2.copy()
+    bboxs2_shift[:, [2, 4]] = bboxs2[:, [2, 4]] + crop_h
+    bboxs12 = np.concatenate((bbox1, bboxs2_shift), axis=0)
+    image12 = np.concatenate((image1, image2), axis=0)
+    visualize.plot_detections_in_image(bboxs12, image12)
+    fig = plt.gcf()
+    fig.set_figwidth(4.8)
+    fig.savefig(overview_dir / f"{name_stem}.jpg")
+    plt.close()
 
 device = 'cuda'
 model = al.AssociationNet(512, 5).to(device)
@@ -43,40 +54,12 @@ model.load_state_dict(torch.load("/home/fatemeh/Downloads/result_snellius/al/1_b
 transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor(),torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),])
 crop_w, crop_h = 512, 256
 
-frame_number = 2344# 64, 2318, 2338
-time = 1
-frame_number2 = frame_number + step * time
-im = cv2.imread(f"{main_dir}/images/{vid_name}_frame_{frame_number:06d}.jpg")[:,:,::-1]
-im2 = cv2.imread(f"{main_dir}/images/{vid_name}_frame_{frame_number2:06d}.jpg")[:,:,::-1]
-dets = da.get_detections_array(main_dir/f"labels/{vid_name}_frame_{frame_number:06d}.txt", im.shape[1], im.shape[0])
-dets2 = da.get_detections_array(main_dir/f"labels/{vid_name}_frame_{frame_number2:06d}.txt", im.shape[1], im.shape[0])
-# tracks = da.load_tracks_from_mot_format(track_paths / f"{vid_name}.zip")
-# dets = tracks[tracks[:,1]==frame_number-1].copy()
-# dets2 = tracks[tracks[:,1]==frame_number2-1].copy()
-
-kdt = KDTree(dets2[:, 7:9])
-_, inds = kdt.query(dets2[:,7:9], k=5)
-
-if VISUALIZE:
-    visualize.plot_detections_in_image(da.make_dets_from_array(dets), im[...,::-1]);plt.show(block=False)
-    visualize.plot_detections_in_image(da.make_dets_from_array(dets2), im2[...,::-1]);plt.show(block=False)
-    print(inds)
-    # visualize.plot_detections_in_image(dets[:,[0,3,4,5,6]], im[...,::-1]);plt.show(block=False)
-    # visualize.plot_detections_in_image(dets2[:,[0,3,4,5,6]], im2[...,::-1]);plt.show(block=False)
-
-# # vid_name = "04_07_22_F_2_rect_valid";frame_number=349; frame_number2=350;step=1
-# ind = [16, 11, 15, 18, 1]; time = 1 # small fish on top of large fish       80/100 {-4: 1, -3: 1, -2: 1, -1: 1, 0: 1, 1: 1, 2: 1, 3: 1, 4: 1}
-# ind = [11, 16, 18, 15, 10]; time = 1 # big fish on behind the small fish    80/100 {-4: 1, -3: 1, -2: 1, -1: 1, 0: 1, 1: 1, 2: 1, 3: 1, 4: 1}
-# ind = [10, 18, 11, 16, 15]; time = 1 # comouflage                           97/100
-# ind = [ 7,  6,  8,  9, 19]; time = 1  # similar fish around                 67/100
-# ind = [ 5,  4, 19,  3, 20]; time = 1  # similar fish around + comouflage    85/100 only one with jitter True is good and not the default
-
 def temporal_performance(jitter_x = 45, jitter_y = 65, jitter = False):
     count = dict(zip(np.arange(-4,5),np.arange(-4,5)*0))
     for time in range(-4,5):
         frame_number2 = frame_number + step * time
-        im2 = cv2.imread(f"{main_dir}/images/{vid_name}_frame_{frame_number2:06d}.jpg")[:,:,::-1]
-        dets2 = da.get_detections_array(main_dir/f"labels/{vid_name}_frame_{frame_number2:06d}.txt", im.shape[1], im.shape[0]) # enter
+        im2 = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number2:06d}.jpg")[:,:,::-1]
+        dets2 = da.get_detections_array(image_dir/f"labels/{vid_name}_frame_{frame_number2:06d}.txt", im.shape[1], im.shape[0]) # enter
         bbox1 = deepcopy(dets[ind[0], 2:7][None,:])
         if jitter:
             jitter_x, jitter_y = np.random.normal(50, 10, 2)
@@ -108,18 +91,25 @@ def temporal_performance(jitter_x = 45, jitter_y = 65, jitter = False):
     visualize.plot_detections_in_image(detc, imc[...,::-1]);plt.show(block=False)
     visualize.plot_detections_in_image(detsc2, imc2[...,::-1]);plt.show(block=False)
 
-def spatial_performance(VISUALIZE=False):
+def spatial_performance(query_ind, ind, im, dets, im2, dets2, time, frame_number, frame_number2, VISUALIZE=False, overview_dir=None, name_stem=""):
+    #crop_w, crop_h, device, transform, model, VISUALIZE=False):
+    query_track_id = dets[query_ind, 0]
+    track_ids = dets2[ind, 0]
+    if query_track_id in track_ids:
+        label = np.where(track_ids==query_track_id)[0][0]
+    else:
+        return -1, np.empty((0, 4), dtype=np.float32)
+
     count = 0
     jitters = []
-    for i in range(100):
-        bbox1 = deepcopy(dets[ind[0], 2:7][None,:])
-        # bbox1 = deepcopy(dets[ind[0], [0,3,4,5,6]][None,:])
+    for i in range(100): #100
+        # bbox1 = deepcopy(dets[query_ind, 2:7][None,:])
+        bbox1 = deepcopy(dets[query_ind, [0,3,4,5,6]][None,:])
         jitter_x, jitter_y = np.random.normal(50, 10, 2)
         crop_x, crop_y = max(0, int(bbox1[0, 1]+jitter_x-crop_w/2)), max(0, int(bbox1[0, 2]+jitter_y-crop_h/2))
-        # crop_x, crop_y = max(0, int(bbox1[0, 1]-crop_w/2)), max(0, int(bbox1[0, 2]-crop_h/2))
         bbox1 = change_center_bboxs(bbox1, crop_x, crop_y)
-        bboxes2 = deepcopy(dets2[ind, 2:7])
-        # bboxes2 = deepcopy(dets2[ind, [0,3,4,5,6]])
+        # bboxes2 = deepcopy(dets2[ind, 2:7])
+        bboxes2 = deepcopy(dets2[ind][:,[0,3,4,5,6]])
         bboxes2 = change_center_bboxs(bboxes2, crop_x, crop_y) # enter
         detc = bbox1.copy()
         detsc2 = bboxes2.copy() # enter
@@ -137,24 +127,343 @@ def spatial_performance(VISUALIZE=False):
         imt2 = transform(Image.fromarray(imc2)).unsqueeze(0).to(device)
         output = model(imt, bbox1, imt2, bboxes2, time_emb)
         argmax = torch.argmax(output, axis=1).item()
-        if argmax == 0:
+        if argmax == label:
             count += 1
             jitters.append([jitter_x, jitter_y, 1, ind[0]])
         else:
             jitters.append([jitter_x, jitter_y, 0, ind[0]])
-        print(frame_number2, ind, argmax, list(output.detach().cpu().numpy()[0]))
-    print(count)
+            # if not overview_dir:
+            #     save_overview_images_dets(overview_dir, name_stem, imc, detc, imc2, detsc2, crop_h)
+        print(frame_number, frame_number2, argmax, label, query_ind, ind, query_track_id, track_ids, list(output.detach().cpu().numpy()[0]))
+    # print(count)
     if VISUALIZE:
         visualize.plot_detections_in_image(detc, imc[...,::-1]);plt.show(block=False)
         visualize.plot_detections_in_image(detsc2, imc2[...,::-1]);plt.show(block=False)
     return count, np.array(jitters).astype(np.float32)
 
-# plt.plot(jitters[jitters[:,2]==0, 0], jitters[jitters[:,2]==0, 1], 'bo');plt.plot(jitters[jitters[:,2]==1, 0], jitters[jitters[:,2]==1, 1], 'r*');plt.show(block=False)
+'''
+# analysis 3 to save bad results
+video_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/vids")
+track_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/mots")
+image_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/images")
+overview_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/overview")
+
+vid_names = []
+results = []
+with open("/home/fatemeh/Downloads/all_100_jitters.txt", 'r') as rfile:
+    rfile.readline()
+    for row in rfile:
+        items = row.split("\n")[0].split(',')
+        vid_names.append(items[0])
+        frame_number = int(items[1])
+        frame_number2 = int(items[2])
+        time = int(items[3])
+        track_id = int(items[4])
+        count = int(items[5])
+        query_ind = int(items[6])
+        ind = [int(i) for i in items[7:]]
+        results.append([frame_number, frame_number2, time, track_id, count, query_ind, *ind])
+results = np.array(results)
+
+inds = np.where(results[:,4]==0)[0]
+vid_name = '247_cam12'
+frames_tracks = np.array([(results[ind,0], results[ind,3]) for ind in inds if vid_names[ind]==vid_name])
+tracks = da.load_tracks_from_mot_format(track_dir / f"{vid_name}.zip")
+
+for ind in inds:
+    if vid_names[ind] == vid_name:
+        frame_number, frame_number2, query_track_id, count = results[ind,0], results[ind,1], results[ind,3], results[ind,4]
+        query_ind, other_inds = results[ind,5], results[ind,6:]
+        im = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number:06d}.jpg")[:,:,::-1]
+        im2 = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number2:06d}.jpg")[:,:,::-1]
+        dets = tracks[tracks[:,1]==frame_number].copy()
+        dets2 = tracks[tracks[:,1]==frame_number2].copy()
+        name_stem = f"{vid_name}_{frame_number}_{query_track_id}_{query_ind},{','.join([str(i) for i in ind])}" 
+        save_overview_images_dets(overview_dir, name_stem, imc, detc, imc2, detsc2, crop_h)
+'''
+# plt.figure()
+# x_y_counts = []
+# for ind in inds:
+#     if vid_names[ind] == vid_name:
+#         frame_number, frame_number2, query_track_id, count = results[ind,0], results[ind,1], results[ind,3], results[ind,4]
+#         query_ind, other_inds = results[ind,5], results[ind,6:]
+#         xtl, ytl, xbr, ybr, _, _, w, h = tracks[(tracks[:,0]==query_track_id)&(tracks[:,1]==frame_number)][0,3:]
+#         x_y_counts.append([xtl, ytl, xbr, ybr, w, h, count])
+"""
+VISUALIZE = False
+video_dir = Path("/home/fatemeh/Downloads/fish/vids/all")
+track_dir = Path("/home/fatemeh/Downloads/fish/vids/mot")
+image_dir = Path("/home/fatemeh/Downloads/fish/data8_v3/train/images")
+vid_name = "406_cam_1"
+step = 8
+tracks = da.load_tracks_from_mot_format(track_dir / f"{vid_name}.zip")
+
+
+frame_number = 2344# 64, 2318, 2338
+time = 1
+frame_number2 = frame_number + step * time
+im = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number:06d}.jpg")[:,:,::-1]
+im2 = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number2:06d}.jpg")[:,:,::-1]
+dets = tracks[tracks[:,1]==frame_number].copy()
+dets2 = tracks[tracks[:,1]==frame_number2].copy()
+
+kdt = KDTree(dets2[:, 7:9])
+_, inds = kdt.query(dets2[:,7:9], k=5)
+
+if VISUALIZE:
+    print(inds)
+    visualize.plot_detections_in_image(dets[:,[0,3,4,5,6]], im[...,::-1]);plt.show(block=False)
+    visualize.plot_detections_in_image(dets2[:,[0,3,4,5,6]], im2[...,::-1]);plt.show(block=False)
+    
+# # vid_name = "04_07_22_F_2_rect_valid";frame_number=349; frame_number2=350;step=1
+# ind = [16, 11, 15, 18, 1]; time = 1 # small fish on top of large fish       80/100 {-4: 1, -3: 1, -2: 1, -1: 1, 0: 1, 1: 1, 2: 1, 3: 1, 4: 1}
+# ind = [11, 16, 18, 15, 10]; time = 1 # big fish on behind the small fish    80/100 {-4: 1, -3: 1, -2: 1, -1: 1, 0: 1, 1: 1, 2: 1, 3: 1, 4: 1}
+# ind = [10, 18, 11, 16, 15]; time = 1 # comouflage                           97/100
+# ind = [ 7,  6,  8,  9, 19]; time = 1  # similar fish around                 67/100
+# ind = [ 5,  4, 19,  3, 20]; time = 1  # similar fish around + comouflage    85/100 only one with jitter True is good and not the default
+
+# plt.figure();plt.plot(jitters[jitters[:,2]==0, 0], jitters[jitters[:,2]==0, 1], 'bo');plt.plot(jitters[jitters[:,2]==1, 0], jitters[jitters[:,2]==1, 1], 'r*');plt.show(block=False)
 
 # fish_jitters = np.empty((0, 4), dtype=np.float32)
 # for ind in inds:
 #     count, jitters = spatial_performance()
 #     fish_jitters = np.concatenate((jitters, fish_jitters),axis=0)
+
+
+### analyses
+vid_names = []
+results = []
+with open("/home/fatemeh/Downloads/all_100_jitters.txt", 'r') as rfile:
+    rfile.readline()
+    for row in rfile:
+        items = row.split("\n")[0].split(',')
+        vid_names.append(items[0])
+        frame_number = int(items[1])
+        frame_number2 = int(items[2])
+        time = int(items[3])
+        track_id = int(items[4])
+        count = int(items[5])
+        query_ind = int(items[6])
+        ind = [int(i) for i in items[7:]]
+        results.append([frame_number, frame_number2, time, track_id, count, query_ind, *ind])
+results = np.array(results)
+
+# 1. histogram of the jittering counts
+plt.figure();histbins = plt.hist(results[:,4],bins=range(101));plt.title("histogram of the jitter counts");plt.show(block=False)
+sum(results[:,4]>60)/len(results)
+np.concatenate((np.int64(histbins[1])[1:-3][:, None],np.int64(histbins[0])[1:-2][:, None]), axis=1)
+
+# 2. zero-counts and not detection
+inds = np.where(results[:,4]==0)[0]
+vid_names_uniq_zero = {vid_names[ind] for ind in inds}
+hist_zeros = dict(zip(vid_names_uniq_zero, len(vid_names_uniq_zero)*[0]))
+for vid_name in vid_names_uniq_zero:
+    for ind in inds: 
+        if vid_names[ind]==vid_name:
+            hist_zeros[vid_name] += 1
+            print((vid_names[ind], results[ind,0], results[ind,3]))
+dict(sorted(hist_zeros.items(), key=lambda x:x[1]))
+
+vid_name = '247_cam12'
+frames_tracks = np.array([(results[ind,0], results[ind,3]) for ind in inds if vid_names[ind]==vid_name])
+tracks = da.load_tracks_from_mot_format(track_dir / f"{vid_name}.zip")
+
+frames_tracks[np.argsort(frames_tracks[:,1])]
+
+tracks[(tracks[:,0]==59)&(tracks[:,1]==248)]
+
+[(vid_names[ind], results[ind,0], results[ind,3]) for ind in inds if vid_names[ind]=='247_cam12']
+ind = [ind for ind in inds if (vid_names[ind]=='378_cam12') and (results[ind,0]==208) and (results[ind,3]==13)][0] #31719 
+
+
+import inference_al as b
+video_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/vids")
+track_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/mots")
+image_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/images")
+overview_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/overview")
+vid_name = vid_names[ind]
+frame_number, frame_number2 = results[ind,0], results[ind,1]
+tracks = da.load_tracks_from_mot_format(track_dir / f"{vid_name}.zip")
+im = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number:06d}.jpg")[:,:,::-1]
+im2 = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number2:06d}.jpg")[:,:,::-1]
+dets = tracks[tracks[:,1]==frame_number].copy()
+dets2 = tracks[tracks[:,1]==frame_number2].copy()
+count, jitters = b.spatial_performance(results[ind,5], results[ind,6:], im, dets, im2, dets2, 1, frame_number, frame_number2, True)
+
+>>> ind = [4,3,2,5,1]
+>>> frame_number, frame_number2, time, track_id = 256,264,1,4
+>>> im = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number:06d}.jpg")[:,:,::-1]
+>>> im2 = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number2:06d}.jpg")[:,:,::-1]
+>>> dets = tracks[tracks[:,1]==frame_number].copy()
+>>> dets2 = tracks[tracks[:,1]==frame_number2].copy()
+>>> visualize.plot_detections_in_image(dets[:,[0,3,4,5,6]], im[...,::-1]);plt.show(block=False)
+>>> count, jitters = spatial_performance(ind, im, dets, im2, dets2, time, frame_number, frame_number2, True)
+>>> dets2[ind, 0]
+>>> dets[ind[0], 0]
+
+
+
+with open("/home/fatemeh/Downloads/tmp.txt", 'w') as wfile:
+    wfile.write(f"vid_name, frame_number, frame_number2, time, track_id, correct perc, ind\n")
+    for ind in inds:
+        count, jitters = spatial_performance(ind, im, dets, im2, dets2, time, frame_number, frame_number2)
+        if count < 60:
+            wfile.write(f"{vid_name},{frame_number},{frame_number2},{time},{dets[ind[0],0]},{count},{','.join([str(i) for i in ind])}\n")
+
+import time as ttime
+start_time = ttime.time()
+frame_number = 2344# 64, 2318, 2338
+im = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number:06d}.jpg")[:,:,::-1]
+dets = tracks[tracks[:,1]==frame_number].copy()
+kdt = KDTree(dets[:, 7:9])
+_, inds = kdt.query(dets[:,7:9], k=5)
+with open("/home/fatemeh/Downloads/tmp.txt", 'w') as wfile:
+    wfile.write(f"vid_name, frame_number, frame_number2, time, track_id, correct perc, ind\n")
+    for time in range(-4, 5):
+        frame_number2 = frame_number + step * time
+        im2 = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number2:06d}.jpg")[:,:,::-1]
+        dets2 = tracks[tracks[:,1]==frame_number2].copy()
+        for ind in inds: # [[3,2,4,5,1]]
+            count, jitters = spatial_performance(ind, im, dets, im2, dets2, time, frame_number, frame_number2)
+            if count < 60:
+                wfile.write(f"{vid_name},{frame_number},{frame_number2},{time},{dets[ind[0],0]},{count},{','.join([str(i) for i in ind])}\n")
+end_time = ttime.time()
+print(f"total time: {int(end_time - start_time)}")
+
+                
+
+start_time = ttime.time()
+time = 1
+with open("/home/fatemeh/Downloads/tmp.txt", 'w') as wfile:
+    wfile.write(f"vid_name, frame_number, frame_number2, time, track_id, correct perc, ind\n")
+    for frame_number in range(0, 3118, 32):
+        frame_number2 = frame_number + step * time
+        im = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number:06d}.jpg")[:,:,::-1]
+        im2 = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number2:06d}.jpg")[:,:,::-1]
+        dets = tracks[tracks[:,1]==frame_number].copy()
+        dets2 = tracks[tracks[:,1]==frame_number2].copy()
+        kdt = KDTree(dets[:, 7:9])
+        _, inds = kdt.query(dets[:,7:9], k=5)
+        for ind in inds:
+            count, jitters = spatial_performance(ind, im, dets, im2, dets2, time, frame_number, frame_number2)
+            wfile.write(f"{vid_name},{frame_number},{frame_number2},{time},{dets[ind[0],0]},{count},{','.join([str(i) for i in ind])}\n")
+end_time = ttime.time()
+print(f"total time: {int(end_time - start_time)}")
+
+
+visualize.save_video_as_images(video_file, save_path, 32)
+
+for frame_number in range(0,3112,512):
+        im = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number:06d}.jpg")[:,:,::-1]
+        dets = tracks[tracks[:,1]==frame_number].copy()
+        visualize.plot_detections_in_image(dets[:,[0,3,4,5,6]], im[...,::-1]);plt.show(block=False)
+
+for frame_number in range(2344 - 8 * 4,2344 + 8 * 5, 8):
+        im = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number:06d}.jpg")[:,:,::-1]
+        dets = tracks[tracks[:,1]==frame_number].copy()
+        visualize.plot_detections_in_image(dets[:,[0,3,4,5,6]], im[...,::-1]);plt.show(block=False)
+
+
+video_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/vids")
+track_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/mots")
+image_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/images")
+
+import time as ttime
+start_time = ttime.time()
+time = 1
+start_frame, end_frame, step = 0, 256, 8
+
+vid_name = "16_cam12"
+tracks = da.load_tracks_from_mot_format(track_dir / f"{vid_name}.zip")
+with open("/home/fatemeh/Downloads/tmp.txt", 'w') as wfile:
+    wfile.write(f"vid_name, frame_number, frame_number2, time, track_id, correct perc, ind\n")
+    for frame_number in range(start_frame, end_frame + step, step):
+        frame_number2 = frame_number + step * time
+im = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number:06d}.jpg")[:,:,::-1]
+im2 = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number2:06d}.jpg")[:,:,::-1]
+dets = tracks[tracks[:,1]==frame_number].copy()
+dets2 = tracks[tracks[:,1]==frame_number2].copy()
+kdt = KDTree(dets[:, 7:9])
+_, inds = kdt.query(dets[:,7:9], k=5)
+for ind in inds:
+    count, jitters = spatial_performance(ind, im, dets, im2, dets2, time, frame_number, frame_number2)
+            wfile.write(f"{vid_name},{frame_number},{frame_number2},{time},{dets[ind[0],0]},{count},{','.join([str(i) for i in ind])}\n")
+end_time = ttime.time()
+print(f"total time: {int(end_time - start_time)}")
+
+
+end_frame = 260
+for video_file in video_dir.glob("*.mp4"):
+    vid_name = video_file.stem
+    tracks = da.load_tracks_from_mot_format(track_dir / f"{vid_name}.zip")
+    # visualize.save_video_with_tracks_as_images(tracks, video_file, image_dir, 8, end_frame=end_frame)
+    visualize.save_video_as_images(video_file, image_dir, 8, end_frame=end_frame)
+    print(f"vidname: {vid_name}, number of tracks: {len(np.unique(tracks[:,0]))}")
+"""
+"""    
+video_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/vids")
+track_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/mots")
+image_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/images")
+
+start_time = ttime.time()
+
+time, start_frame, end_frame, step = 1, 0, 256, 8
+vid_name = "236_cam12"#16_cam12"
+tracks = da.load_tracks_from_mot_format(track_dir / f"{vid_name}.zip")
+with open(f"/home/fatemeh/Downloads/{vid_name}.txt", 'w') as wfile:
+    wfile.write(f"vid_name, frame_number, frame_number2, time, track_id, correct perc, ind\n")
+    for frame_number in tqdm(range(start_frame, end_frame, step)):
+        frame_number2 = frame_number + step * time
+        im = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number:06d}.jpg")[:,:,::-1]
+        im2 = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number2:06d}.jpg")[:,:,::-1]
+        dets = tracks[tracks[:,1]==frame_number].copy()
+        dets2 = tracks[tracks[:,1]==frame_number2].copy()
+        kdt = KDTree(dets2[:, 7:9])
+        _, inds = kdt.query(dets[:,7:9], k=5)
+        for query_ind, ind in enumerate(inds):
+            query_track_id = dets[query_ind,0]
+            count, jitters = b.spatial_performance(query_ind, ind, im, dets, im2, dets2, time, frame_number, frame_number2)
+            if count !=-1:
+                wfile.write(f"{vid_name},{frame_number},{frame_number2},{time},{query_track_id},{count},{query_ind},{','.join([str(i) for i in ind])}\n")
+            else:
+                wfile.write(f"{vid_name},{frame_number},{frame_number2},{time},{query_track_id},-1,{query_ind},{','.join([str(i) for i in ind])}\n")
+end_time = ttime.time()
+print(f"total time: {int(end_time - start_time)}")
+"""
+
+"""
+video_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/vids")
+track_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/mots")
+image_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/images")
+overview_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/overview")
+
+start_time = ttime.time()
+time, start_frame, end_frame, step = 1, 0, 256, 8
+with open("/home/fatemeh/Downloads/all_100_jitters.txt", 'w') as wfile:
+    wfile.write(f"vid_name, frame_number, frame_number2, time, track_id, correct perc, query_ind, inds\n")
+    for track_file in track_dir.glob("*.zip"):
+        vid_name = track_file.stem
+        tracks = da.load_tracks_from_mot_format(track_dir / f"{vid_name}.zip")
+        for frame_number in tqdm(range(start_frame, end_frame, step)):
+            frame_number2 = frame_number + step * time
+                im = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number:06d}.jpg")[:,:,::-1]
+                im2 = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number2:06d}.jpg")[:,:,::-1]
+                dets = tracks[tracks[:,1]==frame_number].copy()
+                dets2 = tracks[tracks[:,1]==frame_number2].copy()
+                kdt = KDTree(dets2[:, 7:9])
+            _, inds = kdt.query(dets[:,7:9], k=5)
+            for query_ind, ind in enumerate(inds):
+                query_track_id = dets[query_ind,0]
+                name_stem = f"{vid_name}_{frame_number}_{query_track_id}_{query_ind},{','.join([str(i) for i in ind])}"
+                count, jitters = spatial_performance(query_ind, ind, im, dets, im2, dets2, time, frame_number, frame_number2)
+                if count !=-1:
+                    wfile.write(f"{vid_name},{frame_number},{frame_number2},{time},{query_track_id},{count},{query_ind},{','.join([str(i) for i in ind])}\n")
+                else:
+                    wfile.write(f"{vid_name},{frame_number},{frame_number2},{time},{query_track_id},-1,{query_ind},{','.join([str(i) for i in ind])}\n")
+end_time = ttime.time()
+print(f"total time: {int(end_time - start_time)}")
+"""
+
 
 """
 im = cv2.imread("/home/fatemeh/Downloads/fish/data8_v3/train/images/406_cam_1_frame_000064.jpg")[:,:,::-1]

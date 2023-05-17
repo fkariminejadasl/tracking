@@ -384,5 +384,7 @@ cd ~/Downloads
 unzip crop_one.zip -d crop_test 2>&1 > /dev/null
 date +%H:%M;zip -r crop_one.zip overview 2>&1 > /dev/null ;date +%H:%M
 # on snellius
-date +%H:%M:%S; UNZIP_DISABLE_ZIPBOMB_DETECTION=TRUE unzip data_al_v1.zip 2>&1 > /dev/null ; date +H:%M:%S
+cd /scratch-shared/fkarimineja/data/
+date +%H:%M:%S; UNZIP_DISABLE_ZIPBOMB_DETECTION=TRUE unzip ~/data/data_al_v1.zip -d /scratch-shared/fkarimineja/data 2>&1 > /dev/null ; date +H:%M:%S
+scp -r fkarimineja@snellius.surf.nl:/home/fkarimineja/exp/runs/1_12.pth /home/fatemeh/Downloads/result_snellius/al/
 """
