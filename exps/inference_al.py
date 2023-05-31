@@ -32,10 +32,9 @@ def zero_padding_images(image, crop_w, crop_h):
     image = np.pad(image, ((0, pad_y), (0, pad_x), (0,0)))
     return image
 
-def save_overview_images_dets(save_dir: Path, name_stem: str, image1, bbox1, image2, bboxs2, crop_h):
+def save_overview_images_dets(overview_dir: Path, name_stem: str, image1, bbox1, image2, bboxs2, crop_h):
     assert bbox1.shape[1] == 5
     assert bboxs2.shape[1] == 5
-    overview_dir = Path(save_dir / "overview")
     if not overview_dir.exists():
         overview_dir.mkdir(parents=True, exist_ok=True)
     bboxs2_shift = bboxs2.copy()
@@ -50,12 +49,6 @@ def save_overview_images_dets(save_dir: Path, name_stem: str, image1, bbox1, ima
     fig.savefig(overview_dir / f"{name_stem}.jpg")
     plt.close()
 
-device = 'cuda'
-model = al.AssociationNet(512, 5).to(device)
-model.load_state_dict(torch.load("/home/fatemeh/Downloads/result_snellius/al/1_best.pth")["model"])
-transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor(),torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),])
-crop_w, crop_h = 512, 256
-
 def spatial_performance(query_ind, ind, im, dets, im2, dets2, time, frame_number, frame_number2, VISUALIZE=False, overview_dir=None, name_stem=""):
     #crop_w, crop_h, device, transform, model, VISUALIZE=False):
     query_track_id = dets[query_ind, 0]
@@ -63,11 +56,11 @@ def spatial_performance(query_ind, ind, im, dets, im2, dets2, time, frame_number
     if query_track_id in track_ids:
         label = np.where(track_ids==query_track_id)[0][0]
     else:
-        return -1, np.empty((0, 4), dtype=np.float32)
+        return -1, np.empty((0, 5), dtype=np.int64)
 
     count = 0
     jitters = []
-    for i in range(100): #100
+    for i in range(10): #100
         # bbox1 = deepcopy(dets[query_ind, 2:7][None,:])
         bbox1 = deepcopy(dets[query_ind, [0,3,4,5,6]][None,:])
         jitter_x, jitter_y = np.random.normal(50, 10, 2)
@@ -75,15 +68,19 @@ def spatial_performance(query_ind, ind, im, dets, im2, dets2, time, frame_number
         bbox1 = change_center_bboxs(bbox1, crop_x, crop_y)
         # bboxes2 = deepcopy(dets2[ind, 2:7])
         bboxes2 = deepcopy(dets2[ind][:,[0,3,4,5,6]])
-        bboxes2 = change_center_bboxs(bboxes2, crop_x, crop_y) # enter
+        bboxes2 = change_center_bboxs(bboxes2, crop_x, crop_y) 
+        
         detc = bbox1.copy()
-        detsc2 = bboxes2.copy() # enter
+        detsc2 = bboxes2.copy() 
+        
         bboxes2 = zero_out_of_image_bboxs(bboxes2, crop_w, crop_h)
         bbox1 = normalize_bboxs(bbox1, crop_w, crop_h)
-        bboxes2 = normalize_bboxs(bboxes2, crop_w, crop_h) # enter
+        bboxes2 = normalize_bboxs(bboxes2, crop_w, crop_h) 
+        
         bbox1 = torch.tensor(bbox1[:,1:]).unsqueeze(0).to(device).to(torch.float32)
         bboxes2 = torch.tensor(bboxes2[:,1:]).unsqueeze(0).to(device).to(torch.float32)
-        time_emb = torch.tensor([time/4], dtype=torch.float32).to(device) # enter
+        time_emb = torch.tensor([time/4], dtype=torch.float32).to(device) 
+        
         imc = im[crop_y:crop_y+crop_h, crop_x:crop_x+crop_w]
         imc2 = im2[crop_y:crop_y+crop_h, crop_x:crop_x+crop_w]
         imc = np.ascontiguousarray(imc)
@@ -92,27 +89,133 @@ def spatial_performance(query_ind, ind, im, dets, im2, dets2, time, frame_number
         imt2 = transform(Image.fromarray(imc2)).unsqueeze(0).to(device)
         output = model(imt, bbox1, imt2, bboxes2, time_emb)
         argmax = torch.argmax(output, axis=1).item()
+
+        track_ids = dets2[ind][:,0]
+
         if argmax == label:
             count += 1
-            jitters.append([jitter_x, jitter_y, 1, ind[0]])
+            jitters.append([jitter_x, jitter_y, 1, track_ids[label], track_ids[argmax]])
         else:
-            jitters.append([jitter_x, jitter_y, 0, ind[0]])
+            jitters.append([jitter_x, jitter_y, 0, track_ids[label], track_ids[argmax]])
             # if not overview_dir:
             #     save_overview_images_dets(overview_dir, name_stem, imc, detc, imc2, detsc2, crop_h)
-        print(frame_number, frame_number2, argmax, label, query_ind, ind, query_track_id, track_ids, list(output.detach().cpu().numpy()[0]))
     # print(count)
     if VISUALIZE:
         visualize.plot_detections_in_image(detc, imc[...,::-1]);plt.show(block=False)
         visualize.plot_detections_in_image(detsc2, imc2[...,::-1]);plt.show(block=False)
-    return count, np.array(jitters).astype(np.float32)
+    return count, np.array(jitters).astype(np.int64)
 
+def save_associations(filename):
+    start_time = ttime.time()
+    time, start_frame, end_frame, step = 1, 0, 256, 8
+    with open(filename, 'w') as wfile:
+        wfile.write(f"vid_name, frame_number, frame_number2, time, query_track_id, track_ids, correct perc, query_ind, inds, loc_x, loc_y, correctness, label, pred\n")
+        for track_file in track_dir.glob("*.zip"):
+            vid_name = track_file.stem
+            tracks = da.load_tracks_from_mot_format(track_dir / f"{vid_name}.zip")
+            for frame_number in tqdm(range(start_frame, end_frame, step)):
+                frame_number2 = frame_number + step * time
+                im = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number:06d}.jpg")[:,:,::-1]
+                im2 = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number2:06d}.jpg")[:,:,::-1]
+                dets = tracks[tracks[:,1]==frame_number].copy()
+                dets2 = tracks[tracks[:,1]==frame_number2].copy()
+                kdt = KDTree(dets2[:, 7:9])
+                _, inds = kdt.query(dets[:,7:9], k=5)
+                for query_ind, ind in enumerate(inds):
+                    query_track_id = dets[query_ind,0]
+                    count, jitters = spatial_performance(query_ind, ind, im, dets, im2, dets2, time, frame_number, frame_number2)
+                    if count !=-1:
+                        for jitter in jitters:
+                            wfile.write(f"{vid_name},{frame_number},{frame_number2},{time},{query_track_id},{','.join([str(i[0]) for i in dets2[ind]])},{count},{query_ind},{','.join([str(i) for i in ind])},{jitter[0]+dets[query_ind,3]},{jitter[1]+dets[query_ind,4]},{jitter[2]},{jitter[3]},{jitter[4]}\n")
+                    else:
+                        wfile.write(f"{vid_name},{frame_number},{frame_number2},{time},{query_track_id},{','.join([str(i[0]) for i in dets2[ind]])},-1,{query_ind},{','.join([str(i) for i in ind])}\n")
+    end_time = ttime.time()
+    print(f"total time: {int(end_time - start_time)}")
 
-# analysis 3 to save bad results
+def get_saved_results(filename):
+    results = []
+    with open(filename, 'r') as rfile:
+        rfile.readline()
+        for row in rfile:
+            items = row.split("\n")[0].split(',')
+            count = int(items[10])
+            if count !=-1:
+                vid_name = int(items[0].split('_')[0])
+                frame_number = int(items[1])
+                frame_number2 = int(items[2])
+                time = int(items[3])
+                query_track_id = int(items[4])
+                track_ids = [int(i) for i in items[5:10]]
+                query_ind = int(items[11])
+                ind = [int(i) for i in items[12:17]]
+                pos_x = int(items[17])
+                pos_y = int(items[18])
+                success = int(items[19])
+                label = int(items[20])
+                pred = int(items[21])
+                results.append([vid_name, frame_number, frame_number2, time, query_track_id, *track_ids, count, query_ind, *ind, pos_x, pos_y, success, label, pred])
+    results = np.array(results)
+    return results
+
+def save_overview_images_dets_for_bad_results(results, overview_dir):
+    track_files = list(track_dir.glob("*.zip"))
+    for track_file in tqdm(track_files):
+        vid_name = track_file.stem
+        tracks = da.load_tracks_from_mot_format(track_dir / f"{vid_name}.zip")
+        vid_name_number = int(vid_name.split('_')[0])
+        # select failed cases based on video name, count, failure
+        failed = results[(results[:,0] == vid_name_number) & (results[:,10]<6) & (results[:,19]==0)]
+        # select only one example from failed cases, based on frame number and track id
+        _, failed_inds = np.unique(failed[:,[1,4]], axis=0, return_index=True)
+
+        for ind in failed_inds:
+            frame_number, frame_number2, query_track_id, count = failed[ind,1], failed[ind,2], failed[ind,4], failed[ind,10]
+            query_ind, other_inds = failed[ind,11], failed[ind,12:17]
+            pos_x, pos_y, label, pred = failed[ind,17], failed[ind,18], failed[ind,20], failed[ind,21]
+
+            im = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number:06d}.jpg")
+            im2 = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number2:06d}.jpg")
+            dets = tracks[tracks[:,1]==frame_number].copy()
+            dets2 = tracks[tracks[:,1]==frame_number2].copy()
+
+            bbox1 = deepcopy(dets[query_ind, [0,3,4,5,6]][None,:])
+            crop_x, crop_y = max(0, int(pos_x-crop_w/2)), max(0, int(pos_y-crop_h/2))
+            bbox1 = change_center_bboxs(bbox1, crop_x, crop_y)
+            bboxs2 = deepcopy(dets2[other_inds][:,[0,3,4,5,6]])
+            bboxs2 = change_center_bboxs(bboxs2, crop_x, crop_y) 
+            
+            detc = bbox1.copy()
+            detsc2 = bboxs2.copy()
+            imc = im[crop_y:crop_y+crop_h, crop_x:crop_x+crop_w]
+            imc2 = im2[crop_y:crop_y+crop_h, crop_x:crop_x+crop_w]
+
+            name_stem = f"{vid_name_number}_{frame_number}_{label}_{pred}_{count}_{pos_x}_{pos_y}_{query_track_id}_{'_'.join([str(i) for i in bboxs2[:, 0]])}" 
+            save_overview_images_dets(overview_dir, name_stem, imc, detc, imc2, detsc2, crop_h)
+
+device = 'cuda'
+# model = al.AssociationNet(512, 5).to(device)
+# model.load_state_dict(torch.load("/home/fatemeh/Downloads/result_snellius/al/1_best.pth")["model"])
+model = al.AssociationNet(2048, 5).to(device)
+model.load_state_dict(torch.load("/home/fatemeh/Downloads/result_snellius/al/2_best.pth")["model"])
+transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor(),torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),])
+crop_w, crop_h = 512, 256
+
 video_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/vids")
 track_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/mots")
 image_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/images")
 overview_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/overview")
 
+# save_associations("/home/fatemeh/Downloads/10_jitters_resnet18_2.txt")
+# save_associations("/home/fatemeh/Downloads/10_jitters_resnet50_2.txt")
+# results1 = get_saved_results("/home/fatemeh/Downloads/10_jitters_resnet18.txt")
+# results2 = get_saved_results("/home/fatemeh/Downloads/10_jitters_resnet50.txt")
+results1 = get_saved_results("/home/fatemeh/Downloads/10_jitters_resnet50_2.txt")
+save_overview_images_dets_for_bad_results(results1, overview_dir/"less_6_resnet50")
+
+# results1[(results1[:,10]<6) & (results1[:,19] == 0) & (results1[:,0]==234)& (results1[:,1]==8) & (results1[:,20]==50)][:,20:]# & (results1[:,21]==51) & (results1[:,17]==1012) & (results1[:,18]==73)]
+
+'''
+# analysis 3 to save bad results
 vid_names = []
 results = []
 with open("/home/fatemeh/Downloads/all_100_jitters.txt", 'r') as rfile:
@@ -160,15 +263,19 @@ for track_file in track_dir.glob("*.zip"):
 
             name_stem = f"{vid_name}_{frame_number}_{count}_{query_track_id}_{'_'.join([str(i) for i in bboxes2[:, 0]])}_{dets[query_ind,3]}_{dets[query_ind,4]}" 
             save_overview_images_dets(overview_dir, name_stem, imc, detc, imc2, detsc2, crop_h)
+'''
 
-# plt.figure()
-# x_y_counts = []
-# for ind in inds:
-#     if vid_names[ind] == vid_name:
-#         frame_number, frame_number2, query_track_id, count = results[ind,0], results[ind,1], results[ind,3], results[ind,4]
-#         query_ind, other_inds = results[ind,5], results[ind,6:]
-#         xtl, ytl, xbr, ybr, _, _, w, h = tracks[(tracks[:,0]==query_track_id)&(tracks[:,1]==frame_number)][0,3:]
-#         x_y_counts.append([xtl, ytl, xbr, ybr, w, h, count])
+""""
+plt.figure()
+x_y_counts = []
+for ind in inds:
+    if vid_names[ind] == vid_name:
+        frame_number, frame_number2, query_track_id, count = results[ind,0], results[ind,1], results[ind,3], results[ind,4]
+        query_ind, other_inds = results[ind,5], results[ind,6:]
+        xtl, ytl, xbr, ybr, _, _, w, h = tracks[(tracks[:,0]==query_track_id)&(tracks[:,1]==frame_number)][0,3:]
+        x_y_counts.append([xtl, ytl, xbr, ybr, w, h, count])
+"""
+
 """
 VISUALIZE = False
 video_dir = Path("/home/fatemeh/Downloads/fish/vids/all")
@@ -380,11 +487,8 @@ for video_file in video_dir.glob("*.mp4"):
     visualize.save_video_as_images(video_file, image_dir, 8, end_frame=end_frame)
     print(f"vidname: {vid_name}, number of tracks: {len(np.unique(tracks[:,0]))}")
 """
-"""    
-video_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/vids")
-track_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/mots")
-image_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/images")
 
+"""    
 start_time = ttime.time()
 
 time, start_frame, end_frame, step = 1, 0, 256, 8
@@ -411,38 +515,6 @@ end_time = ttime.time()
 print(f"total time: {int(end_time - start_time)}")
 """
 
-"""
-video_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/vids")
-track_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/mots")
-image_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/images")
-overview_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/overview")
-
-start_time = ttime.time()
-time, start_frame, end_frame, step = 1, 0, 256, 8
-with open("/home/fatemeh/Downloads/all_100_jitters.txt", 'w') as wfile:
-    wfile.write(f"vid_name, frame_number, frame_number2, time, track_id, correct perc, query_ind, inds\n")
-    for track_file in track_dir.glob("*.zip"):
-        vid_name = track_file.stem
-        tracks = da.load_tracks_from_mot_format(track_dir / f"{vid_name}.zip")
-        for frame_number in tqdm(range(start_frame, end_frame, step)):
-            frame_number2 = frame_number + step * time
-            im = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number:06d}.jpg")[:,:,::-1]
-            im2 = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number2:06d}.jpg")[:,:,::-1]
-            dets = tracks[tracks[:,1]==frame_number].copy()
-            dets2 = tracks[tracks[:,1]==frame_number2].copy()
-            kdt = KDTree(dets2[:, 7:9])
-            _, inds = kdt.query(dets[:,7:9], k=5)
-            for query_ind, ind in enumerate(inds):
-                query_track_id = dets[query_ind,0]
-                name_stem = f"{vid_name}_{frame_number}_{query_track_id}_{query_ind},{','.join([str(i) for i in ind])}"
-                count, jitters = spatial_performance(query_ind, ind, im, dets, im2, dets2, time, frame_number, frame_number2)
-                if count !=-1:
-                    wfile.write(f"{vid_name},{frame_number},{frame_number2},{time},{query_track_id},{count},{query_ind},{','.join([str(i) for i in ind])}\n")
-                else:
-                    wfile.write(f"{vid_name},{frame_number},{frame_number2},{time},{query_track_id},-1,{query_ind},{','.join([str(i) for i in ind])}\n")
-end_time = ttime.time()
-print(f"total time: {int(end_time - start_time)}")
-"""
 
 
 """

@@ -127,9 +127,10 @@ class PartResnet(torch.nn.Module):
 class AssociationNet(torch.nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
-        resnet = torchvision.models.resnet18(
-            weights=torchvision.models.ResNet18_Weights.DEFAULT
-        )
+        # resnet = torchvision.models.resnet18(
+        #     weights=torchvision.models.ResNet18_Weights.DEFAULT
+        # )
+        resnet = torchvision.models.resnet50(weights=torchvision.models.ResNet50_Weights.DEFAULT)
         backbone = PartResnet(resnet)
 
         concat = ConcatNet(in_channels, out_channels)
