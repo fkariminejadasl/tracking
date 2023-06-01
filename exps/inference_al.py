@@ -20,11 +20,36 @@ def change_center_bboxs(bboxs, crop_x, crop_y):
     assert bboxs.shape[1] == 5
     return np.concatenate((bboxs[:, 0:1], bboxs[:, 1:]-np.tile(np.array([crop_x, crop_y]),2)), axis=1)
 
-def zero_out_of_image_bboxs(bboxs, crop_w, crop_h):
+def zero_out_of_image_bboxs2(bboxs, crop_w, crop_h):
     assert bboxs.shape[1] == 5
     inds = np.where((bboxs[:,1]>=crop_w) | (bboxs[:,1]<0)| (bboxs[:,3]>=crop_w) | (bboxs[:,3]<0) | (bboxs[:,2]>=crop_h) | (bboxs[:,2]<0) | (bboxs[:,4]>=crop_h) | (bboxs[:,4]<0))[0]
     bboxs[inds, 1:] = 0
     return bboxs
+
+def zero_out_of_image_bboxs(bboxes, crop_w, crop_h):
+    assert bboxes.shape[1] == 5
+    bboxs = bboxes.copy()
+    bboxs[:, 1::2] = np.clip(bboxs[:,1::2], 0, crop_w)
+    bboxs[:, 2::2] = np.clip(bboxs[:,2::2], 0, crop_h)
+    bboxs[bboxs[:, 1] == bboxs[:, 3], 1:] = 0
+    bboxs[bboxs[:, 2] == bboxs[:, 4], 1:] = 0
+    return bboxs
+
+def test_zero_out_of_image_bboxs():
+    bboxs = np.array([
+       [  9, 205,  -1, 216,  27],
+       [ 10, 489,  30, 501,  49],
+       [ 11, 406, 427, 417, 434],
+       [  5, 416, 548, 453, 570],
+       [  6, 541, 515, 558, 529]])
+    desired = np.array([
+       [  9, 205,   0, 216,  27],
+       [ 10, 489,  30, 501,  49],
+       [ 11,   0,   0,   0,   0],
+       [  5,   0,   0,   0,   0],
+       [  6,   0,   0,   0,   0]])
+    actual = zero_out_of_image_bboxs(bboxs, 512, 256)
+    np.testing.assert_equal(actual, desired)
 
 def zero_padding_images(image, crop_w, crop_h):
     pad_x = max(0, crop_w - image.shape[1])
@@ -49,7 +74,7 @@ def save_overview_images_dets(overview_dir: Path, name_stem: str, image1, bbox1,
     fig.savefig(overview_dir / f"{name_stem}.jpg")
     plt.close()
 
-def spatial_performance(query_ind, ind, im, dets, im2, dets2, time, frame_number, frame_number2, VISUALIZE=False, overview_dir=None, name_stem=""):
+def spatial_performance(query_ind, ind, im, dets, im2, dets2, time, frame_number, frame_number2, VISUALIZE=False):
     #crop_w, crop_h, device, transform, model, VISUALIZE=False):
     query_track_id = dets[query_ind, 0]
     track_ids = dets2[ind, 0]
@@ -97,8 +122,6 @@ def spatial_performance(query_ind, ind, im, dets, im2, dets2, time, frame_number
             jitters.append([jitter_x, jitter_y, 1, track_ids[label], track_ids[argmax]])
         else:
             jitters.append([jitter_x, jitter_y, 0, track_ids[label], track_ids[argmax]])
-            # if not overview_dir:
-            #     save_overview_images_dets(overview_dir, name_stem, imc, detc, imc2, detsc2, crop_h)
     # print(count)
     if VISUALIZE:
         visualize.plot_detections_in_image(detc, imc[...,::-1]);plt.show(block=False)
@@ -207,13 +230,17 @@ overview_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/overvi
 
 # save_associations("/home/fatemeh/Downloads/10_jitters_resnet18_2.txt")
 # save_associations("/home/fatemeh/Downloads/10_jitters_resnet50_2.txt")
-# results1 = get_saved_results("/home/fatemeh/Downloads/10_jitters_resnet18.txt")
-# results2 = get_saved_results("/home/fatemeh/Downloads/10_jitters_resnet50.txt")
-results1 = get_saved_results("/home/fatemeh/Downloads/10_jitters_resnet50_2.txt")
-save_overview_images_dets_for_bad_results(results1, overview_dir/"less_6_resnet50")
+# results1 = get_saved_results("/home/fatemeh/Downloads/10_jitters_resnet18_1.txt")
+# results2 = get_saved_results("/home/fatemeh/Downloads/10_jitters_resnet50_2.txt")
+# save_overview_images_dets_for_bad_results(results1, overview_dir/"less_6_resnet50")
 
-# results1[(results1[:,10]<6) & (results1[:,19] == 0) & (results1[:,0]==234)& (results1[:,1]==8) & (results1[:,20]==50)][:,20:]# & (results1[:,21]==51) & (results1[:,17]==1012) & (results1[:,18]==73)]
-
+# results[(results[:,10]<6) & (results[:,19] == 0) & (results[:,0]==234)& (results[:,1]==8) & (results[:,20]==50)][:,20:]# & (results[:,21]==51) & (results[:,17]==1012) & (results[:,18]==73)]
+# results = results2.copy()
+# failed = results[(results[:,10]<6)]
+# for vid_name_number in np.unique(failed[:,0]):
+#     item1 = sum(failed[:,0]==vid_name_number)
+#     item2 = sum(results[:,0]==vid_name_number)
+#     print(f"{vid_name_number:3d}: {int(item1/10):3d}, {int(item2/10):4d}")
 '''
 # analysis 3 to save bad results
 vid_names = []
