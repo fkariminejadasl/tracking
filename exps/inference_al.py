@@ -20,12 +20,6 @@ def change_center_bboxs(bboxs, crop_x, crop_y):
     assert bboxs.shape[1] == 5
     return np.concatenate((bboxs[:, 0:1], bboxs[:, 1:]-np.tile(np.array([crop_x, crop_y]),2)), axis=1)
 
-def zero_out_of_image_bboxs2(bboxs, crop_w, crop_h):
-    assert bboxs.shape[1] == 5
-    inds = np.where((bboxs[:,1]>=crop_w) | (bboxs[:,1]<0)| (bboxs[:,3]>=crop_w) | (bboxs[:,3]<0) | (bboxs[:,2]>=crop_h) | (bboxs[:,2]<0) | (bboxs[:,4]>=crop_h) | (bboxs[:,4]<0))[0]
-    bboxs[inds, 1:] = 0
-    return bboxs
-
 def zero_out_of_image_bboxs(bboxes, crop_w, crop_h):
     assert bboxes.shape[1] == 5
     bboxs = bboxes.copy()
@@ -228,11 +222,23 @@ track_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/mots")
 image_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/images")
 overview_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/overview")
 
+det_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/yolo/16_cam12/obj_train_data")
+filename_fixpart = "frame"
+vid_name = "16_cam12"
+frame_number = 0
+image = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number:06d}.jpg")
+width, height, total_no_frames, step, format = image.shape[1], image.shape[0], 257, 8, "06d"
+
+from tracking import data_association as da
+tracks = da.compute_tracks(
+        det_dir, filename_fixpart, width, height, total_no_frames, 0, step, format
+    )
+
 # save_associations("/home/fatemeh/Downloads/10_jitters_resnet18_2.txt")
 # save_associations("/home/fatemeh/Downloads/10_jitters_resnet50_2.txt")
 # results1 = get_saved_results("/home/fatemeh/Downloads/10_jitters_resnet18_1.txt")
 # results2 = get_saved_results("/home/fatemeh/Downloads/10_jitters_resnet50_2.txt")
-# save_overview_images_dets_for_bad_results(results1, overview_dir/"less_6_resnet50")
+# save_overview_images_dets_for_bad_results(results2, overview_dir/"less_6_resnet50")
 
 # results[(results[:,10]<6) & (results[:,19] == 0) & (results[:,0]==234)& (results[:,1]==8) & (results[:,20]==50)][:,20:]# & (results[:,21]==51) & (results[:,17]==1012) & (results[:,18]==73)]
 # results = results2.copy()
@@ -547,8 +553,8 @@ print(f"total time: {int(end_time - start_time)}")
 """
 im = cv2.imread("/home/fatemeh/Downloads/fish/data8_v3/train/images/406_cam_1_frame_000064.jpg")[:,:,::-1]
 im2 = cv2.imread("/home/fatemeh/Downloads/fish/data8_v3/train/images/406_cam_1_frame_000072.jpg")[:,:,::-1]
-dets = da.get_detections_array(Path("/home/fatemeh/Downloads/fish/data8_v3/train/labels/406_cam_1_frame_000064.txt"), im.shape[1], im.shape[0])
-dets2 = da.get_detections_array(Path("/home/fatemeh/Downloads/fish/data8_v3/train/labels/406_cam_1_frame_000072.txt"), im.shape[1], im.shape[0])
+dets = da.get_detections_array(Path("/home/fatemeh/Downloads/fish/data8_v3/train/labels/406_cam_1_frame_000064.txt"), im.shape[1], im.shape[0], 64)
+dets2 = da.get_detections_array(Path("/home/fatemeh/Downloads/fish/data8_v3/train/labels/406_cam_1_frame_000072.txt"), im.shape[1], im.shape[0], 72)
 
 kdt = KDTree(dets2[:, 7:9])
 _, inds = kdt.query(dets2[:,7:9], k=5)

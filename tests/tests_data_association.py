@@ -67,7 +67,7 @@ def test_get_iou():
 
 def test_is_bbox_in_bbox():
     adets = get_detections_array(
-        data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height
+        data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height, 1
     )
     assert is_bbox_in_bbox(adets[5, 3:7], adets[1, 3:7]) == True
     assert is_bbox_in_bbox(adets[1, 3:7], adets[5, 3:7]) == False
@@ -185,10 +185,10 @@ def test_get_stats_for_track_after_iou_bug():
 
 def test_make_array_from_dets_reverse():
     dets = get_detections(
-        data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height
+        data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height, 1
     )
     dets_array = get_detections_array(
-        data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height
+        data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height, 1
     )
     actual = make_array_from_dets(dets)
     np.testing.assert_equal(actual, dets_array)
@@ -204,7 +204,7 @@ def test_make_array_from_dets_reverse():
 
 def test_clean_detections():
     dets_array = get_detections_array(
-        data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height
+        data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height, 1
     )
     cleaned_dets = clean_detections(dets_array)
     removed_det_ids = [0, 2, 12, 25, 1, 5, 8, 10, 6]
@@ -218,10 +218,10 @@ def test_match_ddetections():
         data_path / "matched_ids_dets.txt", skiprows=1, delimiter=","
     ).astype(np.int64)
     adets1 = get_detections_array(
-        data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height
+        data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height, 1
     )
     adets2 = get_detections_array(
-        data_path / "04_07_22_G_2_rect_valid_3.txt", im_width, im_height
+        data_path / "04_07_22_G_2_rect_valid_3.txt", im_width, im_height, 2
     )
     _, _, matched_ids = match_detections(adets1, adets2)
     idxs1, idxs2, matched_ids_cleaned = match_detections(
@@ -235,10 +235,10 @@ def test_match_ddetections():
 
 def test_match_ddetections2():
     adets1 = get_detections_array(
-        data_path / "04_07_22_G_2_rect_valid_1.txt", im_width, im_height
+        data_path / "04_07_22_G_2_rect_valid_1.txt", im_width, im_height, 0
     )
     adets2 = get_detections_array(
-        data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height
+        data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height, 1
     )
     _, _, matched_ids = match_detections(adets1, adets2)
     idxs1, idxs2, matched_ids_cleaned = match_detections(

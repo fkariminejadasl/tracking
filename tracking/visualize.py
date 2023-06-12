@@ -224,7 +224,7 @@ def plot_detections_in_video(
         _, frame = vc.read()
 
         det_path = det_folder / f"{filename_fixpart}_{frame_number+1}.txt"
-        dets = get_detections(det_path, width, height)
+        dets = get_detections(det_path, width, height, frame_number)
 
         for det in dets:
             x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(det.x, det.y, det.w, det.h)

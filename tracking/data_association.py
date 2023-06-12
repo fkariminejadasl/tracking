@@ -2,6 +2,7 @@ import enum
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
+from tqdm import tqdm
 
 import numpy as np
 from scipy.optimize import linear_sum_assignment
@@ -105,13 +106,8 @@ def get_detections(
     det_file: Path,
     width: int,
     height: int,
-    frame_number: int = None,
-    zero_based: bool = False,
+    frame_number: int,
 ) -> list[Detection]:
-    if frame_number is None:
-        frame_number = int(det_file.stem.split("_")[-1]) - 1
-    if zero_based:
-        frame_number = int(det_file.stem.split("_")[-1])
     score = -1
 
     detections = np.loadtxt(det_file)
@@ -151,11 +147,8 @@ def cen_wh_from_tl_br(tl_x, tl_y, br_x, br_y) -> tuple:
 
 
 def get_detections_array(
-    det_file: Path, width: int, height: int, zero_based: bool = False
+    det_file: Path, width: int, height: int, frame_number: int, 
 ) -> list[np.ndarray]:
-    frame_number = int(det_file.stem.split("_")[-1]) - 1
-    if zero_based:
-        frame_number = int(det_file.stem.split("_")[-1])
     detections = np.loadtxt(det_file)
     dets_array = []
     for det_id, det in enumerate(detections):
@@ -323,8 +316,10 @@ def clean_detections(dets: np.ndarray, ratio_thres=2.5, sp_thres=20, inters_thre
     return cleaned_dets
 
 
-def get_cleaned_detections(det_path: Path, width, height) -> list[Detection]:
-    dets = get_detections(det_path, width, height)
+def get_cleaned_detections(
+    det_path: Path, width, height, frame_number
+) -> list[Detection]:
+    dets = get_detections(det_path, width, height, frame_number)
     dets = clean_detections_by_score(dets)
     dets = make_dets_from_array(clean_detections(make_array_from_dets(dets)))
     return dets
@@ -457,11 +452,21 @@ def _initialize_track_frame1(dets):
     return tracks, new_track_id
 
 
-def initialize_tracks(det_folder: Path, filename_fixpart: str, width: int, height: int):
-    frame_number = 0
-    det_path = det_folder / f"{filename_fixpart}_{frame_number + 1}.txt"
-    # dets = get_detections(det_path, width, height)
-    dets = get_cleaned_detections(det_path, width, height)
+def initialize_tracks(
+    det_folder: Path,
+    filename_fixpart: str,
+    width: int,
+    height: int,
+    first_frame: int = 1,
+    format: str = "",
+):
+    det_path = det_folder / f"{filename_fixpart}_{first_frame:{format}}.txt"
+    if format == "":
+        frame_number = first_frame - 1
+    else:
+        frame_number = first_frame
+    dets = get_detections(det_path, width, height, frame_number)
+    # dets = get_cleaned_detections(det_path, width, height, frame_number)
 
     tracks, new_track_id = _initialize_track_frame1(dets)
     return tracks, new_track_id
@@ -583,21 +588,29 @@ def compute_tracks(
     width: int,
     height: int,
     total_no_frames: int,
+    start_frame: int = 1,
+    step: int = 1,
+    format: str = "",
 ):
     tracks, new_track_id = initialize_tracks(
-        det_folder, filename_fixpart, width, height
+        det_folder, filename_fixpart, width, height, start_frame, format
     )
 
     # start track
     # ===========
-    for frame_number in range(1, total_no_frames):
+    for frame_number in tqdm(range(step, total_no_frames, step)):
         # # track cleaning up
         # if frame_number % 20 == 0:
         #     tracks = _reindex_tracks(_remove_short_tracks(tracks))
 
-        det_path = det_folder / f"{filename_fixpart}_{frame_number + 1}.txt"
-        # dets = get_detections(det_path, width, height)
-        dets = get_cleaned_detections(det_path, width, height)
+        # ugly hack for yolo naming in yolo8, which is one based, e.g frame_1.txt
+        if format == "":
+            current_frame = frame_number + 1
+        else:
+            current_frame = frame_number
+        det_path = det_folder / f"{filename_fixpart}_{current_frame:{format}}.txt"
+        dets = get_detections(det_path, width, height, frame_number)
+        # dets = get_cleaned_detections(det_path, width, height, frame_number)
         pred_dets = _get_predicted_locations(tracks, frame_number)
 
         # track maches
@@ -905,8 +918,8 @@ def get_detections_with_disparity(
     assert (
         frame_number == int(det_path_cam2.stem.split("_")[-1]) - 1
     ), "not a stereo pair"
-    dets_cam1 = get_detections(det_path_cam1, width, height)
-    dets_cam2 = get_detections(det_path_cam2, width, height)
+    dets_cam1 = get_detections(det_path_cam1, width, height, frame_number)
+    dets_cam2 = get_detections(det_path_cam2, width, height, frame_number)
     detections = []
     for det in dets_cam1:
         disp_candidates, det_ids = _compute_disp_candidates(det, dets_cam2)
