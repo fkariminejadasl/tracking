@@ -2,10 +2,10 @@ import enum
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from tqdm import tqdm
 
 import numpy as np
 from scipy.optimize import linear_sum_assignment
+from tqdm import tqdm
 
 np.random.seed(1000)
 
@@ -147,7 +147,10 @@ def cen_wh_from_tl_br(tl_x, tl_y, br_x, br_y) -> tuple:
 
 
 def get_detections_array(
-    det_file: Path, width: int, height: int, frame_number: int, 
+    det_file: Path,
+    width: int,
+    height: int,
+    frame_number: int,
 ) -> list[np.ndarray]:
     detections = np.loadtxt(det_file)
     dets_array = []
