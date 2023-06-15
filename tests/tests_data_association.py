@@ -28,6 +28,7 @@ from tracking.data_association import (
     match_detections,
     save_tracks_to_cvat_txt_format,
     save_tracks_to_mot_format,
+    zero_out_of_image_bboxs,
 )
 from tracking.stats import (
     get_gt_object_match,
@@ -520,6 +521,29 @@ def test_get_matches_from_candidates_disparity_infos():
     assert sel_track_id == 73
     cands2 = get_matches_from_candidates_disparity_infos(cands)
     np.testing.assert_equal(np.unique(cands2[:, 1]), np.array([16, 53, 73, 83]))
+
+
+def test_zero_out_of_image_bboxs():
+    bboxs = np.array(
+        [
+            [9, 205, -1, 216, 27],
+            [10, 489, 30, 501, 49],
+            [11, 406, 427, 417, 434],
+            [5, 416, 548, 453, 570],
+            [6, 541, 515, 558, 529],
+        ]
+    )
+    desired = np.array(
+        [
+            [9, 205, 0, 216, 27],
+            [10, 489, 30, 501, 49],
+            [11, 0, 0, 0, 0],
+            [5, 0, 0, 0, 0],
+            [6, 0, 0, 0, 0],
+        ]
+    )
+    actual = zero_out_of_image_bboxs(bboxs, 512, 256)
+    np.testing.assert_equal(actual, desired)
 
 
 """

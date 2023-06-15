@@ -14,54 +14,11 @@ from tqdm import tqdm
 from tracking import association_learning as al
 from tracking import data_association as da
 from tracking import visualize
-
-
-def normalize_bboxs(bboxs, crop_w, crop_h):
-    assert bboxs.shape[1] == 5
-    bboxs = bboxs.astype(np.float32)
-    return np.concatenate(
-        (bboxs[:, 0:1], bboxs[:, 1:] / np.tile(np.array([crop_w, crop_h]), 2)), axis=1
-    )
-
-
-def change_center_bboxs(bboxs, crop_x, crop_y):
-    assert bboxs.shape[1] == 5
-    return np.concatenate(
-        (bboxs[:, 0:1], bboxs[:, 1:] - np.tile(np.array([crop_x, crop_y]), 2)), axis=1
-    )
-
-
-def zero_out_of_image_bboxs(bboxes, crop_w, crop_h):
-    assert bboxes.shape[1] == 5
-    bboxs = bboxes.copy()
-    bboxs[:, 1::2] = np.clip(bboxs[:, 1::2], 0, crop_w)
-    bboxs[:, 2::2] = np.clip(bboxs[:, 2::2], 0, crop_h)
-    bboxs[bboxs[:, 1] == bboxs[:, 3], 1:] = 0
-    bboxs[bboxs[:, 2] == bboxs[:, 4], 1:] = 0
-    return bboxs
-
-
-def test_zero_out_of_image_bboxs():
-    bboxs = np.array(
-        [
-            [9, 205, -1, 216, 27],
-            [10, 489, 30, 501, 49],
-            [11, 406, 427, 417, 434],
-            [5, 416, 548, 453, 570],
-            [6, 541, 515, 558, 529],
-        ]
-    )
-    desired = np.array(
-        [
-            [9, 205, 0, 216, 27],
-            [10, 489, 30, 501, 49],
-            [11, 0, 0, 0, 0],
-            [5, 0, 0, 0, 0],
-            [6, 0, 0, 0, 0],
-        ]
-    )
-    actual = zero_out_of_image_bboxs(bboxs, 512, 256)
-    np.testing.assert_equal(actual, desired)
+from tracking.data_association import (
+    change_center_bboxs,
+    normalize_bboxs,
+    zero_out_of_image_bboxs,
+)
 
 
 def zero_padding_images(image, crop_w, crop_h):
@@ -326,12 +283,12 @@ track_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/mots")
 image_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/images")
 overview_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/overview")
 
+vid_name = "437_cam12"
 det_dir = Path(
-    "/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/yolo/16_cam12/obj_train_data"
+    f"/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/yolo/{vid_name}/obj_train_data"
 )
 filename_fixpart = "frame"
 total_no_frames, step, format = 257, 8, "06d"
-vid_name = "16_cam12"
 start_frame, end_frame = 0, total_no_frames - 1
 image = cv2.imread(f"{image_dir}/{vid_name}_frame_{start_frame:06d}.jpg")
 width, height = image.shape[1], image.shape[0]
@@ -345,7 +302,9 @@ tracks = da.make_array_from_tracks(tracks)
 # tracks = da.load_tracks_from_mot_format(track_dir / f"{vid_name}.zip")
 
 video_file = video_dir / f"{vid_name}.mp4"
-save_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/tracks_hungerian")
+save_dir = Path(
+    "/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/tracks_hungerian"
+)  # tracks_hungerian #tracks_al
 visualize.save_video_with_tracks_as_images(
     tracks, video_file, save_dir, step, start_frame, end_frame, format
 )

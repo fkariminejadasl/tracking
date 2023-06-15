@@ -402,14 +402,14 @@ def _intersect2d_rows(ids1: np.ndarray, ids2: np.ndarray) -> np.ndarray:
 def bipartite_local_matching(pred_dets, dets):
     pred_dets_array = make_array_from_dets(pred_dets)
     dets_array = make_array_from_dets(dets)
-    pred_inds1, ids1, _ = match_detections(pred_dets_array, dets_array)
-    ids2, pred_inds2, _ = match_detections(dets_array, pred_dets_array)
-    ids1 = np.vstack((pred_inds1, ids1)).T
-    ids2 = np.vstack((pred_inds2, ids2)).T
-    intersections = _intersect2d_rows(ids1, ids2)
+    pred_inds1, inds1, _ = match_detections(pred_dets_array, dets_array)
+    inds2, pred_inds2, _ = match_detections(dets_array, pred_dets_array)
+    inds1 = np.vstack((pred_inds1, inds1)).T
+    inds2 = np.vstack((pred_inds2, inds2)).T
+    intersections = _intersect2d_rows(inds1, inds2)
     pred_inds = intersections[:, 0]
-    ids = intersections[:, 1]
-    return pred_inds, ids
+    inds = intersections[:, 1]
+    return pred_inds, inds
 
 
 def _get_tl_and_br(det: Detection) -> tuple:
@@ -425,6 +425,112 @@ def hungarian_global_matching(dets1, dets2):
             dist[i, j] = iou_loss + loc_loss
     row_ind, col_ind = linear_sum_assignment(dist)
     return row_ind, col_ind
+
+
+def association_learning_matching(dets, dets2):
+    from copy import deepcopy
+
+    import cv2
+    import torch
+    import torchvision
+    from PIL import Image
+    from sklearn.neighbors import KDTree
+
+    from tracking import association_learning as al
+
+    device = "cuda"
+    model = al.AssociationNet(2048, 5).to(device)
+    model.load_state_dict(
+        torch.load("/home/fatemeh/Downloads/result_snellius/al/2_best.pth")["model"]
+    )
+    transform = torchvision.transforms.Compose(
+        [
+            torchvision.transforms.ToTensor(),
+            torchvision.transforms.Normalize(
+                mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+            ),
+        ]
+    )
+    crop_w, crop_h = 512, 256
+
+    # TODO parameter
+    step = 8
+    vid_name = "437_cam12"
+    image_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/images")
+
+    dets = make_array_from_dets(dets)
+    dets2 = make_array_from_dets(dets2)
+    frame_number = dets[0, 1]
+    frame_number2 = dets2[0, 1]
+    time = (frame_number2 - frame_number) / step
+
+    im = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number:06d}.jpg")[:, :, ::-1]
+    im2 = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number2:06d}.jpg")[
+        :, :, ::-1
+    ]
+
+    kdt = KDTree(dets2[:, 7:9])
+    _, inds = kdt.query(dets[:, 7:9], k=5)
+    dets_inds = []
+    dets2_inds = []
+    for query_ind, ind in enumerate(inds):
+        for _ in range(1):
+            bbox1 = deepcopy(dets[query_ind, 2:7][None, :])
+            jitter_x, jitter_y = np.random.normal(50, 10, 2)
+            crop_x, crop_y = max(0, int(bbox1[0, 1] + jitter_x - crop_w / 2)), max(
+                0, int(bbox1[0, 2] + jitter_y - crop_h / 2)
+            )
+            bbox1 = change_center_bboxs(bbox1, crop_x, crop_y)
+            bboxes2 = deepcopy(dets2[ind, 2:7])
+            bboxes2 = change_center_bboxs(bboxes2, crop_x, crop_y)
+
+            bboxes2 = zero_out_of_image_bboxs(bboxes2, crop_w, crop_h)
+            bbox1 = normalize_bboxs(bbox1, crop_w, crop_h)
+            bboxes2 = normalize_bboxs(bboxes2, crop_w, crop_h)
+
+            bbox1 = torch.tensor(bbox1[:, 1:]).unsqueeze(0).to(device).to(torch.float32)
+            bboxes2 = (
+                torch.tensor(bboxes2[:, 1:]).unsqueeze(0).to(device).to(torch.float32)
+            )
+            time_emb = torch.tensor([time / 4], dtype=torch.float32).to(device)
+
+            imc = im[crop_y : crop_y + crop_h, crop_x : crop_x + crop_w]
+            imc2 = im2[crop_y : crop_y + crop_h, crop_x : crop_x + crop_w]
+            imc = np.ascontiguousarray(imc)
+            imc2 = np.ascontiguousarray(imc2)
+            imt = transform(Image.fromarray(imc)).unsqueeze(0).to(device)
+            imt2 = transform(Image.fromarray(imc2)).unsqueeze(0).to(device)
+            output = model(imt, bbox1, imt2, bboxes2, time_emb)
+            argmax = torch.argmax(output, axis=1).item()
+
+        dets_inds.append(query_ind)
+        dets2_inds.append(ind[argmax])
+    return np.array(dets_inds, dtype=np.int64), np.array(dets2_inds, dtype=np.int64)
+
+
+def normalize_bboxs(bboxs, crop_w, crop_h):
+    assert bboxs.shape[1] == 5
+    bboxs = bboxs.astype(np.float32)
+    return np.concatenate(
+        (bboxs[:, 0:1], bboxs[:, 1:] / np.tile(np.array([crop_w, crop_h]), 2)), axis=1
+    )
+
+
+def change_center_bboxs(bboxs, crop_x, crop_y):
+    assert bboxs.shape[1] == 5
+    return np.concatenate(
+        (bboxs[:, 0:1], bboxs[:, 1:] - np.tile(np.array([crop_x, crop_y]), 2)), axis=1
+    )
+
+
+def zero_out_of_image_bboxs(bboxes, crop_w, crop_h):
+    assert bboxes.shape[1] == 5
+    bboxs = bboxes.copy()
+    bboxs[:, 1::2] = np.clip(bboxs[:, 1::2], 0, crop_w)
+    bboxs[:, 2::2] = np.clip(bboxs[:, 2::2], 0, crop_h)
+    bboxs[bboxs[:, 1] == bboxs[:, 3], 1:] = 0
+    bboxs[bboxs[:, 2] == bboxs[:, 4], 1:] = 0
+    return bboxs
 
 
 def _connect_inds_to_detection_ids(dets):
@@ -498,6 +604,7 @@ def _track_matches(
     tracks,
     current_frame_number,
 ):
+    # pred_inds, inds = association_learning_matching(pred_dets, dets)
     pred_inds, inds = hungarian_global_matching(pred_dets, dets)
     # pred_inds, inds = bipartite_local_matching(pred_dets, dets)
 
