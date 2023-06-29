@@ -428,6 +428,12 @@ def hungarian_global_matching(dets1, dets2):
 
 
 def association_learning_matching(dets, dets2):
+    # TODO bugs: there are several bugs
+    # 1. time and frame_number therefore image crops are not correct
+    # This can happen when track is stops for few frames
+    # 2. One object match to different tracks. This is combined with
+    # _make_new_track cause the track has the same id. e.g.
+    # last track item track id 31 with the same object repeated twice.
     from copy import deepcopy
 
     import cv2
@@ -591,6 +597,10 @@ def _track_predicted_unmatched(pred_dets, pred_inds, tracks):
 
 
 def _track_current_unmatched(dets, inds, frame_number, tracks, new_track_id):
+    # TODO bug related to same detection assigned to different tracks
+    # tracks dict keys are correct but in _make_new_track the det track_id is changed
+    # although this is assigned to different track keys but their det object is changed in both tracks
+    # so _get_predicted_locations returns same track_id
     diff_inds = set(range(len(dets))).difference(set(inds))
     for id in diff_inds:
         tracks[new_track_id] = _make_new_track(dets[id], new_track_id)
@@ -738,6 +748,7 @@ def compute_tracks(
         tracks, new_track_id = _track_current_unmatched(
             dets, inds, frame_number, tracks, new_track_id
         )
+        print(make_array_from_dets(_get_predicted_locations(tracks, frame_number)))
     # tracks = _reindex_tracks(_remove_short_tracks(tracks))
     return tracks
 
@@ -1089,6 +1100,8 @@ def _assign_unique_disp(tracks, frame_number):
     return tracks
 """
 
+""""
+# Tests for appearance cosine similarity
 
 def bbox_enlarge(bbox, w_enlarge, h_enlarge):
     n_bbox = deepcopy(bbox)
@@ -1223,3 +1236,4 @@ for frame_number2 in [208, 216, 224, 232, 240, 248, 256]:
             print(i, j, csim)
     print(bb1)
     print(bb2)
+"""
