@@ -42,7 +42,7 @@ def save_video_as_images(
     vc = cv2.VideoCapture(video_file.as_posix())
     assert vc.isOpened()
     height, width, total_no_frames, fps = get_video_parameters(vc)
-    start_frame, end_frame = _get_start_end_frames(
+    start_frame, end_frame = get_start_end_frames(
         start_frame, end_frame, total_no_frames
     )
 
@@ -57,7 +57,7 @@ def save_video_as_images(
     vc.release()
 
 
-def _get_start_end_frames(start_frame, end_frame, total_no_frames):
+def get_start_end_frames(start_frame, end_frame, total_no_frames):
     if start_frame is None:
         start_frame = 0
     if end_frame is None:
@@ -77,7 +77,7 @@ def save_video_with_tracks_as_images(
     vc = cv2.VideoCapture(video_file.as_posix())
     assert vc.isOpened()
     height, width, total_no_frames, fps = get_video_parameters(vc)
-    start_frame, end_frame = _get_start_end_frames(
+    start_frame, end_frame = get_start_end_frames(
         start_frame, end_frame, total_no_frames
     )
 
@@ -189,7 +189,7 @@ def show_cropped_video(
     out, height, width, total_no_frames = _create_output_video(
         output_video_file, vc, out_width, out_height, out_fps=fps
     )
-    start_frame, end_frame = _get_start_end_frames(
+    start_frame, end_frame = get_start_end_frames(
         start_frame, end_frame, total_no_frames
     )
     vc.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
@@ -229,7 +229,7 @@ def plot_detections_in_video(
     out, height, width, total_no_frames = _create_output_video(
         output_video_file, vc, out_width, out_height
     )
-    start_frame, end_frame = _get_start_end_frames(
+    start_frame, end_frame = get_start_end_frames(
         start_frame, end_frame, total_no_frames
     )
 
@@ -353,7 +353,7 @@ def plot_tracks_array_in_video(
     colors = np.random.randint(0, 255, size=(len(tracks_ids), 3))
     tracks_ids_to_inds = {track_id: i for i, track_id in enumerate(tracks_ids)}
 
-    start_frame, end_frame = _get_start_end_frames(
+    start_frame, end_frame = get_start_end_frames(
         start_frame, end_frame, total_no_frames
     )
     for frame_number in tqdm(range(start_frame, end_frame + 1, step)):
@@ -407,7 +407,7 @@ def plot_tracks_in_video(
         output_video_file, vc, out_width, out_height, fps
     )
 
-    start_frame, end_frame = _get_start_end_frames(
+    start_frame, end_frame = get_start_end_frames(
         start_frame, end_frame, total_no_frames
     )
     for frame_number in tqdm(range(start_frame, end_frame + 1, step)):
@@ -464,7 +464,7 @@ def plot_matches_in_video(
     out, height, width, total_no_frames = _create_output_video(
         output_video_file, vc1, out_width, out_height, fps
     )
-    start_frame, end_frame = _get_start_end_frames(
+    start_frame, end_frame = get_start_end_frames(
         start_frame, end_frame, total_no_frames
     )
     for frame_number in tqdm(range(start_frame, end_frame + 1, step)):

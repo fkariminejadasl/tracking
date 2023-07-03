@@ -707,8 +707,8 @@ def compute_tracks(
     filename_fixpart: str,
     width: int,
     height: int,
-    total_no_frames: int,
     start_frame: int = 1,
+    end_frame=None,
     step: int = 1,
     format: str = "",
 ):
@@ -718,7 +718,7 @@ def compute_tracks(
 
     # start track
     # ===========
-    for frame_number in tqdm(range(step, total_no_frames, step)):
+    for frame_number in tqdm(range(step, end_frame + 1, step)):
         # # track cleaning up
         # if frame_number % 20 == 0:
         #     tracks = _reindex_tracks(_remove_short_tracks(tracks))
@@ -748,7 +748,6 @@ def compute_tracks(
         tracks, new_track_id = _track_current_unmatched(
             dets, inds, frame_number, tracks, new_track_id
         )
-        print(make_array_from_dets(_get_predicted_locations(tracks, frame_number)))
     # tracks = _reindex_tracks(_remove_short_tracks(tracks))
     return tracks
 

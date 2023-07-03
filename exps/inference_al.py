@@ -294,7 +294,7 @@ image = cv2.imread(f"{image_dir}/{vid_name}_frame_{start_frame:06d}.jpg")
 width, height = image.shape[1], image.shape[0]
 
 tracks = da.compute_tracks(
-    det_dir, filename_fixpart, width, height, total_no_frames, start_frame, step, format
+    det_dir, filename_fixpart, width, height, start_frame, end_frame, step, format
 )
 tracks = da._reindex_tracks(da._remove_short_tracks(tracks))
 tracks = da.make_array_from_tracks(tracks)
