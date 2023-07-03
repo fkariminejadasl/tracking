@@ -32,25 +32,105 @@ def get_video_parameters(vc: cv2.VideoCapture):
 
 
 def save_video_as_images(
-    video_file: Path,
     save_path: Path,
-    step: int = 1,
-    start_frame: int = 0,
+    video_file: Path,
+    start_frame=None,
     end_frame=None,
+    step: int = 1,
+    format: str = "06d",
 ):
     vc = cv2.VideoCapture(video_file.as_posix())
     assert vc.isOpened()
     height, width, total_no_frames, fps = get_video_parameters(vc)
+    start_frame, end_frame = get_start_end_frames(
+        start_frame, end_frame, total_no_frames
+    )
+
     save_path.mkdir(parents=True, exist_ok=True)
 
     vc.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-    if end_frame is None:
-        end_frame = total_no_frames - 1
-    for frame_number in tqdm(range(start_frame, end_frame + 1)):
+    for frame_number in tqdm(range(start_frame, end_frame + 1, step)):
         _, frame = vc.read()
         if frame_number % step == 0:
-            name = f"{video_file.stem}_{frame_number}.jpg"
+            name = f"{video_file.stem}_frame_{frame_number:{format}}.jpg"
             cv2.imwrite((save_path / f"{name}").as_posix(), frame)
+    vc.release()
+
+
+def get_start_end_frames(start_frame, end_frame, total_no_frames):
+    if start_frame is None:
+        start_frame = 0
+    if end_frame is None:
+        end_frame = total_no_frames - 1
+    return start_frame, end_frame
+
+
+def save_video_with_tracks_as_images(
+    save_path: Path,
+    video_file: Path,
+    tracks: np.ndarray,
+    start_frame=None,
+    end_frame=None,
+    step: int = 1,
+    format: str = "06d",
+):
+    vc = cv2.VideoCapture(video_file.as_posix())
+    assert vc.isOpened()
+    height, width, total_no_frames, fps = get_video_parameters(vc)
+    start_frame, end_frame = get_start_end_frames(
+        start_frame, end_frame, total_no_frames
+    )
+
+    tracks_ids = np.unique(tracks[:, 0])
+    colors = np.random.randint(0, 255, size=(len(tracks_ids), 3))
+    tracks_ids_to_inds = {track_id: i for i, track_id in enumerate(tracks_ids)}
+    show_det_id = False
+    black = True
+
+    save_path.mkdir(parents=True, exist_ok=True)
+
+    vc.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    for frame_number in tqdm(range(start_frame, end_frame + 1, step)):
+        _, frame = vc.read()
+        if frame_number % step == 0:
+            frame_tracks = tracks[tracks[:, 1] == frame_number]
+            if frame_tracks.size == 0:
+                continue
+            for det in frame_tracks:
+                det_id = det[2]
+                track_id = det[0]
+                color = colors[tracks_ids_to_inds[track_id]]
+                color = tuple(map(int, color))
+                color = (color[2], color[1], color[0])
+
+                x_tl, y_tl, x_br, y_br = det[3:7]
+                _plot_cv2_bbox(
+                    frame,
+                    x_tl,
+                    y_tl,
+                    x_br,
+                    y_br,
+                    color,
+                    show_det_id,
+                    track_id,
+                    det_id,
+                    black,
+                )
+
+            cv2.putText(
+                frame,
+                f"{frame_number}",
+                (15, 25),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1,  # font scale
+                (0, 0, 0),  # color
+                1,  # Thinckness
+                2,  # line type
+            )
+
+            name = f"{video_file.stem}_frame_{frame_number:{format}}.jpg"
+            cv2.imwrite((save_path / f"{name}").as_posix(), frame)
+
     vc.release()
 
 
@@ -101,17 +181,19 @@ def show_cropped_video(
     top_left=Point(1300, 700),
     out_width=900,
     out_height=500,
-    start_frame=0,
+    start_frame=None,
     end_frame=None,
+    step=1,
     fps=None,
 ):
     out, height, width, total_no_frames = _create_output_video(
         output_video_file, vc, out_width, out_height, out_fps=fps
     )
-    if end_frame is None:
-        end_frame = total_no_frames - 1
+    start_frame, end_frame = get_start_end_frames(
+        start_frame, end_frame, total_no_frames
+    )
     vc.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-    for frame_number in tqdm(range(start_frame, end_frame + 1)):
+    for frame_number in tqdm(range(start_frame, end_frame + 1, step)):
         _, frame = vc.read()
 
         out = _write_frame_in_video(
@@ -129,6 +211,9 @@ def plot_detections_in_video(
     out_width=None,
     out_height=None,
     color=(0, 0, 255),
+    start_frame=None,
+    end_frame=None,
+    step=1,
 ):
     if isinstance(video_file, cv2.VideoCapture):
         vc = video_file
@@ -144,13 +229,16 @@ def plot_detections_in_video(
     out, height, width, total_no_frames = _create_output_video(
         output_video_file, vc, out_width, out_height
     )
+    start_frame, end_frame = get_start_end_frames(
+        start_frame, end_frame, total_no_frames
+    )
 
     vc.set(cv2.CAP_PROP_POS_FRAMES, 0)
-    for frame_number in tqdm(range(total_no_frames)):
+    for frame_number in tqdm(range(start_frame, end_frame + 1, step)):
         _, frame = vc.read()
 
         det_path = det_folder / f"{filename_fixpart}_{frame_number+1}.txt"
-        dets = get_detections(det_path, width, height)
+        dets = get_detections(det_path, width, height, frame_number)
 
         for det in dets:
             x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
@@ -247,28 +335,28 @@ def plot_tracks_array_in_video(
     output_video_file,
     tracks: np.ndarray,
     vc,
-    top_left=Point(1300, 700),
+    top_left=Point(0, 0),
     out_width=900,
     out_height=500,
-    total_no_frames: int = 0,
+    start_frame=None,
+    end_frame=None,
+    step=1,
     fps: int = None,
     show_det_id=False,
     black=True,
 ):
-    if total_no_frames != 0:
-        out, height, width, _ = _create_output_video(
-            output_video_file, vc, out_width, out_height, fps
-        )
-    else:
-        out, height, width, total_no_frames = _create_output_video(
-            output_video_file, vc, out_width, out_height, fps
-        )
+    out, height, width, total_no_frames = _create_output_video(
+        output_video_file, vc, out_width, out_height, fps
+    )
 
     tracks_ids = np.unique(tracks[:, 0])
     colors = np.random.randint(0, 255, size=(len(tracks_ids), 3))
     tracks_ids_to_inds = {track_id: i for i, track_id in enumerate(tracks_ids)}
 
-    for frame_number in tqdm(range(total_no_frames)):
+    start_frame, end_frame = get_start_end_frames(
+        start_frame, end_frame, total_no_frames
+    )
+    for frame_number in tqdm(range(start_frame, end_frame + 1, step)):
         _, frame = vc.read()
         frame_tracks = tracks[tracks[:, 1] == frame_number]
         if frame_tracks.size == 0:
@@ -308,21 +396,21 @@ def plot_tracks_in_video(
     top_left=Point(1300, 700),
     out_width=900,
     out_height=500,
-    total_no_frames: int = 0,
+    start_frame=None,
+    end_frame=None,
+    step=1,
     fps: int = None,
     show_det_id=False,
     black=True,
 ):
-    if total_no_frames != 0:
-        out, height, width, _ = _create_output_video(
-            output_video_file, vc, out_width, out_height, fps
-        )
-    else:
-        out, height, width, total_no_frames = _create_output_video(
-            output_video_file, vc, out_width, out_height, fps
-        )
+    out, height, width, total_no_frames = _create_output_video(
+        output_video_file, vc, out_width, out_height, fps
+    )
 
-    for frame_number in tqdm(range(total_no_frames)):
+    start_frame, end_frame = get_start_end_frames(
+        start_frame, end_frame, total_no_frames
+    )
+    for frame_number in tqdm(range(start_frame, end_frame + 1, step)):
         _, frame = vc.read()
 
         for track_id, track in tracks.items():
@@ -365,21 +453,21 @@ def plot_matches_in_video(
     bottom_right1,
     top_left2,
     bottom_right2,
-    total_no_frames=0,
+    start_frame=None,
+    end_frame=None,
+    step=1,
     fps: int = None,
 ):
+    font_scale = 1
     out_width = bottom_right1.x - top_left1.x + bottom_right2.x - top_left2.x
     out_height = bottom_right1.y - top_left1.y
-    if total_no_frames != 0:
-        out, height, width, _ = _create_output_video(
-            output_video_file, vc1, out_width, out_height, fps
-        )
-    else:
-        out, height, width, total_no_frames = _create_output_video(
-            output_video_file, vc1, out_width, out_height, fps
-        )
-    font_scale = 1
-    for frame_number in tqdm(range(0, total_no_frames)):
+    out, height, width, total_no_frames = _create_output_video(
+        output_video_file, vc1, out_width, out_height, fps
+    )
+    start_frame, end_frame = get_start_end_frames(
+        start_frame, end_frame, total_no_frames
+    )
+    for frame_number in tqdm(range(start_frame, end_frame + 1, step)):
         frame1, frame2 = get_stereo_frames(frame_number, vc1, vc2)
 
         for track_id1, value in all_matches.items():
@@ -539,10 +627,36 @@ def _plot_detections(dets: list[Detection], ax, color="r", text="det_id"):
         ax.add_patch(rect)
 
 
+def _plot_bboxs(bboxes, ax, color="r"):
+    """bboxes: list of [id, x_tl, y_tl, x_br, y_br]"""
+    for bbox in bboxes:
+        text, x_tl, y_tl, x_br, y_br = bbox
+        ax.text(
+            x_tl,
+            y_tl,
+            text,
+            color="r",
+            fontsize=12,
+        )
+        rect = patches.Rectangle(
+            (x_tl, y_tl),
+            x_br - x_tl,
+            y_br - y_tl,
+            linewidth=1,
+            edgecolor=color,
+            facecolor="none",
+        )
+        ax.add_patch(rect)
+
+
 def plot_detections_in_image(dets, image, color="r", text="det_id"):
+    """dets: is either Detection format or a list of [id, x_tl, y_tl, x_br, y_br]"""
     _, ax = plt.subplots(1, 1)
     show_one_frame(ax, image)
-    _plot_detections(dets, ax, color=color, text=text)
+    if isinstance(dets[0], Detection):
+        _plot_detections(dets, ax, color=color, text=text)
+    else:
+        _plot_bboxs(dets, ax, color="r")
 
 
 def plot_detections_in_stereo(frame1, frame2, dets1, dets2, image_width):

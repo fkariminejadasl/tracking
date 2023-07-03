@@ -88,7 +88,7 @@ There are more options for variables such as below. You can get the full list fr
 **Check finished jobs**
 
 ```bash
-sacct -j jobid -o "JobID,JobName,MaxRSS,Elapsed"
+sacct -j jobid -o "JobID,JobName,MaxRSS,Elapsed,NNodes,NodeList"
 ```
 More options are in the [sacct help page](https://slurm.schedmd.com/sacct.html).
 
@@ -117,6 +117,23 @@ This is same as sbatch with runfile.sh but parameters are set in srun. In this w
 srun --gpus=1 --partition=gpu --partition=gpu --pty bash -il
 ```
 
+**Multigpu in single or multi node**
+For every GPU there is 18 CPU no matter if specified in slurm or not. Slurm, batch scheduler, will ignore if another value for CPU is specified. Each task runs on one CPU. So `ntasks-per-node` or `ntasks` are the same here. Apparently, `with OMP_NUM_THREADS=4`, or other value, we can tell torchrun to use 4 threads per CPU.
+
+Basically, only specifiying number of gpus and the partition is enough. Below example uses 2 GPUs on a single Node, with 1 threads per CPU. 
+```bash
+#!/bin/bash
+#SBATCH --gpus=2
+#SBATCH --partition=gpu
+#changing the  OMP_NUM_THREADS env variable is the same as --cpus-per-task
+export OMP_NUM_THREADS=1
+torchrun --node_rank=0 --nnodes=1 --nproc_per_node=2 ~/test/multigpu_torchrun.py 50 10
+```
+For more information on ddp (distributed data parallel) in pytorch, look at the [tutorial](https://pytorch.org/tutorials/beginner/ddp_series_intro.html).
+
+**Wandb in Snellius**
+First run `wandb init` before sending the job via sbatch. Then run the code which has `wandb.init(project=project_name)`. `Project_name` is wandb project.
+
 **Useful commands**
 
 - `sbatch`: run a job
@@ -125,6 +142,8 @@ srun --gpus=1 --partition=gpu --partition=gpu --pty bash -il
 - `scontrol`: show detailed job information
 - `sacct`: get statistics on completed jobs
 - `accinfo` `accuse`, `budget-overview`: show how much credite is left (Snellius commands)
+- `myquota`: show the limit of files. They are also listed in [Snellius hardware and file systems](https://servicedesk.surf.nl/wiki/display/WIKI/Snellius+hardware+and+file+systems).
+- `gpustat -acp`: show the gpu usage. It should be installed with pip, `pip install gpustat`. It has the information from `nvidia-smi`, but one-liner. 
 
 Some examples are given in [Convenient Slurm commands](https://docs.rc.fas.harvard.edu/kb/convenient-slurm-commands). 
 

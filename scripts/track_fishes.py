@@ -7,9 +7,13 @@ sys.path.insert(0, path)
 
 import cv2
 
-from tracking.data_association import (Point, _reindex_tracks,
-                                       _remove_short_tracks, compute_tracks,
-                                       save_tracks_to_mot_format)
+from tracking.data_association import (
+    Point,
+    _reindex_tracks,
+    _remove_short_tracks,
+    compute_tracks,
+    save_tracks_to_mot_format,
+)
 from tracking.visualize import get_video_parameters, plot_tracks_in_video
 
 
@@ -82,7 +86,7 @@ def main():
         args.total_no_frames = total_no_frames
 
     tracks = compute_tracks(
-        det_folder, filename_fixpart, width, height, total_no_frames
+        det_folder, filename_fixpart, width, height, end_frame=args.total_no_frames - 1
     )
     tracks = _reindex_tracks(_remove_short_tracks(tracks))
 
@@ -105,7 +109,8 @@ def main():
         top_left,
         video_width,
         video_height,
-        args.total_no_frames,
+        start_frame=0,
+        end_frame=args.total_no_frames - 1,
         fps=args.fps,
         show_det_id=False,
         black=True,

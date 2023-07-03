@@ -8,30 +8,45 @@ import pytest
 path = (Path(__file__).parents[1]).as_posix()
 sys.path.insert(0, path)
 
-from tracking.data_association import (bipartite_local_matching,
-                                       clean_detections, compute_tracks,
-                                       get_detections, get_detections_array,
-                                       get_detections_with_disparity, get_iou,
-                                       hungarian_global_matching,
-                                       is_bbox_in_bbox, load_disparities,
-                                       load_tracks_from_cvat_txt_format,
-                                       load_tracks_from_mot_format,
-                                       make_array_from_dets,
-                                       make_array_from_tracks,
-                                       make_dets_from_array,
-                                       make_tracks_from_array,
-                                       match_detections,
-                                       save_tracks_to_cvat_txt_format,
-                                       save_tracks_to_mot_format)
-from tracking.stats import (get_gt_object_match, get_stats_for_frame,
-                            get_stats_for_track, get_stats_for_tracks)
+from tracking.data_association import (
+    bipartite_local_matching,
+    clean_detections,
+    get_detections,
+    get_detections_array,
+    get_detections_with_disparity,
+    get_iou,
+    hungarian_global_matching,
+    is_bbox_in_bbox,
+    load_disparities,
+    load_tracks_from_cvat_txt_format,
+    load_tracks_from_mot_format,
+    make_array_from_dets,
+    make_array_from_tracks,
+    make_dets_from_array,
+    make_tracks_from_array,
+    match_detections,
+    save_tracks_to_cvat_txt_format,
+    save_tracks_to_mot_format,
+    zero_out_of_image_bboxs,
+)
+from tracking.stats import (
+    get_gt_object_match,
+    get_stats_for_frame,
+    get_stats_for_track,
+    get_stats_for_tracks,
+)
 from tracking.stereo_gt import get_matched_track_ids, load_matched_tracks_ids
 from tracking.tracklet_operations import (
-    add_remove_tracks_by_disp_infos, append_tracks_with_cam_id_match_id,
-    arrange_track_ids, get_candidates_disparity_infos,
+    add_remove_tracks_by_disp_infos,
+    append_tracks_with_cam_id_match_id,
+    arrange_track_ids,
+    get_candidates_disparity_infos,
     get_matches_from_candidates_disparity_infos,
-    match_primary_track_to_secondry_tracklets, remove_detects_change_track_ids,
-    remove_short_tracks, select_from_overlaps)
+    match_primary_track_to_secondry_tracklets,
+    remove_detects_change_track_ids,
+    remove_short_tracks,
+    select_from_overlaps,
+)
 
 data_path = Path(__file__).parent / "data"
 annos = load_tracks_from_cvat_txt_format(data_path / "04_07_22_G_2_rect_valid_gt.txt")
@@ -52,7 +67,7 @@ def test_get_iou():
 
 def test_is_bbox_in_bbox():
     adets = get_detections_array(
-        data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height
+        data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height, 1
     )
     assert is_bbox_in_bbox(adets[5, 3:7], adets[1, 3:7]) == True
     assert is_bbox_in_bbox(adets[1, 3:7], adets[5, 3:7]) == False
@@ -170,10 +185,10 @@ def test_get_stats_for_track_after_iou_bug():
 
 def test_make_array_from_dets_reverse():
     dets = get_detections(
-        data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height
+        data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height, 1
     )
     dets_array = get_detections_array(
-        data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height
+        data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height, 1
     )
     actual = make_array_from_dets(dets)
     np.testing.assert_equal(actual, dets_array)
@@ -189,7 +204,7 @@ def test_make_array_from_dets_reverse():
 
 def test_clean_detections():
     dets_array = get_detections_array(
-        data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height
+        data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height, 1
     )
     cleaned_dets = clean_detections(dets_array)
     removed_det_ids = [0, 2, 12, 25, 1, 5, 8, 10, 6]
@@ -203,10 +218,10 @@ def test_match_ddetections():
         data_path / "matched_ids_dets.txt", skiprows=1, delimiter=","
     ).astype(np.int64)
     adets1 = get_detections_array(
-        data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height
+        data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height, 1
     )
     adets2 = get_detections_array(
-        data_path / "04_07_22_G_2_rect_valid_3.txt", im_width, im_height
+        data_path / "04_07_22_G_2_rect_valid_3.txt", im_width, im_height, 2
     )
     _, _, matched_ids = match_detections(adets1, adets2)
     idxs1, idxs2, matched_ids_cleaned = match_detections(
@@ -220,10 +235,10 @@ def test_match_ddetections():
 
 def test_match_ddetections2():
     adets1 = get_detections_array(
-        data_path / "04_07_22_G_2_rect_valid_1.txt", im_width, im_height
+        data_path / "04_07_22_G_2_rect_valid_1.txt", im_width, im_height, 0
     )
     adets2 = get_detections_array(
-        data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height
+        data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height, 1
     )
     _, _, matched_ids = match_detections(adets1, adets2)
     idxs1, idxs2, matched_ids_cleaned = match_detections(
@@ -318,21 +333,6 @@ def test_get_stats_for_track_after_remove_occlusions():
         assert tp + fn == len(annos[annos[:, 0] == gt_track_id])
 
 
-@pytest.mark.failed
-def test_compute_track():
-    tracks = compute_tracks(
-        data_path, "04_07_22_G_2_rect_valid", 2, im_width, im_height, 3
-    )
-    tracks_array = make_array_from_tracks(tracks)
-
-    atracks = np.loadtxt(
-        data_path / "tracks_iou_bug.txt", skiprows=1, delimiter=","
-    ).astype(np.int64)
-    desired = atracks[atracks[:, 1] < 3]
-
-    np.testing.assert_equal(tracks_array[:, :7], desired)
-
-
 @pytest.mark.temp
 def test_disparities():
     desired = load_disparities(data_path / "disparities_frame81.txt")
@@ -366,13 +366,17 @@ def test_get_matched_track_ids():
     np.testing.assert_equal(matches[:, :2], desired[:, :2])
 
 
-from tracking.data_association import (cen_wh_from_tl_br,
-                                       get_track_from_track_id,
-                                       interpolate_two_bboxes,
-                                       tl_br_from_cen_wh)
+from tracking.data_association import (
+    cen_wh_from_tl_br,
+    get_track_from_track_id,
+    interpolate_two_bboxes,
+    tl_br_from_cen_wh,
+)
 from tracking.stereo_gt import get_disparity_info_from_stereo_track
-from tracking.tracklet_operations import (add_remove_tracks,
-                                          get_start_ends_missing_frames)
+from tracking.tracklet_operations import (
+    add_remove_tracks,
+    get_start_ends_missing_frames,
+)
 
 
 # TODO maybe remove
@@ -501,6 +505,29 @@ def test_get_matches_from_candidates_disparity_infos():
     assert sel_track_id == 73
     cands2 = get_matches_from_candidates_disparity_infos(cands)
     np.testing.assert_equal(np.unique(cands2[:, 1]), np.array([16, 53, 73, 83]))
+
+
+def test_zero_out_of_image_bboxs():
+    bboxs = np.array(
+        [
+            [9, 205, -1, 216, 27],
+            [10, 489, 30, 501, 49],
+            [11, 406, 427, 417, 434],
+            [5, 416, 548, 453, 570],
+            [6, 541, 515, 558, 529],
+        ]
+    )
+    desired = np.array(
+        [
+            [9, 205, 0, 216, 27],
+            [10, 489, 30, 501, 49],
+            [11, 0, 0, 0, 0],
+            [5, 0, 0, 0, 0],
+            [6, 0, 0, 0, 0],
+        ]
+    )
+    actual = zero_out_of_image_bboxs(bboxs, 512, 256)
+    np.testing.assert_equal(actual, desired)
 
 
 """

@@ -95,7 +95,7 @@ def main():
         top_left,
         video_width,
         video_height,
-        args.total_no_frames,
+        end_frame=args.total_no_frames - 1,
         fps=args.fps,
         show_det_id=False,
         black=False,

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 from scipy.optimize import linear_sum_assignment
+from tqdm import tqdm
 
 np.random.seed(1000)
 
@@ -105,13 +106,8 @@ def get_detections(
     det_file: Path,
     width: int,
     height: int,
-    frame_number: int = None,
-    zero_based: bool = False,
+    frame_number: int,
 ) -> list[Detection]:
-    if frame_number is None:
-        frame_number = int(det_file.stem.split("_")[-1]) - 1
-    if zero_based:
-        frame_number = int(det_file.stem.split("_")[-1])
     score = -1
 
     detections = np.loadtxt(det_file)
@@ -151,11 +147,11 @@ def cen_wh_from_tl_br(tl_x, tl_y, br_x, br_y) -> tuple:
 
 
 def get_detections_array(
-    det_file: Path, width: int, height: int, zero_based: bool = False
+    det_file: Path,
+    width: int,
+    height: int,
+    frame_number: int,
 ) -> list[np.ndarray]:
-    frame_number = int(det_file.stem.split("_")[-1]) - 1
-    if zero_based:
-        frame_number = int(det_file.stem.split("_")[-1])
     detections = np.loadtxt(det_file)
     dets_array = []
     for det_id, det in enumerate(detections):
@@ -323,8 +319,10 @@ def clean_detections(dets: np.ndarray, ratio_thres=2.5, sp_thres=20, inters_thre
     return cleaned_dets
 
 
-def get_cleaned_detections(det_path: Path, width, height) -> list[Detection]:
-    dets = get_detections(det_path, width, height)
+def get_cleaned_detections(
+    det_path: Path, width, height, frame_number
+) -> list[Detection]:
+    dets = get_detections(det_path, width, height, frame_number)
     dets = clean_detections_by_score(dets)
     dets = make_dets_from_array(clean_detections(make_array_from_dets(dets)))
     return dets
@@ -404,14 +402,14 @@ def _intersect2d_rows(ids1: np.ndarray, ids2: np.ndarray) -> np.ndarray:
 def bipartite_local_matching(pred_dets, dets):
     pred_dets_array = make_array_from_dets(pred_dets)
     dets_array = make_array_from_dets(dets)
-    pred_inds1, ids1, _ = match_detections(pred_dets_array, dets_array)
-    ids2, pred_inds2, _ = match_detections(dets_array, pred_dets_array)
-    ids1 = np.vstack((pred_inds1, ids1)).T
-    ids2 = np.vstack((pred_inds2, ids2)).T
-    intersections = _intersect2d_rows(ids1, ids2)
+    pred_inds1, inds1, _ = match_detections(pred_dets_array, dets_array)
+    inds2, pred_inds2, _ = match_detections(dets_array, pred_dets_array)
+    inds1 = np.vstack((pred_inds1, inds1)).T
+    inds2 = np.vstack((pred_inds2, inds2)).T
+    intersections = _intersect2d_rows(inds1, inds2)
     pred_inds = intersections[:, 0]
-    ids = intersections[:, 1]
-    return pred_inds, ids
+    inds = intersections[:, 1]
+    return pred_inds, inds
 
 
 def _get_tl_and_br(det: Detection) -> tuple:
@@ -427,6 +425,118 @@ def hungarian_global_matching(dets1, dets2):
             dist[i, j] = iou_loss + loc_loss
     row_ind, col_ind = linear_sum_assignment(dist)
     return row_ind, col_ind
+
+
+def association_learning_matching(dets, dets2):
+    # TODO bugs: there are several bugs
+    # 1. time and frame_number therefore image crops are not correct
+    # This can happen when track is stops for few frames
+    # 2. One object match to different tracks. This is combined with
+    # _make_new_track cause the track has the same id. e.g.
+    # last track item track id 31 with the same object repeated twice.
+    from copy import deepcopy
+
+    import cv2
+    import torch
+    import torchvision
+    from PIL import Image
+    from sklearn.neighbors import KDTree
+
+    from tracking import association_learning as al
+
+    device = "cuda"
+    model = al.AssociationNet(2048, 5).to(device)
+    model.load_state_dict(
+        torch.load("/home/fatemeh/Downloads/result_snellius/al/2_best.pth")["model"]
+    )
+    transform = torchvision.transforms.Compose(
+        [
+            torchvision.transforms.ToTensor(),
+            torchvision.transforms.Normalize(
+                mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+            ),
+        ]
+    )
+    crop_w, crop_h = 512, 256
+
+    # TODO parameter
+    step = 8
+    vid_name = "437_cam12"
+    image_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/images")
+
+    dets = make_array_from_dets(dets)
+    dets2 = make_array_from_dets(dets2)
+    frame_number = dets[0, 1]
+    frame_number2 = dets2[0, 1]
+    time = (frame_number2 - frame_number) / step
+
+    im = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number:06d}.jpg")[:, :, ::-1]
+    im2 = cv2.imread(f"{image_dir}/{vid_name}_frame_{frame_number2:06d}.jpg")[
+        :, :, ::-1
+    ]
+
+    kdt = KDTree(dets2[:, 7:9])
+    _, inds = kdt.query(dets[:, 7:9], k=5)
+    dets_inds = []
+    dets2_inds = []
+    for query_ind, ind in enumerate(inds):
+        for _ in range(1):
+            bbox1 = deepcopy(dets[query_ind, 2:7][None, :])
+            jitter_x, jitter_y = np.random.normal(50, 10, 2)
+            crop_x, crop_y = max(0, int(bbox1[0, 1] + jitter_x - crop_w / 2)), max(
+                0, int(bbox1[0, 2] + jitter_y - crop_h / 2)
+            )
+            bbox1 = change_center_bboxs(bbox1, crop_x, crop_y)
+            bboxes2 = deepcopy(dets2[ind, 2:7])
+            bboxes2 = change_center_bboxs(bboxes2, crop_x, crop_y)
+
+            bboxes2 = zero_out_of_image_bboxs(bboxes2, crop_w, crop_h)
+            bbox1 = normalize_bboxs(bbox1, crop_w, crop_h)
+            bboxes2 = normalize_bboxs(bboxes2, crop_w, crop_h)
+
+            bbox1 = torch.tensor(bbox1[:, 1:]).unsqueeze(0).to(device).to(torch.float32)
+            bboxes2 = (
+                torch.tensor(bboxes2[:, 1:]).unsqueeze(0).to(device).to(torch.float32)
+            )
+            time_emb = torch.tensor([time / 4], dtype=torch.float32).to(device)
+
+            imc = im[crop_y : crop_y + crop_h, crop_x : crop_x + crop_w]
+            imc2 = im2[crop_y : crop_y + crop_h, crop_x : crop_x + crop_w]
+            imc = np.ascontiguousarray(imc)
+            imc2 = np.ascontiguousarray(imc2)
+            imt = transform(Image.fromarray(imc)).unsqueeze(0).to(device)
+            imt2 = transform(Image.fromarray(imc2)).unsqueeze(0).to(device)
+            output = model(imt, bbox1, imt2, bboxes2, time_emb)
+            argmax = torch.argmax(output, axis=1).item()
+
+        dets_inds.append(query_ind)
+        dets2_inds.append(ind[argmax])
+    return np.array(dets_inds, dtype=np.int64), np.array(dets2_inds, dtype=np.int64)
+
+
+def normalize_bboxs(bboxs, crop_w, crop_h):
+    assert bboxs.shape[1] == 5
+    bboxs = bboxs.astype(np.float32)
+    return np.concatenate(
+        (bboxs[:, 0:1], bboxs[:, 1:] / np.tile(np.array([crop_w, crop_h]), 2)), axis=1
+    )
+
+
+def change_center_bboxs(bboxs, crop_x, crop_y):
+    assert bboxs.shape[1] == 5
+    return np.concatenate(
+        (bboxs[:, 0:1], bboxs[:, 1:] - np.tile(np.array([crop_x, crop_y]), 2)), axis=1
+    )
+
+
+def zero_out_of_image_bboxs(bboxes, crop_w, crop_h):
+    assert bboxes.shape[1] == 5
+    bboxs = bboxes.copy()
+    bboxs[:, 1::2] = np.clip(bboxs[:, 1::2], 0, crop_w)
+    bboxs[:, 2::2] = np.clip(bboxs[:, 2::2], 0, crop_h)
+    bboxs[bboxs[:, 1] == bboxs[:, 3], 1:] = 0
+    bboxs[bboxs[:, 2] == bboxs[:, 4], 1:] = 0
+    return bboxs
 
 
 def _connect_inds_to_detection_ids(dets):
@@ -457,11 +567,21 @@ def _initialize_track_frame1(dets):
     return tracks, new_track_id
 
 
-def initialize_tracks(det_folder: Path, filename_fixpart: str, width: int, height: int):
-    frame_number = 0
-    det_path = det_folder / f"{filename_fixpart}_{frame_number + 1}.txt"
-    # dets = get_detections(det_path, width, height)
-    dets = get_cleaned_detections(det_path, width, height)
+def initialize_tracks(
+    det_folder: Path,
+    filename_fixpart: str,
+    width: int,
+    height: int,
+    first_frame: int = 1,
+    format: str = "",
+):
+    det_path = det_folder / f"{filename_fixpart}_{first_frame:{format}}.txt"
+    if format == "":
+        frame_number = first_frame - 1
+    else:
+        frame_number = first_frame
+    dets = get_detections(det_path, width, height, frame_number)
+    # dets = get_cleaned_detections(det_path, width, height, frame_number)
 
     tracks, new_track_id = _initialize_track_frame1(dets)
     return tracks, new_track_id
@@ -477,6 +597,10 @@ def _track_predicted_unmatched(pred_dets, pred_inds, tracks):
 
 
 def _track_current_unmatched(dets, inds, frame_number, tracks, new_track_id):
+    # TODO bug related to same detection assigned to different tracks
+    # tracks dict keys are correct but in _make_new_track the det track_id is changed
+    # although this is assigned to different track keys but their det object is changed in both tracks
+    # so _get_predicted_locations returns same track_id
     diff_inds = set(range(len(dets))).difference(set(inds))
     for id in diff_inds:
         tracks[new_track_id] = _make_new_track(dets[id], new_track_id)
@@ -490,6 +614,7 @@ def _track_matches(
     tracks,
     current_frame_number,
 ):
+    # pred_inds, inds = association_learning_matching(pred_dets, dets)
     pred_inds, inds = hungarian_global_matching(pred_dets, dets)
     # pred_inds, inds = bipartite_local_matching(pred_dets, dets)
 
@@ -582,22 +707,30 @@ def compute_tracks(
     filename_fixpart: str,
     width: int,
     height: int,
-    total_no_frames: int,
+    start_frame: int = 1,
+    end_frame=None,
+    step: int = 1,
+    format: str = "",
 ):
     tracks, new_track_id = initialize_tracks(
-        det_folder, filename_fixpart, width, height
+        det_folder, filename_fixpart, width, height, start_frame, format
     )
 
     # start track
     # ===========
-    for frame_number in range(1, total_no_frames):
+    for frame_number in tqdm(range(step, end_frame + 1, step)):
         # # track cleaning up
         # if frame_number % 20 == 0:
         #     tracks = _reindex_tracks(_remove_short_tracks(tracks))
 
-        det_path = det_folder / f"{filename_fixpart}_{frame_number + 1}.txt"
-        # dets = get_detections(det_path, width, height)
-        dets = get_cleaned_detections(det_path, width, height)
+        # ugly hack for yolo naming in yolo8, which is one based, e.g frame_1.txt
+        if format == "":
+            current_frame = frame_number + 1
+        else:
+            current_frame = frame_number
+        det_path = det_folder / f"{filename_fixpart}_{current_frame:{format}}.txt"
+        dets = get_detections(det_path, width, height, frame_number)
+        # dets = get_cleaned_detections(det_path, width, height, frame_number)
         pred_dets = _get_predicted_locations(tracks, frame_number)
 
         # track maches
@@ -656,7 +789,7 @@ def load_tracks_from_mot_format(zip_file: Path) -> np.ndarray:
     """
     mot format: frame_id, track_id, xtl, ytl, w, h, score, class, visibility
     array format: track_id, frame_id, det_id, xtl, ytl, xbr, ybr, xc, yc, w, h
-    
+
     input:
         zip_file: either zip file containing track file or track file itself.
         zip file contains gt folder with gt.txt, label.txt. This file comes from
@@ -905,8 +1038,8 @@ def get_detections_with_disparity(
     assert (
         frame_number == int(det_path_cam2.stem.split("_")[-1]) - 1
     ), "not a stereo pair"
-    dets_cam1 = get_detections(det_path_cam1, width, height)
-    dets_cam2 = get_detections(det_path_cam2, width, height)
+    dets_cam1 = get_detections(det_path_cam1, width, height, frame_number)
+    dets_cam2 = get_detections(det_path_cam2, width, height, frame_number)
     detections = []
     for det in dets_cam1:
         disp_candidates, det_ids = _compute_disp_candidates(det, dets_cam2)
@@ -964,4 +1097,142 @@ def _assign_unique_disp(tracks, frame_number):
         if frame_number != det.frame_number:
             track.disp.current_frame_number = frame_number
     return tracks
+"""
+
+""""
+# Tests for appearance cosine similarity
+
+def bbox_enlarge(bbox, w_enlarge, h_enlarge):
+    n_bbox = deepcopy(bbox)
+    n_bbox[3] -= w_enlarge
+    n_bbox[5] += w_enlarge
+    n_bbox[4] -= h_enlarge
+    n_bbox[6] += h_enlarge
+    n_bbox[9] = n_bbox[5] - n_bbox[3]
+    n_bbox[10] = n_bbox[6] - n_bbox[4]
+    return n_bbox
+
+
+from copy import deepcopy
+from importlib import reload
+from pathlib import Path
+
+import cv2
+import matplotlib.pylab as plt
+import torch
+import torchvision
+
+from tracking import data_association as da
+from tracking import visualize
+
+frame_number1 = 200#216  # 0
+frame_number2 = 240  # 8
+for frame_number2 in [208, 216, 224, 232, 240, 248, 256]:
+    print(frame_number2)
+    track_id1 = 4  # 9
+    track_id2 = 11  # 11
+    vid_name = "384_cam12"  # "217_cam12"
+    w_enlarge, h_enlarge = 0, 0
+    main_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids")
+    tracks = da.load_tracks_from_mot_format(main_dir / f"mots/{vid_name}.zip")
+    im1 = cv2.imread(str(main_dir / f"images/{vid_name}_frame_{frame_number1:06d}.jpg"))
+    dets1 = tracks[tracks[:, 1] == frame_number1]
+    im2 = cv2.imread(str(main_dir / f"images/{vid_name}_frame_{frame_number2:06d}.jpg"))
+    dets2 = tracks[tracks[:, 1] == frame_number2]
+
+    # visualize.plot_detections_in_image(dets1[:,[0,3,4,5,6]], im1);plt.show(block=False)
+    # visualize.plot_detections_in_image(dets2[:,[0,3,4,5,6]], im2);plt.show(block=False)
+
+    bb1 = deepcopy(dets1[(dets1[:, 0] == track_id1) | (dets1[:, 0] == track_id2)])
+    bb2 = deepcopy(dets2[(dets2[:, 0] == track_id1) | (dets2[:, 0] == track_id2)])
+    bb1 = np.array([bbox_enlarge(bb, w_enlarge, h_enlarge) for bb in bb1])
+    bb2 = np.array([bbox_enlarge(bb, w_enlarge, h_enlarge) for bb in bb2])
+    w, h = max(max(bb1[:, -2]), max(bb2[:, -2])), max(max(bb1[:, -1]), max(bb2[:, -1]))
+
+
+    print("color values")
+    for i in [0, 1]:
+        for j in [0, 1]:
+            imc1 = im1[bb1[i, 4] : bb1[i, 6], bb1[i, 3] : bb1[i, 5]]
+            imc2 = im2[bb2[j, 4] : bb2[j, 6], bb2[j, 3] : bb2[j, 5]]
+            imc1 = cv2.resize(imc1, (w, h), interpolation=cv2.INTER_AREA)
+            imc2 = cv2.resize(imc2, (w, h), interpolation=cv2.INTER_AREA)
+            imc1 = imc1.flatten().astype(np.float32)
+            imc2 = imc2.flatten().astype(np.float32)
+            csim = imc1.dot(imc2) / (np.linalg.norm(imc1) * np.linalg.norm(imc2))
+            print(i, j, csim)
+
+
+    activation = {}
+
+
+    def get_activation(name):
+        def hook(model, input, output):
+            activation[name] = output.detach()
+
+        return hook
+
+
+    device = "cuda"
+    model = torchvision.models.resnet50(
+        weights=torchvision.models.ResNet50_Weights.IMAGENET1K_V2
+    ).to(device)
+    transform = torchvision.transforms.Compose(
+        [
+            torchvision.transforms.ToTensor(),
+            torchvision.transforms.Normalize(
+                mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+            ),
+        ]
+    )
+
+    model.eval()
+    model.requires_grad_(False)
+    activation = {}
+    model.conv1.register_forward_hook(get_activation("conv1"))
+    model.layer1.register_forward_hook(get_activation("layer1"))
+    model.layer2.register_forward_hook(get_activation("layer2"))
+    model.layer3.register_forward_hook(get_activation("layer3"))
+    model.layer4.register_forward_hook(get_activation("layer4"))
+    _ = model(transform(im1).unsqueeze(0).to(device))
+
+
+    print("embeddings")
+    layer = "layer2"  # layer2, and layer3 are best
+    for layer in ["conv1", "layer1", "layer2", "layer3", "layer4"]:
+        print(layer)
+        for i in [0, 1]:
+            for j in [0, 1]:
+                imc1 = im1[bb1[i, 4] : bb1[i, 6], bb1[i, 3] : bb1[i, 5]]
+                imc2 = im2[bb2[j, 4] : bb2[j, 6], bb2[j, 3] : bb2[j, 5]]
+                imc1 = cv2.resize(imc1, (w, h), interpolation=cv2.INTER_AREA)
+                imc2 = cv2.resize(imc2, (w, h), interpolation=cv2.INTER_AREA)
+                _ = model(transform(imc1).unsqueeze(0).to(device))
+                f1 = activation[layer].flatten().cpu().numpy()
+                # f1 = activation[layer][0, :, 0, 0].cpu().numpy();print(activation[layer].shape)
+                _ = model(transform(imc2).unsqueeze(0).to(device))
+                f2 = activation[layer].flatten().cpu().numpy()
+                csim = f1.dot(f2) / (np.linalg.norm(f1) * np.linalg.norm(f2))
+                print(i, j, csim)
+
+    print("concate embeddings")
+    layers = ["conv1", "layer1", "layer2", "layer3"]
+    for i in [0, 1]:
+        for j in [0, 1]:
+            imc1 = im1[bb1[i, 4] : bb1[i, 6], bb1[i, 3] : bb1[i, 5]]
+            imc2 = im2[bb2[j, 4] : bb2[j, 6], bb2[j, 3] : bb2[j, 5]]
+            imc1 = cv2.resize(imc1, (w, h), interpolation=cv2.INTER_AREA)
+            imc2 = cv2.resize(imc2, (w, h), interpolation=cv2.INTER_AREA)
+            _ = model(transform(imc1).unsqueeze(0).to(device))
+            f1 = np.concatenate(
+                [activation[layer].flatten().cpu().numpy() for layer in layers]
+            )
+            _ = model(transform(imc2).unsqueeze(0).to(device))
+            f2 = np.concatenate(
+                [activation[layer].flatten().cpu().numpy() for layer in layers]
+            )
+            csim = f1.dot(f2) / (np.linalg.norm(f1) * np.linalg.norm(f2))
+            print(i, j, csim)
+    print(bb1)
+    print(bb2)
 """

@@ -8,7 +8,7 @@ from tqdm import tqdm
 path = (Path(__file__).parents[1]).as_posix()
 sys.path.insert(0, path)
 
-from tracking.visualize import get_frame, get_video_parameters
+from tracking.visualize import get_video_parameters
 
 
 def save_video_frames_on_disk(
