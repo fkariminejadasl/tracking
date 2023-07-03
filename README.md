@@ -61,3 +61,17 @@ python ~/dev/tracking/scripts/match_gt_stereo_tracks.py -r ~/Downloads -d ~/Down
 ```bash
 python ~/dev/tracking/scripts/plot_tracks_in_video.py -v ~/Downloads/vids/129_cam_1.MP4 -t ~/Downloads/vids/mot/129_cam_1.zip -s ~/Downloads/result.mp4 --total_no_frames 2000
 ```
+
+Association learning
+------------
+
+The training is in `scripts\training_al.py`, where dataset, model and training and validation step is in `tracking\association_learning.py`. Some statistics and inference is in `exps\inference_al.py`. Association learning is naively integrated in tracking in `tracking\data_association.py::association_learning_matching`. But this implementation has few bugs mentioned in the text. The main bug is caused by asociating one detection to multiple tracks. The other bug is that time and image is not correct when the last detection of the track is not from the previous frame. 
+
+Data is generated in `exps\data_al_v1.py` and statistics are explained in `data_and_exps.md`. Per (query) detection, 4 frames before and 4 after with positional jitter are cropped to 256x512.  
+
+The association learning still requirs some improvement. Here is the list:
+- change the loss from cross entropy to binary cross entropy to make the problem simpler.
+- use sin encoding for time (similar as positional encoding from attention is all you need paper.)
+- increase the capcity of concatanation encoding from 150 to 2024 or higher. 
+- add extra class for unmatched items. This requires to add data without matches. 
+- [Most likely not]: aggregate multiple frames (4 previous and 4 after), aggregate their flows. Better temporal encoding should be sufficient, since this step is expensive. 
