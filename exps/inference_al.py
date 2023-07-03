@@ -306,7 +306,7 @@ save_dir = Path(
     "/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/tracks_hungerian"
 )  # tracks_hungerian #tracks_al
 visualize.save_video_with_tracks_as_images(
-    tracks, video_file, save_dir, step, start_frame, end_frame, format
+    save_dir, video_file, tracks, start_frame, end_frame, step, format
 )
 
 """

@@ -306,7 +306,7 @@ def generate_data_per_video(video_path: Path):
     if video_path.stem in vid_name_600:
         step = 1
     print(f"Image:{image_dir},\nVideo: {video_path}")
-    visualize.save_video_as_images(video_path, image_dir, step=step)
+    visualize.save_video_as_images(image_dir, video_path, step=step)
 
     tracks = da.load_tracks_from_mot_format(track_paths / f"{video_name}.zip")
     for image_path1 in tqdm(sorted(image_dir.glob(f"{video_name}*.jpg"))):
