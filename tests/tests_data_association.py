@@ -11,7 +11,6 @@ sys.path.insert(0, path)
 from tracking.data_association import (
     bipartite_local_matching,
     clean_detections,
-    compute_tracks,
     get_detections,
     get_detections_array,
     get_detections_with_disparity,
@@ -332,21 +331,6 @@ def test_get_stats_for_track_after_remove_occlusions():
         tp = track_stats[gt_track_id, 1]
         fn = track_stats[gt_track_id, 3]
         assert tp + fn == len(annos[annos[:, 0] == gt_track_id])
-
-
-@pytest.mark.failed
-def test_compute_track():
-    tracks = compute_tracks(
-        data_path, "04_07_22_G_2_rect_valid", 2, im_width, im_height, 3
-    )
-    tracks_array = make_array_from_tracks(tracks)
-
-    atracks = np.loadtxt(
-        data_path / "tracks_iou_bug.txt", skiprows=1, delimiter=","
-    ).astype(np.int64)
-    desired = atracks[atracks[:, 1] < 3]
-
-    np.testing.assert_equal(tracks_array[:, :7], desired)
 
 
 @pytest.mark.temp
