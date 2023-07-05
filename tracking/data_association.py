@@ -129,23 +129,6 @@ def get_detections(
     return dets
 
 
-def tl_br_from_cen_wh(center_x, center_y, bbox_w, bbox_h) -> tuple:
-    return (
-        int(round(center_x - bbox_w / 2)),
-        int(round(center_y - bbox_h / 2)),
-        int(round(center_x + bbox_w / 2)),
-        int(round(center_y + bbox_h / 2)),
-    )
-
-
-def cen_wh_from_tl_br(tl_x, tl_y, br_x, br_y) -> tuple:
-    width = int(round(br_x - tl_x))
-    height = int(round(br_y - tl_y))
-    center_x = int(round(width / 2 + tl_x))
-    center_y = int(round(height / 2 + tl_y))
-    return center_x, center_y, width, height
-
-
 def get_detections_array(
     det_file: Path,
     width: int,
@@ -242,6 +225,23 @@ def make_dets_from_array(dets_array: np.ndarray) -> list[Detection]:
     return dets
 
 
+def tl_br_from_cen_wh(center_x, center_y, bbox_w, bbox_h) -> tuple:
+    return (
+        int(round(center_x - bbox_w / 2)),
+        int(round(center_y - bbox_h / 2)),
+        int(round(center_x + bbox_w / 2)),
+        int(round(center_y + bbox_h / 2)),
+    )
+
+
+def cen_wh_from_tl_br(tl_x, tl_y, br_x, br_y) -> tuple:
+    width = int(round(br_x - tl_x))
+    height = int(round(br_y - tl_y))
+    center_x = int(round(width / 2 + tl_x))
+    center_y = int(round(height / 2 + tl_y))
+    return center_x, center_y, width, height
+
+
 def _get_dets_from_indices_of_array(inds, annos: np.ndarray):
     dets_anno = []
     for ind in inds:
@@ -280,15 +280,13 @@ def clean_detections_by_score(dets: list[Detection], score_thres=0.5):
     return cleaned_dets
 
 
-def _find_dets_around_det(det: np.ndarray, dets: np.ndarray, sp_thres=20):
-    candidates = dets[
-        ((abs(dets[:, 3] - det[3]) < sp_thres) & (abs(dets[:, 4] - det[4]) < sp_thres))
-        | (
-            (abs(dets[:, 5] - det[5]) < sp_thres)
-            & (abs(dets[:, 6] - det[6]) < sp_thres)
-        )
-    ].copy()
-    return candidates
+def get_cleaned_detections(
+    det_path: Path, width, height, frame_number
+) -> list[Detection]:
+    dets = get_detections(det_path, width, height, frame_number)
+    dets = clean_detections_by_score(dets)
+    dets = make_dets_from_array(clean_detections(make_array_from_dets(dets)))
+    return dets
 
 
 def clean_detections(dets: np.ndarray, ratio_thres=2.5, sp_thres=20, inters_thres=0.85):
@@ -317,15 +315,6 @@ def clean_detections(dets: np.ndarray, ratio_thres=2.5, sp_thres=20, inters_thre
                 remove_inds.append(rem_ind)
     cleaned_dets = np.delete(dets, remove_inds, axis=0)
     return cleaned_dets
-
-
-def get_cleaned_detections(
-    det_path: Path, width, height, frame_number
-) -> list[Detection]:
-    dets = get_detections(det_path, width, height, frame_number)
-    dets = clean_detections_by_score(dets)
-    dets = make_dets_from_array(clean_detections(make_array_from_dets(dets)))
-    return dets
 
 
 def match_detection(det1, dets2, sp_thres=100, min_iou=0):
@@ -358,6 +347,17 @@ def match_detection(det1, dets2, sp_thres=100, min_iou=0):
         dists = np.array(dists)
         ind = np.where(dists == min(dists))[0][0]
     return candidates[ind]
+
+
+def _find_dets_around_det(det: np.ndarray, dets: np.ndarray, sp_thres=20):
+    candidates = dets[
+        ((abs(dets[:, 3] - det[3]) < sp_thres) & (abs(dets[:, 4] - det[4]) < sp_thres))
+        | (
+            (abs(dets[:, 5] - det[5]) < sp_thres)
+            & (abs(dets[:, 6] - det[6]) < sp_thres)
+        )
+    ].copy()
+    return candidates
 
 
 def _get_indices(dets: np.ndarray, ids: np.ndarray):
