@@ -12,7 +12,27 @@ np.random.seed(1000)
 
 # e.g. overlap v=217_cam12, f=120, t1=8, t2=10
 main_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids")
+save_path = main_dir / "out_of_sample_vids_vids.txt"
+
 w_enlarge, h_enlarge = 0, 0
+step = 8
+end_frame = 256
+
+device = "cuda"
+model = torchvision.models.resnet50(
+    weights=torchvision.models.ResNet50_Weights.IMAGENET1K_V2
+).to(device)
+transform = torchvision.transforms.Compose(
+    [
+        torchvision.transforms.ToTensor(),
+        torchvision.transforms.Normalize(
+            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+        ),
+    ]
+)
+model.eval()
+model.requires_grad_(False)
+kwargs = {"model": model, "device": device, "transform": transform}
 
 
 def bbox_enlarge(bbox, w_enlarge, h_enlarge):
@@ -87,6 +107,8 @@ def calculate_cos_sim(
 
     bb1 = deepcopy(dets1[(dets1[:, 0] == track_id1) | (dets1[:, 0] == track_id2)])
     bb2 = deepcopy(dets2[(dets2[:, 0] == track_id1) | (dets2[:, 0] == track_id2)])
+    if len(bb2) != 2:
+        return None
     bb1 = np.array([bbox_enlarge(bb, w_enlarge, h_enlarge) for bb in bb1])
     bb2 = np.array([bbox_enlarge(bb, w_enlarge, h_enlarge) for bb in bb2])
     w, h = max(max(bb1[:, -2]), max(bb2[:, -2])), max(max(bb1[:, -1]), max(bb2[:, -1]))
@@ -107,11 +129,21 @@ def calculate_cos_sim(
     model.layer4.register_forward_hook(get_activation("layer4"))
     _ = model(transform(im1).unsqueeze(0).to(device))
 
-    print("concate embeddings")
+    im_height, im_width, _ = im1.shape
+    im_width = im_width // 2
+
+    def clip_bboxs(bbox):
+        bbox[:, 3:6:2] = np.clip(bbox[:, 3:6:2], 0, im_width)
+        bbox[:, 4:7:2] = np.clip(bbox[:, 4:7:2], 0, im_height)
+        return bbox
+
+    # print("concate embeddings")
     layers = ["conv1", "layer1", "layer2", "layer3"]
-    output = [bb1[0, 1], bb2[0, 1]]
+    output = [int(vid_name.split("_")[0]), bb1[0, 1], bb2[0, 1]]
     for i in [0, 1]:
         for j in [0, 1]:
+            clip_bboxs(bb1)
+            clip_bboxs(bb2)
             imc1 = im1[bb1[i, 4] : bb1[i, 6], bb1[i, 3] : bb1[i, 5]]
             imc2 = im2[bb2[j, 4] : bb2[j, 6], bb2[j, 3] : bb2[j, 5]]
             imc1 = cv2.resize(imc1, (w, h), interpolation=cv2.INTER_AREA)
@@ -127,12 +159,12 @@ def calculate_cos_sim(
             csim = f1.dot(f2) / (np.linalg.norm(f1) * np.linalg.norm(f2))
             csim = int(np.round(csim * 100))  # percent
             output.extend([bb1[i, 0], bb2[j, 0], csim])
-            print(f"{bb1[i,1]}, {bb2[j,1]}, {bb1[i,0]}, {bb2[j,0]}, {csim}")
+            # print(f"{bb1[i,1]}, {bb2[j,1]}, {bb1[i,0]}, {bb2[j,0]}, {csim}")
     return output
 
 
 def calculate_success(out):
-    out = np.array(out[2:]).reshape(-1, 3)
+    out = np.array(out[3:]).reshape(-1, 3)
     out = out[np.argsort(out[:, 2])]
     success = False
     if (out[-1, 0] == out[-1, 1]) & (out[-2, 0] == out[-2, 1]):
@@ -140,79 +172,21 @@ def calculate_success(out):
     return success
 
 
-save_path = main_dir / "tmp.txt"
-
-device = "cuda"
-model = torchvision.models.resnet50(
-    weights=torchvision.models.ResNet50_Weights.IMAGENET1K_V2
-).to(device)
-transform = torchvision.transforms.Compose(
-    [
-        torchvision.transforms.ToTensor(),
-        torchvision.transforms.Normalize(
-            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-        ),
-    ]
-)
-model.eval()
-model.requires_grad_(False)
-
-
-kwargs = {"model": model, "device": device, "transform": transform}
-
-step = 8
-end_frame = 256
-frame_number1 = 200  # 216  # 0
-frame_number2 = 240  # 8
-track_id1 = 4  # 9
-track_id2 = 11  # 11
-vid_name = "384_cam12"  # "217_cam12"
-
-
 def get_success_per_vid(overlaps, vid_name):
     outs = []
     for item in overlaps:
         frame_number1, track_id1, track_id2 = item
         frame_number2 = frame_number1 + step
-        if frame_number2 >= end_frame:
+        if frame_number2 > end_frame:
             frame_number2 = frame_number1 - step
         out = calculate_cos_sim(
             frame_number1, frame_number2, track_id1, track_id2, vid_name, **kwargs
         )
-        success = calculate_success(out)
-        out += [success]
-        outs.append(out)
+        if out:
+            success = calculate_success(out)
+            out += [success]
+            outs.append(out)
     return outs
-
-
-# overlaps = get_overlaps_per_vid(vid_name)
-# outs = get_success_per_vid(overlaps, vid_name)
-
-# np.savetxt(save_path, np.array(outs), fmt="%d", delimiter=",")
-
-
-overlaps_vids = get_overlaps_vids()
-outs = []
-for vid_name, overlaps in overlaps_vids.items():
-    print(vid_name)
-    out = get_success_per_vid(overlaps, vid_name)
-    outs += out
-np.savetxt(save_path, np.array(outs), fmt="%d", delimiter=",")
-
-
-# This part is only for out of samples
-# - run csim for all overlaps and check success and failure
-#   - save images again (256 is missing)
-#   - check for end_image
-#   - save vid name (maybe append)
-#   - for out of border image cut will be empty
-#   - save result in a text
-#   - check failure and suceess rate
-
-# This part for everything
-# - make a vids, images, images_tracks, mots
-# - do the previous steps
-# - put previous data, results in downloads/fish
 
 
 def test_get_overlaps_per_vid():
@@ -230,33 +204,69 @@ def test_calculate_cos_sim():
     desired = calculate_cos_sim(
         frame_number1, 240, track_id1, track_id2, vid_name, **kwargs
     )
-    expected = [200, 240, 4, 4, 85, 4, 11, 80, 11, 4, 82, 11, 11, 85]
+    expected = [384, 200, 240, 4, 4, 85, 4, 11, 80, 11, 4, 82, 11, 11, 85]
     np.testing.assert_array_equal(np.array(desired), np.array(expected))
     desired = calculate_cos_sim(
         frame_number1, 208, track_id1, track_id2, vid_name, **kwargs
     )
-    expected = [200, 208, 4, 4, 92, 4, 11, 83, 11, 4, 81, 11, 11, 90]
+    expected = [384, 200, 208, 4, 4, 92, 4, 11, 83, 11, 4, 81, 11, 11, 90]
     np.testing.assert_array_equal(np.array(desired), np.array(expected))
 
 
 def test_calculate_success():
-    out = [200, 208, 4, 4, 92, 4, 11, 83, 11, 4, 81, 11, 11, 90]
+    out = [384, 200, 208, 4, 4, 92, 4, 11, 83, 11, 4, 81, 11, 11, 90]
     success = calculate_success(out)
     assert success == True
-    out = [200, 208, 4, 4, 92, 4, 11, 83, 11, 4, 81, 11, 11, 80]
+    out = [384, 200, 208, 4, 4, 92, 4, 11, 83, 11, 4, 81, 11, 11, 80]
     success = calculate_success(out)
     assert success == False
 
 
 def test_get_success_per_vid():
+    vid_name = "384_cam12"
     overlaps = get_overlaps_per_vid(vid_name)
     outs = get_success_per_vid(overlaps, vid_name)
     expected = np.loadtxt(main_dir / "test.txt", delimiter=",").astype(np.int64)
     np.testing.assert_array_equal(expected, np.array(outs, dtype=np.int64))
 
 
-test_calculate_success()
-test_calculate_cos_sim()
-test_get_overlaps_per_vid()
-test_get_success_per_vid()
-print("passed")
+# test_calculate_cos_sim()
+# test_get_overlaps_per_vid()
+# test_calculate_success()
+# test_get_success_per_vid()
+# print("passed")
+
+
+"""
+overlaps_vids = get_overlaps_vids()
+outs = []
+with open(save_path, 'a') as afile:
+    for vid_name, overlaps in overlaps_vids.items():
+        print(vid_name)
+        out = get_success_per_vid(overlaps, vid_name)
+        outs += out
+        np.savetxt(afile, np.array(outs), fmt="%d", delimiter=",")
+"""
+# >>> a = np.loadtxt(main_dir/f"{main_dir.name}.txt", delimiter=",").astype(np.int64)
+# >>> len(a)-sum(a[:,-1])
+# 2469
+# >>> sum(a[:,-1])
+# 7637
+# >>> len(a)
+# 10106
+# 29, 33, 392 -> no occlusion
+
+# This part is only for out of samples
+# - run csim for all overlaps and check success and failure
+#   - investigate why tests are failing!!!
+#   - investigate failure cases. e.g. 239,96,104,21,18
+#   - calculate total number of detections, total number of occlusions (think)
+#   - think: stop tracks (occlusion or not) => hungarian and csim are wrong
+
+# This part for everything
+# - make a vids, images, images_tracks, mots
+# - do the previous steps
+# - put previous data, results in downloads/fish
+
+
+# [visualize.save_video_as_images(main_dir/"images2", vid_path, step=8) for vid_path in main_dir.glob("vids/*mp4")]
