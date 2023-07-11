@@ -49,7 +49,7 @@ def save_video_as_images(
     save_path.mkdir(parents=True, exist_ok=True)
 
     vc.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-    for frame_number in tqdm(range(start_frame, end_frame + 1, step)):
+    for frame_number in tqdm(range(start_frame, end_frame + 1)):
         _, frame = vc.read()
         if frame_number % step == 0:
             name = f"{video_file.stem}_frame_{frame_number:{format}}.jpg"
@@ -90,7 +90,7 @@ def save_video_with_tracks_as_images(
     save_path.mkdir(parents=True, exist_ok=True)
 
     vc.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-    for frame_number in tqdm(range(start_frame, end_frame + 1, step)):
+    for frame_number in tqdm(range(start_frame, end_frame + 1)):
         _, frame = vc.read()
         if frame_number % step == 0:
             frame_tracks = tracks[tracks[:, 1] == frame_number]
@@ -193,12 +193,13 @@ def show_cropped_video(
         start_frame, end_frame, total_no_frames
     )
     vc.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-    for frame_number in tqdm(range(start_frame, end_frame + 1, step)):
+    for frame_number in tqdm(range(start_frame, end_frame + 1)):
         _, frame = vc.read()
 
-        out = _write_frame_in_video(
-            frame, out, frame_number, top_left, out_width, out_height
-        )
+        if frame_number % step == 0:
+            out = _write_frame_in_video(
+                frame, out, frame_number, top_left, out_width, out_height
+            )
     out.release()
 
 
@@ -234,28 +235,28 @@ def plot_detections_in_video(
     )
 
     vc.set(cv2.CAP_PROP_POS_FRAMES, 0)
-    for frame_number in tqdm(range(start_frame, end_frame + 1, step)):
+    for frame_number in tqdm(range(start_frame, end_frame + 1)):
         _, frame = vc.read()
+        if frame_number % step == 0:
+            det_path = det_folder / f"{filename_fixpart}_{frame_number+1}.txt"
+            dets = get_detections(det_path, width, height, frame_number)
 
-        det_path = det_folder / f"{filename_fixpart}_{frame_number+1}.txt"
-        dets = get_detections(det_path, width, height, frame_number)
-
-        for det in dets:
-            x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
-            cv2.rectangle(
-                frame,
-                (x_tl, y_tl),
-                (x_br, y_br),
-                color=color,
-                thickness=1,
+            for det in dets:
+                x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
+                cv2.rectangle(
+                    frame,
+                    (x_tl, y_tl),
+                    (x_br, y_br),
+                    color=color,
+                    thickness=1,
+                )
+                # show as thick points
+                # for i in range(6):
+                #     for j in range(6):
+                #         frame[int(det.y) + i, int(det.x) + j, :] = np.array(color)
+            out = _write_frame_in_video(
+                frame, out, frame_number, top_left, out_width, out_height
             )
-            # show as thick points
-            # for i in range(6):
-            #     for j in range(6):
-            #         frame[int(det.y) + i, int(det.x) + j, :] = np.array(color)
-        out = _write_frame_in_video(
-            frame, out, frame_number, top_left, out_width, out_height
-        )
     out.release()
 
 
@@ -356,35 +357,36 @@ def plot_tracks_array_in_video(
     start_frame, end_frame = get_start_end_frames(
         start_frame, end_frame, total_no_frames
     )
-    for frame_number in tqdm(range(start_frame, end_frame + 1, step)):
+    for frame_number in tqdm(range(start_frame, end_frame + 1)):
         _, frame = vc.read()
-        frame_tracks = tracks[tracks[:, 1] == frame_number]
-        if frame_tracks.size == 0:
-            continue
-        for det in frame_tracks:
-            det_id = det[2]
-            track_id = det[0]
-            color = colors[tracks_ids_to_inds[track_id]]
-            color = tuple(map(int, color))
-            color = (color[2], color[1], color[0])
+        if frame_number % step == 0:
+            frame_tracks = tracks[tracks[:, 1] == frame_number]
+            if frame_tracks.size == 0:
+                continue
+            for det in frame_tracks:
+                det_id = det[2]
+                track_id = det[0]
+                color = colors[tracks_ids_to_inds[track_id]]
+                color = tuple(map(int, color))
+                color = (color[2], color[1], color[0])
 
-            x_tl, y_tl, x_br, y_br = det[3:7]
-            _plot_cv2_bbox(
-                frame,
-                x_tl,
-                y_tl,
-                x_br,
-                y_br,
-                color,
-                show_det_id,
-                track_id,
-                det_id,
-                black,
+                x_tl, y_tl, x_br, y_br = det[3:7]
+                _plot_cv2_bbox(
+                    frame,
+                    x_tl,
+                    y_tl,
+                    x_br,
+                    y_br,
+                    color,
+                    show_det_id,
+                    track_id,
+                    det_id,
+                    black,
+                )
+
+            out = _write_frame_in_video(
+                frame, out, frame_number, top_left, out_width, out_height
             )
-
-        out = _write_frame_in_video(
-            frame, out, frame_number, top_left, out_width, out_height
-        )
 
     out.release()
 
@@ -410,35 +412,37 @@ def plot_tracks_in_video(
     start_frame, end_frame = get_start_end_frames(
         start_frame, end_frame, total_no_frames
     )
-    for frame_number in tqdm(range(start_frame, end_frame + 1, step)):
+    for frame_number in tqdm(range(start_frame, end_frame + 1)):
         _, frame = vc.read()
+        if frame_number % step == 0:
+            for track_id, track in tracks.items():
+                frame_numbers = get_frame_numbers_of_track(track)
+                if frame_number in frame_numbers:
+                    color = tuple(int(round(c * 255)) for c in track.color)
+                    color = (color[2], color[1], color[0])
+                    ind = frame_numbers.index(frame_number)
+                    det = track.dets[ind]
+                    x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(
+                        det.x, det.y, det.w, det.h
+                    )
 
-        for track_id, track in tracks.items():
-            frame_numbers = get_frame_numbers_of_track(track)
-            if frame_number in frame_numbers:
-                color = tuple(int(round(c * 255)) for c in track.color)
-                color = (color[2], color[1], color[0])
-                ind = frame_numbers.index(frame_number)
-                det = track.dets[ind]
-                x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
+                    det_id = det.det_id
+                    _plot_cv2_bbox(
+                        frame,
+                        x_tl,
+                        y_tl,
+                        x_br,
+                        y_br,
+                        color,
+                        show_det_id,
+                        track_id,
+                        det_id,
+                        black,
+                    )
 
-                det_id = det.det_id
-                _plot_cv2_bbox(
-                    frame,
-                    x_tl,
-                    y_tl,
-                    x_br,
-                    y_br,
-                    color,
-                    show_det_id,
-                    track_id,
-                    det_id,
-                    black,
-                )
-
-        out = _write_frame_in_video(
-            frame, out, frame_number, top_left, out_width, out_height
-        )
+            out = _write_frame_in_video(
+                frame, out, frame_number, top_left, out_width, out_height
+            )
 
     out.release()
 
@@ -467,81 +471,81 @@ def plot_matches_in_video(
     start_frame, end_frame = get_start_end_frames(
         start_frame, end_frame, total_no_frames
     )
-    for frame_number in tqdm(range(start_frame, end_frame + 1, step)):
+    for frame_number in tqdm(range(start_frame, end_frame + 1)):
         frame1, frame2 = get_stereo_frames(frame_number, vc1, vc2)
+        if frame_number % step == 0:
+            for track_id1, value in all_matches.items():
+                for track_id2, matches in value.items():
+                    frame_numbers = [det1.frame_number for det1 in matches.dets1]
+                    if frame_number in frame_numbers:
+                        color = tuple(int(round(c * 255)) for c in matches.track1_color)
+                        color = (color[2], color[1], color[0])
+                        ind = frame_numbers.index(frame_number)
+                        det = matches.dets1[ind]
+                        text = f"{track_id1}"
 
-        for track_id1, value in all_matches.items():
-            for track_id2, matches in value.items():
-                frame_numbers = [det1.frame_number for det1 in matches.dets1]
-                if frame_number in frame_numbers:
-                    color = tuple(int(round(c * 255)) for c in matches.track1_color)
-                    color = (color[2], color[1], color[0])
-                    ind = frame_numbers.index(frame_number)
-                    det = matches.dets1[ind]
-                    text = f"{track_id1}"
+                        x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(
+                            det.x, det.y, det.w, det.h
+                        )
+                        cv2.rectangle(
+                            frame1,
+                            (x_tl, y_tl),
+                            (x_br, y_br),
+                            color=color,
+                            thickness=1,
+                        )
+                        cv2.putText(
+                            frame1,
+                            text,
+                            (x_tl, y_tl),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            font_scale,  # font scale
+                            (0, 0, 0),
+                            1,  # Thinckness
+                            2,  # line type
+                        )
+                        cv2.putText(
+                            frame1,
+                            f"{frame_number}",
+                            (top_left1.x + 15, top_left1.y + 45),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            2,  # font scale
+                            (0, 0, 0),  # color
+                            1,  # Thinckness
+                            2,  # line type
+                        )
 
-                    x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(
-                        det.x, det.y, det.w, det.h
-                    )
-                    cv2.rectangle(
-                        frame1,
-                        (x_tl, y_tl),
-                        (x_br, y_br),
-                        color=color,
-                        thickness=1,
-                    )
-                    cv2.putText(
-                        frame1,
-                        text,
-                        (x_tl, y_tl),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        font_scale,  # font scale
-                        (0, 0, 0),
-                        1,  # Thinckness
-                        2,  # line type
-                    )
-                    cv2.putText(
-                        frame1,
-                        f"{frame_number}",
-                        (top_left1.x + 15, top_left1.y + 45),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        2,  # font scale
-                        (0, 0, 0),  # color
-                        1,  # Thinckness
-                        2,  # line type
-                    )
-
-                    det = matches.dets2[ind]
-                    x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(
-                        det.x, det.y, det.w, det.h
-                    )
-                    cv2.rectangle(
-                        frame2,
-                        (x_tl, y_tl),
-                        (x_br, y_br),
-                        color=color,
-                        thickness=1,
-                    )
-                    cv2.putText(
-                        frame2,
-                        text,
-                        (x_tl, y_tl),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        font_scale,  # font scale
-                        (0, 0, 0),
-                        1,  # Thinckness
-                        2,  # line type
-                    )
-        frame1 = frame1[
-            top_left1.y : bottom_right1.y,
-            top_left1.x : bottom_right1.x,
-            :,
-        ]
-        frame2 = frame2[
-            top_left2.y : bottom_right2.y,
-            top_left2.x : bottom_right2.x :,
-        ]
-        out.write(np.concatenate((frame1, frame2), axis=1))
+                        det = matches.dets2[ind]
+                        x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(
+                            det.x, det.y, det.w, det.h
+                        )
+                        cv2.rectangle(
+                            frame2,
+                            (x_tl, y_tl),
+                            (x_br, y_br),
+                            color=color,
+                            thickness=1,
+                        )
+                        cv2.putText(
+                            frame2,
+                            text,
+                            (x_tl, y_tl),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            font_scale,  # font scale
+                            (0, 0, 0),
+                            1,  # Thinckness
+                            2,  # line type
+                        )
+            frame1 = frame1[
+                top_left1.y : bottom_right1.y,
+                top_left1.x : bottom_right1.x,
+                :,
+            ]
+            frame2 = frame2[
+                top_left2.y : bottom_right2.y,
+                top_left2.x : bottom_right2.x :,
+            ]
+            out.write(np.concatenate((frame1, frame2), axis=1))
     out.release()
 
 
