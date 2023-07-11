@@ -130,11 +130,10 @@ def calculate_cos_sim(
     _ = model(transform(im1).unsqueeze(0).to(device))
 
     im_height, im_width, _ = im1.shape
-    im_width = im_width // 2
 
     def clip_bboxs(bbox):
-        bbox[:, 3:6:2] = np.clip(bbox[:, 3:6:2], 0, im_width)
-        bbox[:, 4:7:2] = np.clip(bbox[:, 4:7:2], 0, im_height)
+        bbox[:, 3:6:2] = np.clip(bbox[:, 3:6:2], 0, im_width - 1)
+        bbox[:, 4:7:2] = np.clip(bbox[:, 4:7:2], 0, im_height - 1)
         return bbox
 
     # print("concate embeddings")
@@ -230,35 +229,36 @@ def test_get_success_per_vid():
     np.testing.assert_array_equal(expected, np.array(outs, dtype=np.int64))
 
 
-# test_calculate_cos_sim()
-# test_get_overlaps_per_vid()
-# test_calculate_success()
-# test_get_success_per_vid()
-# print("passed")
-
+test_calculate_cos_sim()
+test_get_overlaps_per_vid()
+test_calculate_success()
+test_get_success_per_vid()
+print("passed")
 
 """
 overlaps_vids = get_overlaps_vids()
 outs = []
-with open(save_path, 'a') as afile:
+with open(save_path, "a") as afile:
     for vid_name, overlaps in overlaps_vids.items():
         print(vid_name)
         out = get_success_per_vid(overlaps, vid_name)
         outs += out
         np.savetxt(afile, np.array(outs), fmt="%d", delimiter=",")
 """
+
 # >>> a = np.loadtxt(main_dir/f"{main_dir.name}.txt", delimiter=",").astype(np.int64)
-# >>> len(a)-sum(a[:,-1])
-# 2469
-# >>> sum(a[:,-1])
-# 7637
+# >> len(a)-sum(a[:,-1])
+# 1169
 # >>> len(a)
 # 10106
+# >>> sum(a[:,-1])
+# 8937
+# >>> sum(a[:,-1])/len(a)
+# 0.8843261428854146
 # 29, 33, 392 -> no occlusion
 
 # This part is only for out of samples
 # - run csim for all overlaps and check success and failure
-#   - investigate why tests are failing!!!
 #   - investigate failure cases. e.g. 239,96,104,21,18
 #   - calculate total number of detections, total number of occlusions (think)
 #   - think: stop tracks (occlusion or not) => hungarian and csim are wrong
@@ -269,4 +269,16 @@ with open(save_path, 'a') as afile:
 # - put previous data, results in downloads/fish
 
 
-# [visualize.save_video_as_images(main_dir/"images2", vid_path, step=8) for vid_path in main_dir.glob("vids/*mp4")]
+# [visualize.save_video_as_images(main_dir/"images", vid_path, step=8) for vid_path in main_dir.glob("vids/*mp4")]
+# for vid_path in main_dir.glob("vids/*mp4"):
+#     vid_name = vid_path.stem
+#     tracks = da.load_tracks_from_mot_format(main_dir / f"mots/{vid_name}.zip")
+#     visualize.save_video_with_tracks_as_images(
+#         main_dir / "images_tracks",
+#         vid_path,
+#         tracks,
+#         start_frame=0,
+#         end_frame=256,
+#         step=8,
+#         format="06d",
+#     )
