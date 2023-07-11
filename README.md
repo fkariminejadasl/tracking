@@ -46,19 +46,39 @@ To call the package, simply use:
 ```python
 from tracking import data_association as da, visualize
 import pathlib as Path
+import cv2
 
+# calculate IOU
 print(da.get_iou((0, 0, 4, 2), (2, 1, 3, 2)))
 
+# save video as images
 vid_name = "16_cam12"
-main_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids")
-vid_path = main_dir/f"vids/{vid_name}.mp4"
-visualize.save_video_as_images(main_dir/"images",  vid_path, step=8)
+main_path = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids")
+vid_file = main_path/f"vids/{vid_name}.mp4"
+visualize.save_video_as_images(main_path/"images",  vid_file, step=8)
 
-tracks = da.load_tracks_from_mot_format(main_dir / f"mots/{vid_name}.zip")
-save_path = main_dir/"images_tracks"
+# save tracks as images
+tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
+save_path = main_path/"images_tracks"
 visualize.save_video_with_tracks_as_images(
-    save_path, vid_path, tracks, start_frame=0, end_frame=256, step=8, format="06d"
+    save_path, vid_file, tracks, start_frame=0, end_frame=256, step=8, format="06d"
 )
+
+# compute tracks
+det_path = main_path / f"yolo/{vid_name}/obj_train_data"
+filename_fixpart = "frame"
+start_frame, end_frame, step, format = 0, 256, 8, "06d"
+image = cv2.imread(str(main_path/f"images/{vid_name}_frame_{start_frame:06d}.jpg"))
+width, height = image.shape[1], image.shape[0]
+
+tracks = da.compute_tracks(
+    det_path, filename_fixpart, width, height, start_frame, end_frame, step, format
+)
+tracks = da._reindex_tracks(da._remove_short_tracks(tracks))
+tracks = da.make_array_from_tracks(tracks)
+    visualize.save_video_with_tracks_as_images(
+        main_path/"tracks_hung", vid_file, tracks, start_frame=0, end_frame=256, step=8, format="06d"
+    )
 ```
 
 ## Run a script
