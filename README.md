@@ -18,11 +18,15 @@ git clone https://github.com/fkariminejadasl/tracking.git
 cd tracking
 # here the conda should be activated
 pip install -r requirements.txt
+pip install -e .
 ```
 
 Installation via whell
 ------------
 > **IMPORTANT**: There are some issues. This part is not working properly.
+
+<details>
+<summary>[Click to expand]</summary>
 
 Make a wheel:
 ```bash
@@ -33,6 +37,28 @@ python -m build
 Install the package:
 ```bash
 pip install --find-links ~/dev/tracking/dist ftracking -r ~/dev/tracking/requirements.txt
+```
+</details>
+
+## Use in a code
+
+To call the package, simply use:
+```python
+from tracking import data_association as da, visualize
+import pathlib as Path
+
+print(da.get_iou((0, 0, 4, 2), (2, 1, 3, 2)))
+
+vid_name = "16_cam12"
+main_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids")
+vid_path = main_dir/f"vids/{vid_name}.mp4"
+visualize.save_video_as_images(main_dir/"images",  vid_path, step=8)
+
+tracks = da.load_tracks_from_mot_format(main_dir / f"mots/{vid_name}.zip")
+save_path = main_dir/"images_tracks"
+visualize.save_video_with_tracks_as_images(
+    save_path, vid_path, tracks, start_frame=0, end_frame=256, step=8, format="06d"
+)
 ```
 
 ## Run a script
