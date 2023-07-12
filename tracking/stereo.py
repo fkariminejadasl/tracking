@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import List
 
 from tracking.data_association import Detection, get_frame_numbers_of_track
 
@@ -105,7 +106,7 @@ class Stereo:
     candidates: list[StereoItem]
 
 
-def compute_match_candidates(dets1, dets2, inverse=False) -> list[Stereo]:
+def compute_match_candidates(dets1, dets2, inverse=False) -> List[Stereo]:
     cam_id1 = 0
     cam_id2 = 1
     if inverse:

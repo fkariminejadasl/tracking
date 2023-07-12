@@ -1,6 +1,7 @@
 import multiprocessing
 import sys
 from pathlib import Path
+from typing import List, Optional
 
 import cv2
 import matplotlib.pylab as plt
@@ -26,7 +27,7 @@ def _get_video_name_and_frame_number(image_path: Path) -> tuple[str, int]:
 
 def get_next_image_paths(
     image_path1: Path, tracks, dtime_limit: int = 4
-) -> None | list:
+) -> Optional[List]:
     vid_name_600 = [
         "04_07_22_F_2_rect_valid",
         "04_07_22_G_2_rect_valid",

@@ -261,12 +261,24 @@ with open(save_path, "a") as afile:
 # - run csim for all overlaps and check success and failure
 #   - investigate failure cases. e.g. 239,96,104,21,18
 #   - calculate total number of detections, total number of occlusions (think)
-#   - think: stop tracks (occlusion or not) => hungarian and csim are wrong
 
 # This part for everything
 # - make a vids, images, images_tracks, mots
 # - do the previous steps
 # - put previous data, results in downloads/fish
+
+# s: stage, p: problem
+# multi-stage association: s1:Hungerian -> s2:cosine similarity -> s3:low quality tracks
+# problems to be dealt in multi-stage association
+# 1. multiple detection
+# 2. no detection
+# 3. short fully occluded
+# 4. fast motion (attack time)
+# 5. partial occlusion
+# - p1 will be in s2. In s2, I need to condition on it. If the cossim is too closeby, I reject the detection.
+# - p2 and p3 are the same. I can discard them in s1, based on predicted location (loc and iou)
+# - p4 the same as p2/p3 should be solved in s1, based on prediction.
+# First implementation on the ground truth data. Only s1 and s2 will be implemented and p5 will be solved.
 
 
 # [visualize.save_video_as_images(main_dir/"images", vid_path, step=8) for vid_path in main_dir.glob("vids/*mp4")]

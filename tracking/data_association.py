@@ -2,6 +2,7 @@ import enum
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Dict, List, Tuple, Union
 
 import numpy as np
 from scipy.optimize import linear_sum_assignment
@@ -69,7 +70,7 @@ def _copy_detection(det: Detection):
     )
 
 
-def _copy_detections(dets: list[Detection]):
+def _copy_detections(dets: List[Detection]):
     new_dets = []
     for det in dets:
         new_det = _copy_detection(det)
@@ -92,7 +93,7 @@ def _update_det_loc_by_flow(det: Detection, flow: Point):
 
 @dataclass
 class Track:
-    dets: list[Detection]
+    dets: List[Detection]
     color: tuple
     status: Status
 
@@ -107,7 +108,7 @@ def get_detections(
     width: int,
     height: int,
     frame_number: int,
-) -> list[Detection]:
+) -> List[Detection]:
     score = -1
 
     detections = np.loadtxt(det_file)
@@ -134,7 +135,7 @@ def get_detections_array(
     width: int,
     height: int,
     frame_number: int,
-) -> list[np.ndarray]:
+) -> List[np.ndarray]:
     detections = np.loadtxt(det_file)
     dets_array = []
     for det_id, det in enumerate(detections):
@@ -163,7 +164,7 @@ def get_detections_array(
     return np.array(dets_array).astype(np.int64)
 
 
-def make_array_from_dets(dets: list[Detection]):
+def make_array_from_dets(dets: List[Detection]):
     # array format: track_id, frame_id, det_id, xtl, ytl, xbr, ybr, xc, yc, w, h
     dets_array = []
     for det in dets:
@@ -208,7 +209,7 @@ def make_array_from_tracks(tracks) -> np.ndarray:
     return np.array(tracks_array).astype(np.int64)
 
 
-def make_dets_from_array(dets_array: np.ndarray) -> list[Detection]:
+def make_dets_from_array(dets_array: np.ndarray) -> List[Detection]:
     # array format: track_id, frame_id, det_id, xtl, ytl, xbr, ybr, xc, yc, w, h
     dets = []
     for det in dets_array:
@@ -225,7 +226,7 @@ def make_dets_from_array(dets_array: np.ndarray) -> list[Detection]:
     return dets
 
 
-def tl_br_from_cen_wh(center_x, center_y, bbox_w, bbox_h) -> tuple:
+def tl_br_from_cen_wh(center_x, center_y, bbox_w, bbox_h) -> Tuple:
     return (
         int(round(center_x - bbox_w / 2)),
         int(round(center_y - bbox_h / 2)),
@@ -234,7 +235,7 @@ def tl_br_from_cen_wh(center_x, center_y, bbox_w, bbox_h) -> tuple:
     )
 
 
-def cen_wh_from_tl_br(tl_x, tl_y, br_x, br_y) -> tuple:
+def cen_wh_from_tl_br(tl_x, tl_y, br_x, br_y) -> Tuple:
     width = int(round(br_x - tl_x))
     height = int(round(br_y - tl_y))
     center_x = int(round(width / 2 + tl_x))
@@ -275,14 +276,14 @@ def make_tracks_from_array(annos: np.ndarray):
     return tracks_anno
 
 
-def clean_detections_by_score(dets: list[Detection], score_thres=0.5):
+def clean_detections_by_score(dets: List[Detection], score_thres=0.5):
     cleaned_dets = [det for det in dets if det.score > score_thres]
     return cleaned_dets
 
 
 def get_cleaned_detections(
     det_path: Path, width, height, frame_number
-) -> list[Detection]:
+) -> List[Detection]:
     dets = get_detections(det_path, width, height, frame_number)
     dets = clean_detections_by_score(dets)
     dets = make_dets_from_array(clean_detections(make_array_from_dets(dets)))
@@ -412,7 +413,7 @@ def bipartite_local_matching(pred_dets, dets):
     return pred_inds, inds
 
 
-def _get_tl_and_br(det: Detection) -> tuple:
+def _get_tl_and_br(det: Detection) -> Tuple:
     return tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
 
 
@@ -753,7 +754,7 @@ def compute_tracks(
 
 
 def save_tracks_to_mot_format(
-    save_file: Path, tracks: np.ndarray | dict[Track], make_zip: bool = True
+    save_file: Path, tracks: Union[np.ndarray, Dict[str, Track]], make_zip: bool = True
 ):
     """MOT format is 1-based, including bbox. https://arxiv.org/abs/2003.09003
     mot format: frame_id, track_id, xtl, ytl, w, h, score, class, visibility
@@ -858,7 +859,7 @@ def save_tracks_to_cvat_txt_format(track_file: Path, tracks: np.ndarray):
     )
 
 
-def save_tracks(track_file: Path, tracks: np.ndarray | dict[Track]):
+def save_tracks(track_file: Path, tracks: Union[np.ndarray, Dict[str, Track]]):
     if isinstance(tracks, dict):
         with open(track_file, "w") as file:
             for track_id, track in tracks.items():
@@ -1002,7 +1003,7 @@ def get_track_inds_from_track_id(tracks: np.ndarray, track_id: int) -> np.ndarra
     return np.where(tracks[:, 0] == track_id)[0]
 
 
-def _compute_disp_candidates(det1: Detection, dets2: Detection) -> list[int]:
+def _compute_disp_candidates(det1: Detection, dets2: Detection) -> List[int]:
     disp_candidates = []
     det_ids = []
     for det2 in dets2:
@@ -1024,8 +1025,8 @@ class Disparity:
     track_id: int
     frame_number: int
     det_id: int
-    candidates: list[int]
-    det_ids: list[int]
+    candidates: List[int]
+    det_ids: List[int]
 
 
 def get_detections_with_disparity(
@@ -1033,7 +1034,7 @@ def get_detections_with_disparity(
     det_path_cam2,
     width: int,
     height: int,
-) -> list[Disparity]:
+) -> List[Disparity]:
     frame_number = int(det_path_cam1.stem.split("_")[-1]) - 1
     assert (
         frame_number == int(det_path_cam2.stem.split("_")[-1]) - 1
@@ -1050,7 +1051,7 @@ def get_detections_with_disparity(
     return detections
 
 
-def save_disparities(save_file: Path, disps: list[Disparity]):
+def save_disparities(save_file: Path, disps: List[Disparity]):
     with open(save_file, "w") as wfile:
         wfile.write("track_id,frame_number,det_id,candidates,det_ids")
         for disp in disps:
@@ -1061,7 +1062,7 @@ def save_disparities(save_file: Path, disps: list[Disparity]):
                 )
 
 
-def load_disparities(save_file) -> list[Disparity]:
+def load_disparities(save_file) -> List[Disparity]:
     disparities = []
     with open(save_file, "r") as rfile:
         rfile.readline()

@@ -3,10 +3,10 @@ Fish tracking
 
 Installation
 ------------
-The minimum pyton version is 3.10. If there is not a new version of python, conda is the cleanest way.
+The minimum pyton version is 3.8. If there is not a new version of python, conda is the cleanest way.
 These are only command requires in conda, which are different than python venv.
 ```bash
-conda create -n ftrack python=3.10 # create virtualenv
+conda create -n ftrack python=3.8 -y # create virtualenv
 conda activate ftrack # activate
 conda deactivate # deactivate
 conda remove --name ftrack --all # remove the virtualenv

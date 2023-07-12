@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import List, Union
 
 import cv2
 import matplotlib.patches as patches
@@ -205,7 +206,7 @@ def show_cropped_video(
 
 def plot_detections_in_video(
     output_video_file: Path,
-    video_file: Path | cv2.VideoCapture,
+    video_file: Union[Path, cv2.VideoCapture],
     det_folder: Path,
     filename_fixpart: str,
     top_left=Point(0, 0),
@@ -610,7 +611,7 @@ def _get_text_value(det: Detection, text: str) -> str:
     return text_value
 
 
-def _plot_detections(dets: list[Detection], ax, color="r", text="det_id"):
+def _plot_detections(dets: List[Detection], ax, color="r", text="det_id"):
     for det in dets:
         x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
         ax.text(
