@@ -11,13 +11,7 @@ from tracking import data_association as da
 
 np.random.seed(1000)
 
-# e.g. overlap v=217_cam12, f=120, t1=8, t2=10
-main_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids")
-save_path = main_dir / "out_of_sample_vids_vids.txt"
-
 w_enlarge, h_enlarge = 0, 0
-step = 8
-end_frame = 256
 
 device = "cuda"
 model = torchvision.models.resnet50(
@@ -87,9 +81,9 @@ def get_overlapped_dets(dets):
 def get_overlaps_per_vid(vid_name: str) -> list:
     # e.g. vid_name="217_cam12"
     # return [[frame_id, track_id, track_id], ...]
-    tracks = da.load_tracks_from_mot_format(main_dir / f"mots/{vid_name}.zip")
+    tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
     overlaps = []
-    for image_path in main_dir.glob(f"images/{vid_name}*"):
+    for image_path in main_path.glob(f"images/{vid_name}*"):
         # f"images/{vid_name}_frame_{frame_number1:06d}.jpg"
         frame_number = int(image_path.stem.split("_")[-1])
         dets = tracks[tracks[:, 1] == frame_number]
@@ -102,7 +96,7 @@ def get_overlaps_per_vid(vid_name: str) -> list:
 def get_overlaps_vids():
     # return overlaps[vid_name] = [[frame_id, track_id, track_id], ...]
     overlaps = {}
-    for vid_path in main_dir.glob("vids/*mp4"):
+    for vid_path in main_path.glob("vids/*mp4"):
         vid_name = vid_path.stem
         print(vid_name)
         overlap = get_overlaps_per_vid(vid_name)
@@ -121,10 +115,14 @@ def calculate_cos_sim(
     device = kwargs.get("device")
     activation = kwargs.get("activation")
 
-    tracks = da.load_tracks_from_mot_format(main_dir / f"mots/{vid_name}.zip")
-    im1 = cv2.imread(str(main_dir / f"images/{vid_name}_frame_{frame_number1:06d}.jpg"))
+    tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
+    im1 = cv2.imread(
+        str(main_path / f"images/{vid_name}_frame_{frame_number1:06d}.jpg")
+    )
     dets1 = tracks[tracks[:, 1] == frame_number1]
-    im2 = cv2.imread(str(main_dir / f"images/{vid_name}_frame_{frame_number2:06d}.jpg"))
+    im2 = cv2.imread(
+        str(main_path / f"images/{vid_name}_frame_{frame_number2:06d}.jpg")
+    )
     dets2 = tracks[tracks[:, 1] == frame_number2]
 
     # visualize.plot_detections_in_image(dets1[:,[0,3,4,5,6]], im1);plt.show(block=False)
@@ -239,42 +237,53 @@ def test_get_success_per_vid():
     vid_name = "384_cam12"
     overlaps = get_overlaps_per_vid(vid_name)
     outs = get_success_per_vid(overlaps, vid_name)
-    expected = np.loadtxt(main_dir / "test.txt", delimiter=",").astype(np.int64)
+    expected = np.loadtxt(main_path / "test.txt", delimiter=",").astype(np.int64)
     np.testing.assert_array_equal(expected, np.array(outs, dtype=np.int64))
 
 
+main_path = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids")
+save_path = main_path / f"{main_path.name}.txt"
+step = 8
+end_frame = 256
 test_calculate_cos_sim()
 test_get_overlaps_per_vid()
 test_calculate_success()
 test_get_success_per_vid()
 print("passed")
 
-"""
+
+# main_path = Path("/home/fatemeh/Downloads/fish/in_sample_vids/240hz")
+# save_path = main_path / f"{main_path.name}.txt"
+# step = 8
+# end_frame = 3112
+main_path = Path("/home/fatemeh/Downloads/fish/in_sample_vids/30hz")
+save_path = main_path / f"{main_path.name}.txt"
+step = 1
+end_frame = 599
 overlaps_vids = get_overlaps_vids()
 with open(save_path, "a") as afile:
     for vid_name, overlaps in tqdm(overlaps_vids.items()):
-        print(vid_name)
+        print(vid_name, len(overlaps))
         out = get_success_per_vid(overlaps, vid_name)
         np.savetxt(afile, np.array(out), fmt="%d", delimiter=",")
-"""
 
-# >>> a = np.loadtxt(main_dir/f"{main_dir.name}.txt", delimiter=",").astype(np.int64)
-# >>> len(a)
-# 832
-# >> len(a)-sum(a[:,-1])
-# 88
-# >>> sum(a[:,-1])
-# 744
-# >>> sum(a[:,-1])/len(a)=744/832
-# 0.89
-# 29, 33, 392 -> no occlusion
+# len(a), len(b), len(c) -> len(c) / len(a)
+# out_of_sample (29, 33, 392 -> no occlusion)
+# (832, 88, 744) -> 89 %
+# 240hz vids in_sample
+# (2460, 160, 2300) -> 93%
+# 30hz vids in_sample
+# 0.9974826935179358
+# (1589, 4, 1585) -> 99.7
+
+# a = np.loadtxt(main_path/f"{main_path.name}.txt", delimiter=",").astype(np.int64)
+# c = deepcopy(a[a[:,-1]==1])
 # b = deepcopy(a[a[:,-1]==0])
 # b = np.array(sorted(b, key=lambda x: (x[0],x[1],x[2],x[6],x[7])))
-# np.savetxt("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/failed_out_of_sample_vids_vids.txt", b, delimiter=',',fmt="%d")
+# np.savetxt(main_path/f"failed_{main_path.name}.txt", b, delimiter=',',fmt="%d")
 
 # This part is only for out of samples
-# - run csim for all overlaps and check success and failure
-#   - calculate total number of detections, total number of occlusions (think)
+# - calculate total number of detections, total number of occlusions
 
 # This part for everything
 # - make a vids, images, images_tracks, mots
@@ -295,12 +304,12 @@ with open(save_path, "a") as afile:
 # First implementation on the ground truth data. Only s1 and s2 will be implemented and p5 will be solved.
 
 
-# [visualize.save_video_as_images(main_dir/"images", vid_path, step=8) for vid_path in main_dir.glob("vids/*mp4")]
-# for vid_path in main_dir.glob("vids/*mp4"):
+# [visualize.save_video_as_images(main_path/"images", vid_path, step=8) for vid_path in main_path.glob("vids/*mp4")]
+# for vid_path in main_path.glob("vids/*mp4"):
 #     vid_name = vid_path.stem
-#     tracks = da.load_tracks_from_mot_format(main_dir / f"mots/{vid_name}.zip")
+#     tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
 #     visualize.save_video_with_tracks_as_images(
-#         main_dir / "images_tracks",
+#         main_path / "images_tracks",
 #         vid_path,
 #         tracks,
 #         start_frame=0,
@@ -308,3 +317,15 @@ with open(save_path, "a") as afile:
 #         step=8,
 #         format="06d",
 #     )
+
+# from pathlib import Path
+# import shutil
+# main_path = Path("/home/fatemeh/Downloads/fish/vids/all")
+# vids = sorted(set([v.stem for v in main_path.glob("*")]))
+# vtoi = {v:i for i, v in enumerate(vids)}
+
+# main_path = Path("/home/fatemeh/Downloads/fish/in_sample_vids/240hz")
+# for v in main_path.glob("vids/*"):
+#     mot_path = v.parent.parent / "mots"
+#     shutil.move(v, v.parent / f"{vtoi[v.stem]}.mp4")
+#     shutil.move(mot_path / f"{v.stem}.zip", mot_path / f"{vtoi[v.stem]}.zip")

@@ -1,7 +1,7 @@
 import multiprocessing
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import cv2
 import matplotlib.pylab as plt
@@ -18,7 +18,7 @@ import tracking.data_association as da
 import tracking.visualize as visualize
 
 
-def _get_video_name_and_frame_number(image_path: Path) -> tuple[str, int]:
+def _get_video_name_and_frame_number(image_path: Path) -> Tuple[str, int]:
     split_name = image_path.stem.split("_frame_")
     video_name = split_name[0]
     frame_number = int(split_name[1])
