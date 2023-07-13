@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 import torch
 import torchvision
+from tqdm import tqdm
 
 from tracking import data_association as da
 
@@ -32,7 +33,30 @@ transform = torchvision.transforms.Compose(
 )
 model.eval()
 model.requires_grad_(False)
-kwargs = {"model": model, "device": device, "transform": transform}
+
+activation = {}
+
+
+def get_activation(name):
+    def hook(model, input, output):
+        activation[name] = output.detach()
+
+    return hook
+
+
+activation = {}
+model.conv1.register_forward_hook(get_activation("conv1"))
+model.layer1.register_forward_hook(get_activation("layer1"))
+model.layer2.register_forward_hook(get_activation("layer2"))
+model.layer3.register_forward_hook(get_activation("layer3"))
+model.layer4.register_forward_hook(get_activation("layer4"))
+
+kwargs = {
+    "model": model,
+    "device": device,
+    "transform": transform,
+    "activation": activation,
+}
 
 
 def bbox_enlarge(bbox, w_enlarge, h_enlarge):
@@ -95,6 +119,7 @@ def calculate_cos_sim(
     model = kwargs.get("model")
     transform = kwargs.get("transform")
     device = kwargs.get("device")
+    activation = kwargs.get("activation")
 
     tracks = da.load_tracks_from_mot_format(main_dir / f"mots/{vid_name}.zip")
     im1 = cv2.imread(str(main_dir / f"images/{vid_name}_frame_{frame_number1:06d}.jpg"))
@@ -112,22 +137,6 @@ def calculate_cos_sim(
     bb1 = np.array([bbox_enlarge(bb, w_enlarge, h_enlarge) for bb in bb1])
     bb2 = np.array([bbox_enlarge(bb, w_enlarge, h_enlarge) for bb in bb2])
     w, h = max(max(bb1[:, -2]), max(bb2[:, -2])), max(max(bb1[:, -1]), max(bb2[:, -1]))
-
-    activation = {}
-
-    def get_activation(name):
-        def hook(model, input, output):
-            activation[name] = output.detach()
-
-        return hook
-
-    activation = {}
-    model.conv1.register_forward_hook(get_activation("conv1"))
-    model.layer1.register_forward_hook(get_activation("layer1"))
-    model.layer2.register_forward_hook(get_activation("layer2"))
-    model.layer3.register_forward_hook(get_activation("layer3"))
-    model.layer4.register_forward_hook(get_activation("layer4"))
-    _ = model(transform(im1).unsqueeze(0).to(device))
 
     im_height, im_width, _ = im1.shape
 
@@ -195,7 +204,12 @@ def test_get_overlaps_per_vid():
 
 
 def test_calculate_cos_sim():
-    kwargs = {"model": model, "device": device, "transform": transform}
+    kwargs = {
+        "model": model,
+        "device": device,
+        "transform": transform,
+        "activation": activation,
+    }
     frame_number1 = 200
     track_id1 = 4
     track_id2 = 11
@@ -237,29 +251,29 @@ print("passed")
 
 """
 overlaps_vids = get_overlaps_vids()
-outs = []
 with open(save_path, "a") as afile:
-    for vid_name, overlaps in overlaps_vids.items():
+    for vid_name, overlaps in tqdm(overlaps_vids.items()):
         print(vid_name)
         out = get_success_per_vid(overlaps, vid_name)
-        outs += out
-        np.savetxt(afile, np.array(outs), fmt="%d", delimiter=",")
+        np.savetxt(afile, np.array(out), fmt="%d", delimiter=",")
 """
 
 # >>> a = np.loadtxt(main_dir/f"{main_dir.name}.txt", delimiter=",").astype(np.int64)
-# >> len(a)-sum(a[:,-1])
-# 1169
 # >>> len(a)
-# 10106
+# 832
+# >> len(a)-sum(a[:,-1])
+# 88
 # >>> sum(a[:,-1])
-# 8937
-# >>> sum(a[:,-1])/len(a)
-# 0.8843261428854146
+# 744
+# >>> sum(a[:,-1])/len(a)=744/832
+# 0.89
 # 29, 33, 392 -> no occlusion
+# b = deepcopy(a[a[:,-1]==0])
+# b = np.array(sorted(b, key=lambda x: (x[0],x[1],x[2],x[6],x[7])))
+# np.savetxt("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/failed_out_of_sample_vids_vids.txt", b, delimiter=',',fmt="%d")
 
 # This part is only for out of samples
 # - run csim for all overlaps and check success and failure
-#   - investigate failure cases. e.g. 239,96,104,21,18
 #   - calculate total number of detections, total number of occlusions (think)
 
 # This part for everything
