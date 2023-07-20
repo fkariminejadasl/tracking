@@ -4,6 +4,8 @@
 from itertools import combinations
 from pathlib import Path
 
+import numpy as np
+
 from tracking import data_association as da
 
 main_path = Path("/home/fatemeh/Downloads/fish/in_sample_vids/240hz")
@@ -31,7 +33,6 @@ dets2[:, 2] = dets2[:, 0]
 
 def get_occluded_dets(dets):
     occluded = {}
-    n_occluded = []
     ids = dets[:, 2]
     for did1, did2 in combinations(ids, 2):
         det1 = dets[dets[:, 2] == did1][0]
@@ -39,9 +40,7 @@ def get_occluded_dets(dets):
         if da.get_iou(det1[3:7], det2[3:7]) > 0:
             occluded.setdefault(did1, [did1]).append(did2)
     occluded = list(occluded.values())
-    flatten = [v for vv in occluded for v in vv]
-    n_occluded = set(ids).difference(flatten)
-    return occluded, n_occluded
+    return occluded
 
 
 def find_match_groups(occluded1, occluded2):
@@ -71,13 +70,39 @@ def find_match_groups(occluded1, occluded2):
     return matching_groups
 
 
-occluded1, n_occluded1 = get_occluded_dets(dets1)
-occluded2, n_occluded2 = get_occluded_dets(dets2)
+def get_not_occluded(dets1, dets2, matching_groups):
+    dids1 = dets1[:, 2]
+    group = matching_groups.keys()
+    flatten = [v for vv in group for v in vv]
+    n_occluded1 = set(dids1).difference(flatten)
+    dids2 = dets2[:, 2]
+    group = matching_groups.values()
+    flatten = [v for vv in group for v in vv]
+    n_occluded2 = set(dids2).difference(flatten)
+    return n_occluded1, n_occluded2
+
+
+occluded1 = get_occluded_dets(dets1)
+occluded2 = get_occluded_dets(dets2)
 matching_groups = find_match_groups(occluded1, occluded2)
+n_occluded1, n_occluded2 = get_not_occluded(dets1, dets2, matching_groups)
 
 print(occluded1, n_occluded1)
 print(occluded2, n_occluded2)
 print(matching_groups)
+
+# Stage 1: Hungarian matching on non occluded detections
+s_dets1 = np.array([dets2[dets2[:, 2] == did][0] for did in n_occluded1])
+s_dets2 = np.array([dets2[dets2[:, 2] == did][0] for did in n_occluded2])
+sc_dets1 = da.make_dets_from_array(s_dets1)
+sc_dets2 = da.make_dets_from_array(s_dets2)
+inds1, inds2 = da.hungarian_global_matching(sc_dets1, sc_dets2)
+matched_dids = [
+    (s_dets1[ind1, 2], s_dets2[ind2, 2]) for ind1, ind2 in zip(inds1, inds2)
+]
+print(matched_dids)
+
+# Stage 2: Cos similarity of concatenated embeddings
 
 
 # =============================
@@ -96,18 +121,20 @@ dets2[:, 2] = dets2[:, 0]
 
 def test_find_match_groups():
     exp_occluded1 = [[6, 7], [13, 17], [21, 29]]
-    flatten = [v for vv in exp_occluded1 for v in vv]
-    exp_n_occluded1 = set(range(31)).difference(flatten)
-    # {0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 14, 15, 16, 18, 19, 20, 22, 23, 24, 25, 26, 27, 28, 30, 31}
     exp_occluded2 = [[13, 17], [21, 29]]
+    flatten = [v for vv in exp_occluded1 + exp_occluded2 for v in vv]
+    exp_n_occluded = set(range(31)).difference(flatten)
+    # {0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 14, 15, 16, 18, 19, 20, 22, 23, 24, 25, 26, 27, 28, 30, 31}
     exp_matching_groups = {(6, 7): (6, 7), (13, 17): (13, 17), (21, 29): (21, 29)}
 
-    occluded1, n_occluded1 = get_occluded_dets(dets1)
-    occluded2, _ = get_occluded_dets(dets2)
+    occluded1 = get_occluded_dets(dets1)
+    occluded2 = get_occluded_dets(dets2)
     matching_groups = find_match_groups(occluded1, occluded2)
+    n_occluded1, n_occluded2 = get_not_occluded(dets1, dets2, matching_groups)
 
     assert occluded1 == exp_occluded1
-    assert not n_occluded1.difference(exp_n_occluded1) == True
+    assert not n_occluded1.difference(exp_n_occluded) == True
+    assert not n_occluded2.difference(exp_n_occluded) == True
     assert occluded2 == exp_occluded2
     assert matching_groups == exp_matching_groups
 
