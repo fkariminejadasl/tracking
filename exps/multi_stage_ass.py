@@ -1,67 +1,15 @@
 from copy import deepcopy
 from pathlib import Path
 
-import cv2
 import numpy as np
-import torch
-import torchvision
-from tqdm import tqdm
 
 from tracking import data_association as da
+from tracking import multi_stage_tracking as ms
 
 np.random.seed(1000)
 
 w_enlarge, h_enlarge = 0, 0
-
-device = "cuda"
-model = torchvision.models.resnet50(
-    weights=torchvision.models.ResNet50_Weights.IMAGENET1K_V2
-).to(device)
-transform = torchvision.transforms.Compose(
-    [
-        torchvision.transforms.ToTensor(),
-        torchvision.transforms.Normalize(
-            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-        ),
-    ]
-)
-model.eval()
-model.requires_grad_(False)
-
-activation = {}
-
-
-def get_activation(name):
-    def hook(model, input, output):
-        activation[name] = output.detach()
-
-    return hook
-
-
-activation = {}
-model.conv1.register_forward_hook(get_activation("conv1"))
-model.layer1.register_forward_hook(get_activation("layer1"))
-model.layer2.register_forward_hook(get_activation("layer2"))
-model.layer3.register_forward_hook(get_activation("layer3"))
-model.layer4.register_forward_hook(get_activation("layer4"))
-
-kwargs = {
-    "model": model,
-    "device": device,
-    "transform": transform,
-    "activation": activation,
-}
-
-
-def bbox_enlarge(bbox, w_enlarge, h_enlarge):
-    n_bbox = deepcopy(bbox)
-    n_bbox[3] -= w_enlarge
-    n_bbox[5] += w_enlarge
-    n_bbox[4] -= h_enlarge
-    n_bbox[6] += h_enlarge
-    n_bbox[9] = n_bbox[5] - n_bbox[3]
-    n_bbox[10] = n_bbox[6] - n_bbox[4]
-    return n_bbox
+kwargs = ms.get_model_args()
 
 
 def get_overlapped_dets(dets):
@@ -78,7 +26,7 @@ def get_overlapped_dets(dets):
     return overlaps
 
 
-def get_overlaps_per_vid(vid_name: str) -> list:
+def get_overlaps_per_vid(main_path, vid_name: str) -> list:
     # e.g. vid_name="217_cam12"
     # return [[frame_id, track_id, track_id], ...]
     tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
@@ -93,13 +41,13 @@ def get_overlaps_per_vid(vid_name: str) -> list:
     return overlaps
 
 
-def get_overlaps_vids():
+def get_overlaps_vids(main_path):
     # return overlaps[vid_name] = [[frame_id, track_id, track_id], ...]
     overlaps = {}
     for vid_path in main_path.glob("vids/*mp4"):
         vid_name = vid_path.stem
         print(vid_name)
-        overlap = get_overlaps_per_vid(vid_name)
+        overlap = get_overlaps_per_vid(main_path, vid_name)
         if len(overlap) != 0:
             overlap = np.array(overlap)
             overlap = overlap[np.argsort(overlap[:, 0])]
@@ -107,118 +55,78 @@ def get_overlaps_vids():
     return overlaps
 
 
-def calculate_cos_sim(
-    frame_number1, frame_number2, track_id1, track_id2, vid_name, **kwargs
-):
-    model = kwargs.get("model")
-    transform = kwargs.get("transform")
-    device = kwargs.get("device")
-    activation = kwargs.get("activation")
-
+def get_success_per_vid(overlaps, vid_name, main_path, step, end_frame):
     tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
-    im1 = cv2.imread(
-        str(main_path / f"images/{vid_name}_frame_{frame_number1:06d}.jpg")
-    )
-    dets1 = tracks[tracks[:, 1] == frame_number1]
-    im2 = cv2.imread(
-        str(main_path / f"images/{vid_name}_frame_{frame_number2:06d}.jpg")
-    )
-    dets2 = tracks[tracks[:, 1] == frame_number2]
-
-    # visualize.plot_detections_in_image(dets1[:,[0,3,4,5,6]], im1);plt.show(block=False)
-    # visualize.plot_detections_in_image(dets2[:,[0,3,4,5,6]], im2);plt.show(block=False)
-
-    bb1 = deepcopy(dets1[(dets1[:, 0] == track_id1) | (dets1[:, 0] == track_id2)])
-    bb2 = deepcopy(dets2[(dets2[:, 0] == track_id1) | (dets2[:, 0] == track_id2)])
-    if len(bb2) != 2:
-        return None
-    bb1 = np.array([bbox_enlarge(bb, w_enlarge, h_enlarge) for bb in bb1])
-    bb2 = np.array([bbox_enlarge(bb, w_enlarge, h_enlarge) for bb in bb2])
-    w, h = max(max(bb1[:, -2]), max(bb2[:, -2])), max(max(bb1[:, -1]), max(bb2[:, -1]))
-
-    im_height, im_width, _ = im1.shape
-
-    def clip_bboxs(bbox):
-        bbox[:, 3:6:2] = np.clip(bbox[:, 3:6:2], 0, im_width - 1)
-        bbox[:, 4:7:2] = np.clip(bbox[:, 4:7:2], 0, im_height - 1)
-        return bbox
-
-    # print("concate embeddings")
-    layers = ["conv1", "layer1", "layer2", "layer3"]
-    output = [int(vid_name.split("_")[0]), bb1[0, 1], bb2[0, 1]]
-    for i in [0, 1]:
-        for j in [0, 1]:
-            clip_bboxs(bb1)
-            clip_bboxs(bb2)
-            imc1 = im1[bb1[i, 4] : bb1[i, 6], bb1[i, 3] : bb1[i, 5]]
-            imc2 = im2[bb2[j, 4] : bb2[j, 6], bb2[j, 3] : bb2[j, 5]]
-            imc1 = cv2.resize(imc1, (w, h), interpolation=cv2.INTER_AREA)
-            imc2 = cv2.resize(imc2, (w, h), interpolation=cv2.INTER_AREA)
-            _ = model(transform(imc1).unsqueeze(0).to(device))
-            f1 = np.concatenate(
-                [activation[layer].flatten().cpu().numpy() for layer in layers]
-            )
-            _ = model(transform(imc2).unsqueeze(0).to(device))
-            f2 = np.concatenate(
-                [activation[layer].flatten().cpu().numpy() for layer in layers]
-            )
-            csim = f1.dot(f2) / (np.linalg.norm(f1) * np.linalg.norm(f2))
-            csim = int(np.round(csim * 100))  # percent
-            output.extend([bb1[i, 0], bb2[j, 0], csim])
-            # print(f"{bb1[i,1]}, {bb2[j,1]}, {bb1[i,0]}, {bb2[j,0]}, {csim}")
-    return output
-
-
-def calculate_success(out):
-    out = np.array(out[3:]).reshape(-1, 3)
-    out = out[np.argsort(out[:, 2])]
-    success = False
-    if (out[-1, 0] == out[-1, 1]) & (out[-2, 0] == out[-2, 1]):
-        success = True
-    return success
-
-
-def get_success_per_vid(overlaps, vid_name):
     outs = []
     for item in overlaps:
         frame_number1, track_id1, track_id2 = item
         frame_number2 = frame_number1 + step
         if frame_number2 > end_frame:
-            frame_number2 = frame_number1 - step
-        out = calculate_cos_sim(
-            frame_number1, frame_number2, track_id1, track_id2, vid_name, **kwargs
+            continue
+        dets1 = tracks[tracks[:, 1] == frame_number1]
+        dets2 = tracks[tracks[:, 1] == frame_number2]
+        out = ms.calculate_cos_sim(
+            frame_number1,
+            frame_number2,
+            track_id1,
+            track_id2,
+            vid_name,
+            dets1,
+            dets2,
+            main_path,
+            **kwargs,
         )
         if out:
-            success = calculate_success(out)
+            success = ms.calculate_success(out)
             out += [success]
             outs.append(out)
     return outs
 
 
 def test_get_overlaps_per_vid():
-    overlaps = get_overlaps_per_vid("16_cam12")
+    main_path = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids")
+    overlaps = get_overlaps_per_vid(main_path, "16_cam12")
     expected = [[120, 14, 21], [128, 14, 21], [112, 14, 21]]
     np.testing.assert_equal(np.array(expected), np.array(overlaps))
 
 
 def test_calculate_cos_sim():
-    kwargs = {
-        "model": model,
-        "device": device,
-        "transform": transform,
-        "activation": activation,
-    }
+    main_path = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids")
+    vid_name = "384_cam12"
     frame_number1 = 200
+    frame_number2 = 240
     track_id1 = 4
     track_id2 = 11
-    vid_name = "384_cam12"
-    desired = calculate_cos_sim(
-        frame_number1, 240, track_id1, track_id2, vid_name, **kwargs
+
+    tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
+    dets1 = tracks[tracks[:, 1] == frame_number1]
+    dets2 = tracks[tracks[:, 1] == frame_number2]
+    desired = ms.calculate_cos_sim(
+        frame_number1,
+        frame_number2,
+        track_id1,
+        track_id2,
+        vid_name,
+        dets1,
+        dets2,
+        main_path,
+        **kwargs,
     )
     expected = [384, 200, 240, 4, 4, 85, 4, 11, 80, 11, 4, 82, 11, 11, 85]
     np.testing.assert_array_equal(np.array(desired), np.array(expected))
-    desired = calculate_cos_sim(
-        frame_number1, 208, track_id1, track_id2, vid_name, **kwargs
+
+    frame_number2 = 208
+    dets2 = tracks[tracks[:, 1] == frame_number2]
+    desired = ms.calculate_cos_sim(
+        frame_number1,
+        frame_number2,
+        track_id1,
+        track_id2,
+        vid_name,
+        dets1,
+        dets2,
+        main_path,
+        **kwargs,
     )
     expected = [384, 200, 208, 4, 4, 92, 4, 11, 83, 11, 4, 81, 11, 11, 90]
     np.testing.assert_array_equal(np.array(desired), np.array(expected))
@@ -226,31 +134,31 @@ def test_calculate_cos_sim():
 
 def test_calculate_success():
     out = [384, 200, 208, 4, 4, 92, 4, 11, 83, 11, 4, 81, 11, 11, 90]
-    success = calculate_success(out)
+    success = ms.calculate_success(out)
     assert success == True
     out = [384, 200, 208, 4, 4, 92, 4, 11, 83, 11, 4, 81, 11, 11, 80]
-    success = calculate_success(out)
+    success = ms.calculate_success(out)
     assert success == False
 
 
 def test_get_success_per_vid():
+    step, end_frame = 8, 256
+    main_path = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids")
     vid_name = "384_cam12"
-    overlaps = get_overlaps_per_vid(vid_name)
-    outs = get_success_per_vid(overlaps, vid_name)
+    overlaps = get_overlaps_per_vid(main_path, vid_name)
+    outs = ms.get_success_per_vid(overlaps, vid_name, main_path, step, end_frame)
     expected = np.loadtxt(main_path / "test.txt", delimiter=",").astype(np.int64)
     np.testing.assert_array_equal(expected, np.array(outs, dtype=np.int64))
 
 
-main_path = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids")
-save_path = main_path / f"{main_path.name}.txt"
-step = 8
-end_frame = 256
 test_calculate_cos_sim()
 test_get_overlaps_per_vid()
 test_calculate_success()
 test_get_success_per_vid()
 print("passed")
 
+"""
+# Run for all videos
 
 # main_path = Path("/home/fatemeh/Downloads/fish/in_sample_vids/240hz")
 # save_path = main_path / f"{main_path.name}.txt"
@@ -260,11 +168,11 @@ main_path = Path("/home/fatemeh/Downloads/fish/in_sample_vids/30hz")
 save_path = main_path / f"{main_path.name}.txt"
 step = 1
 end_frame = 599
-overlaps_vids = get_overlaps_vids()
+overlaps_vids = get_overlaps_vids(main_path)
 with open(save_path, "a") as afile:
     for vid_name, overlaps in tqdm(overlaps_vids.items()):
         print(vid_name, len(overlaps))
-        out = get_success_per_vid(overlaps, vid_name)
+        out = ms.get_success_per_vid(overlaps, vid_name, main_path, step, end_frame)
         np.savetxt(afile, np.array(out), fmt="%d", delimiter=",")
 
 # len(a), len(b), len(c) -> len(c) / len(a)
@@ -326,7 +234,7 @@ with open(save_path, "a") as afile:
 #     mot_path = v.parent.parent / "mots"
 #     shutil.move(v, v.parent / f"{vtoi[v.stem]}.mp4")
 #     shutil.move(mot_path / f"{v.stem}.zip", mot_path / f"{vtoi[v.stem]}.zip")
-
+"""
 
 """
 # Tests for appearance cosine similarity
