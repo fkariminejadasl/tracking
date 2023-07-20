@@ -1,4 +1,3 @@
-# - group occluded
 # - use Hungarian for each not occluded
 # - use Cosim for each occluded group
 
@@ -17,6 +16,9 @@ tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
 
 dets1 = tracks[tracks[:, 1] == frame_number1]
 dets2 = tracks[tracks[:, 1] == frame_number2]
+# TODO hack to missuse tracks for detections
+dets1[:, 2] = dets1[:, 0]
+dets2[:, 2] = dets2[:, 0]
 
 # import cv2
 # import matplotlib.pylab as plt
@@ -30,12 +32,12 @@ dets2 = tracks[tracks[:, 1] == frame_number2]
 def get_occluded_dets(dets):
     occluded = {}
     n_occluded = []
-    ids = dets[:, 0]  # TODO change to det id
-    for tid1, tid2 in combinations(ids, 2):
-        det1 = dets[dets[:, 0] == tid1][0]  # TODO
-        det2 = dets[dets[:, 0] == tid2][0]  # TODO
+    ids = dets[:, 2]
+    for did1, did2 in combinations(ids, 2):
+        det1 = dets[dets[:, 2] == did1][0]
+        det2 = dets[dets[:, 2] == did2][0]
         if da.get_iou(det1[3:7], det2[3:7]) > 0:
-            occluded.setdefault(tid1, [tid1]).append(tid2)
+            occluded.setdefault(did1, [did1]).append(did2)
     occluded = list(occluded.values())
     flatten = [v for vv in occluded for v in vv]
     n_occluded = set(ids).difference(flatten)
@@ -47,22 +49,22 @@ def find_match_groups(occluded1, occluded2):
     for group1 in occluded1:
         group1 = tuple(sorted(set(group1)))
         values = []
-        for tid1 in group1:
-            det1 = dets1[dets1[:, 0] == tid1][0]  # TODO
+        for did1 in group1:
+            det1 = dets1[dets1[:, 2] == did1][0]
             for det2 in dets2:
-                tid2 = det2[0]  # TODO
+                did2 = det2[2]
                 if da.get_iou(det1[3:7], det2[3:7]) > 0:
-                    values.append(tid2)
+                    values.append(did2)
         group2 = tuple(sorted(set(values)))
         matching_groups[group1] = group2
     for group2 in occluded2:
         values = []
-        for tid2 in group2:
-            det2 = dets2[dets2[:, 0] == tid2][0]  # TODO
+        for did2 in group2:
+            det2 = dets2[dets2[:, 2] == did2][0]
             for det1 in dets1:
-                tid1 = det1[0]  # TODO
+                did1 = det1[2]
                 if da.get_iou(det1[3:7], det2[3:7]) > 0:
-                    values.append(tid1)
+                    values.append(did1)
         group1 = tuple(sorted(set(group1)))
         if group1 not in matching_groups.keys():
             matching_groups[group1] = group2
@@ -80,13 +82,17 @@ print(matching_groups)
 
 # =============================
 main_path = Path("/home/fatemeh/Downloads/fish/in_sample_vids/240hz")
-vid_name = 6 
-frame_number1 = 16 
-frame_number2 = 24 
+vid_name = 6
+frame_number1 = 16
+frame_number2 = 24
 tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
 
 dets1 = tracks[tracks[:, 1] == frame_number1]
 dets2 = tracks[tracks[:, 1] == frame_number2]
+# TODO hack to missuse tracks for detections
+dets1[:, 2] = dets1[:, 0]
+dets2[:, 2] = dets2[:, 0]
+
 
 def test_find_match_groups():
     exp_occluded1 = [[6, 7], [13, 17], [21, 29]]
