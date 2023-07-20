@@ -53,7 +53,7 @@ print(da.get_iou((0, 0, 4, 2), (2, 1, 3, 2)))
 
 # save video as images
 vid_name = "16_cam12"
-main_path = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids")
+main_path = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids")
 vid_file = main_path/f"vids/{vid_name}.mp4"
 visualize.save_video_as_images(main_path/"images",  vid_file, step=8)
 
