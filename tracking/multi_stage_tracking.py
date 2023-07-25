@@ -8,35 +8,13 @@ from pathlib import Path
 import cv2
 import numpy as np
 import torchvision
+from scipy.optimize import linear_sum_assignment
 
 from tracking import data_association as da
 
 np.random.seed(1000)
 
 w_enlarge, h_enlarge = 0, 0
-
-main_path = Path("/home/fatemeh/Downloads/fish/in_sample_vids/240hz")
-
-vid_name = 6  # 2
-frame_number1 = 16  # 192
-frame_number2 = 24  # 184
-
-tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
-
-dets1 = tracks[tracks[:, 1] == frame_number1]
-dets2 = tracks[tracks[:, 1] == frame_number2]
-# TODO hack to missuse tracks for detections
-dets1[:, 2] = dets1[:, 0]
-dets2[:, 2] = dets2[:, 0]
-
-
-# import cv2
-# import matplotlib.pylab as plt
-# from tracking import visualize
-# image1 = cv2.imread(str(main_path / f"images/{vid_name}_frame_{frame_number1:06d}.jpg"))
-# image2 = cv2.imread(str(main_path / f"images/{vid_name}_frame_{frame_number2:06d}.jpg"))
-# visualize.plot_detections_in_image(dets1[:,[0,3,4,5,6]], image1);plt.show(block=False)
-# visualize.plot_detections_in_image(dets2[:,[0,3,4,5,6]], image2);plt.show(block=False)
 
 
 def get_occluded_dets(dets):
@@ -130,6 +108,14 @@ def get_model_args():
     return kwargs
 
 
+def get_bboxes(dets: np.ndarray, group):
+    bbs = []
+    for id_ in group:
+        bbs.append(dets[(dets[:, 2] == id_)])
+    bbs = np.concatenate(bbs, axis=0)
+    return bbs
+
+
 def bbox_enlarge(bbox, w_enlarge, h_enlarge):
     n_bbox = deepcopy(bbox)
     n_bbox[3] -= w_enlarge
@@ -141,53 +127,35 @@ def bbox_enlarge(bbox, w_enlarge, h_enlarge):
     return n_bbox
 
 
-def calculate_cos_sim(
-    frame_number1,
-    frame_number2,
-    track_id1,
-    track_id2,
-    vid_name,
-    dets1,
-    dets2,
-    main_path,
-    **kwargs,
-):
+def clip_bboxs(bbox, im_height, im_width):
+    bbox[:, 3:6:2] = np.clip(bbox[:, 3:6:2], 0, im_width - 1)
+    bbox[:, 4:7:2] = np.clip(bbox[:, 4:7:2], 0, im_height - 1)
+    return bbox
+
+
+def cos_sim(im1, im2, bbs1, bbs2, **kwargs):
     model = kwargs.get("model")
     transform = kwargs.get("transform")
     device = kwargs.get("device")
     activation = kwargs.get("activation")
 
-    im1 = cv2.imread(
-        str(main_path / f"images/{vid_name}_frame_{frame_number1:06d}.jpg")
+    bbs1 = np.array([bbox_enlarge(bb, w_enlarge, h_enlarge) for bb in bbs1])
+    bbs2 = np.array([bbox_enlarge(bb, w_enlarge, h_enlarge) for bb in bbs2])
+    w, h = max(max(bbs1[:, -2]), max(bbs2[:, -2])), max(
+        max(bbs1[:, -1]), max(bbs2[:, -1])
     )
-    im2 = cv2.imread(
-        str(main_path / f"images/{vid_name}_frame_{frame_number2:06d}.jpg")
-    )
-
-    bb1 = deepcopy(dets1[(dets1[:, 0] == track_id1) | (dets1[:, 0] == track_id2)])
-    bb2 = deepcopy(dets2[(dets2[:, 0] == track_id1) | (dets2[:, 0] == track_id2)])
-    if len(bb2) != 2:
-        return None
-    bb1 = np.array([bbox_enlarge(bb, w_enlarge, h_enlarge) for bb in bb1])
-    bb2 = np.array([bbox_enlarge(bb, w_enlarge, h_enlarge) for bb in bb2])
-    w, h = max(max(bb1[:, -2]), max(bb2[:, -2])), max(max(bb1[:, -1]), max(bb2[:, -1]))
 
     im_height, im_width, _ = im1.shape
-
-    def clip_bboxs(bbox):
-        bbox[:, 3:6:2] = np.clip(bbox[:, 3:6:2], 0, im_width - 1)
-        bbox[:, 4:7:2] = np.clip(bbox[:, 4:7:2], 0, im_height - 1)
-        return bbox
+    clip_bboxs(bb1, im_height, im_width)
+    clip_bboxs(bb2, im_height, im_width)
 
     # print("concate embeddings")
     layers = ["conv1", "layer1", "layer2", "layer3"]
-    output = [int(vid_name.split("_")[0]), bb1[0, 1], bb2[0, 1]]
-    for i in [0, 1]:
-        for j in [0, 1]:
-            clip_bboxs(bb1)
-            clip_bboxs(bb2)
-            imc1 = im1[bb1[i, 4] : bb1[i, 6], bb1[i, 3] : bb1[i, 5]]
-            imc2 = im2[bb2[j, 4] : bb2[j, 6], bb2[j, 3] : bb2[j, 5]]
+    output = [bb1[0, 1], bb2[0, 1]]
+    for bb1 in bbs1:
+        for bb2 in bbs2:
+            imc1 = im1[bb1[4] : bb1[6], bb1[3] : bb1[5]]
+            imc2 = im2[bb2[4] : bb2[6], bb2[3] : bb2[5]]
             imc1 = cv2.resize(imc1, (w, h), interpolation=cv2.INTER_AREA)
             imc2 = cv2.resize(imc2, (w, h), interpolation=cv2.INTER_AREA)
             _ = model(transform(imc1).unsqueeze(0).to(device))
@@ -200,51 +168,80 @@ def calculate_cos_sim(
             )
             csim = f1.dot(f2) / (np.linalg.norm(f1) * np.linalg.norm(f2))
             csim = int(np.round(csim * 100))  # percent
-            output.extend([bb1[i, 0], bb2[j, 0], csim])
-            # print(f"{bb1[i,1]}, {bb2[j,1]}, {bb1[i,0]}, {bb2[j,0]}, {csim}")
+            output.extend([bb1[0], bb2[0], csim])
     return output
 
 
-kwargs = get_model_args()  # TODO ugly
-
-
+# TODO
+# 1. s1: hungarian dist&iou on high quality dets no overlap (I have no ovelap version)
+# 2. s2: hungarian agg cossim on coverlap -> low quality ass (either low value or multiple detection)
+# 3. s3: hungarian dist&iou on low quality dets
+# 4. unmached (tracklets: mis track but keept, dets: new track)
+# 5. kill track (not tracked for long time)
 def calculate_success(out):
-    out = np.array(out[3:]).reshape(-1, 3)
-    out = out[np.argsort(out[:, 2])]
-    success = False
-    if (out[-1, 0] == out[-1, 1]) & (out[-2, 0] == out[-2, 1]):
-        success = True
-    return success
+    # TODO: tricky for multiple dets, low quality. I cover mis det in unmatched
+    out = np.array(out).reshape(-1, 3)
+    ids1 = np.unique(out[:, 0])
+    ids2 = np.unique(out[:, 1])
+    matches = []
+    dist = np.zeros((len(ids1), len(ids2)), dtype=np.float32)
+    for i, id1 in enumerate(ids1):
+        for j, id2 in enumerate(ids2):
+            cosim = out[(out[:, 0] == id1) & (out[:, 1] == id2)][:, 2]
+            dist[i, j] = 1 - cosim / 100
+    row_inds, col_inds = linear_sum_assignment(dist)
+    for row_ind, col_ind in zip(row_inds, col_inds):
+        cosim = int(round((1 - dist[row_ind, col_ind]) * 100))
+        matches.append([ids1[row_ind], ids2[col_ind], cosim])
+    # TODO something here to distiguish low quality ass and multi dets
+    return matches
 
 
-# TODO change it to occluded groups instead of video
-def get_success_per_vid2(overlaps, vid_name, main_path, step, end_frame):
-    tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
-    outs = []
-    for item in overlaps:
-        frame_number1, track_id1, track_id2 = item
-        frame_number2 = frame_number1 + step
-        if frame_number2 > end_frame:
-            continue
-        dets1 = tracks[tracks[:, 1] == frame_number1]
-        dets2 = tracks[tracks[:, 1] == frame_number2]
-        out = calculate_cos_sim(
-            frame_number1,
-            frame_number2,
-            track_id1,
-            track_id2,
-            vid_name,
-            dets1,
-            dets2,
-            main_path,
-            **kwargs,
-        )
-        if out:
-            success = calculate_success(out)
-            out += [success]
-            outs.append(out)
-    return outs
+out = [44, 44, 83, 44, 13, 81, 13, 44, 82, 13, 13, 85]
+matches = calculate_success(out)
+exp_matched = [[13, 13, 85], [44, 44, 83]]
 
+
+def agg_cos_sim_matching(dets1, dets2, vid_name, main_path):
+    out = cos_sim(
+        frame_number1,
+        frame_number2,
+        vid_name,
+        dets1,
+        dets2,
+        main_path,
+        **kwargs,
+    )
+    success = calculate_success(out)
+    out += [success]
+    return out
+
+
+kwargs = get_model_args()  # TODO ugly
+"""
+main_path = Path("/home/fatemeh/Downloads/fish/in_sample_vids/240hz")
+
+vid_name = 6  # 2
+step = 8
+frame_number1 = 16  # 192
+frame_number2 = frame_number1 + step  # 184
+
+tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
+
+dets1 = tracks[tracks[:, 1] == frame_number1]
+dets2 = tracks[tracks[:, 1] == frame_number2]
+# TODO hack to missuse tracks for detections
+dets1[:, 2] = dets1[:, 0]
+dets2[:, 2] = dets2[:, 0]
+
+
+# import cv2
+# import matplotlib.pylab as plt
+# from tracking import visualize
+# image1 = cv2.imread(str(main_path / f"images/{vid_name}_frame_{frame_number1:06d}.jpg"))
+# image2 = cv2.imread(str(main_path / f"images/{vid_name}_frame_{frame_number2:06d}.jpg"))
+# visualize.plot_detections_in_image(dets1[:,[0,3,4,5,6]], image1);plt.show(block=False)
+# visualize.plot_detections_in_image(dets2[:,[0,3,4,5,6]], image2);plt.show(block=False)
 
 occluded1 = get_occluded_dets(dets1)
 occluded2 = get_occluded_dets(dets2)
@@ -267,7 +264,14 @@ matched_dids = [
 print(matched_dids)
 
 # Stage 2: Cos similarity of concatenated embeddings
-
+# for group1, group2 in matching_groups.items() # (6, 7): (6, 7)
+group1 = (6, 7)
+group2 = (6, 7)
+im1 = cv2.imread(str(main_path / f"images/{vid_name}_frame_{frame_number1:06d}.jpg"))
+im2 = cv2.imread(str(main_path / f"images/{vid_name}_frame_{frame_number2:06d}.jpg"))
+bbs1 = get_bboxes(dets1, group1)
+bbs2 = get_bboxes(dets2, group2)
+"""
 
 # =============================
 main_path = Path("/home/fatemeh/Downloads/fish/in_sample_vids/240hz")
