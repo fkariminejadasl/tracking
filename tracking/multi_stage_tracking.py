@@ -136,7 +136,7 @@ def clip_bboxs(bbox, im_height, im_width):
     return bbox
 
 
-def cos_sim(im1, im2, bbs1, bbs2, **kwargs):
+def cos_sim(main_path, vid_name, bbs1, bbs2, **kwargs):
     model = kwargs.get("model")
     transform = kwargs.get("transform")
     device = kwargs.get("device")
@@ -148,7 +148,11 @@ def cos_sim(im1, im2, bbs1, bbs2, **kwargs):
         max(bbs1[:, -1]), max(bbs2[:, -1])
     )
 
-    im_height, im_width, _ = im1.shape
+    frame_number2 = bbs2[0, 1]
+    im2 = cv2.imread(
+        str(main_path / f"images/{vid_name}_frame_{frame_number2:06d}.jpg")
+    )
+    im_height, im_width, _ = im2.shape
     clip_bboxs(bbs1, im_height, im_width)
     clip_bboxs(bbs2, im_height, im_width)
 
@@ -157,6 +161,11 @@ def cos_sim(im1, im2, bbs1, bbs2, **kwargs):
     output = []
     for bb1 in bbs1:
         for bb2 in bbs2:
+            frame_number1 = bb1[1]
+            im1 = cv2.imread(
+                str(main_path / f"images/{vid_name}_frame_{frame_number1:06d}.jpg")
+            )
+
             imc1 = im1[bb1[4] : bb1[6], bb1[3] : bb1[5]]
             imc2 = im2[bb2[4] : bb2[6], bb2[3] : bb2[5]]
             imc1 = cv2.resize(imc1, (w, h), interpolation=cv2.INTER_AREA)
@@ -172,6 +181,7 @@ def cos_sim(im1, im2, bbs1, bbs2, **kwargs):
             csim = f1.dot(f2) / (np.linalg.norm(f1) * np.linalg.norm(f2))
             csim = int(np.round(csim * 100))  # percent
             output.extend([bb1[0], bb2[0], csim])
+            print(bb1[:3], bb2[:3], csim)
     return output
 
 
@@ -194,8 +204,8 @@ def get_cosim_matches(out):
     return matches
 
 
-def agg_cos_sim_matching(im1, im2, bbs1, bbs2, **kwargs):
-    out = cos_sim(im1, im2, bbs1, bbs2, **kwargs)
+def agg_cos_sim_matching(main_path, vid_name, bbs1, bbs2, **kwargs):
+    out = cos_sim(main_path, vid_name, bbs1, bbs2, **kwargs)
     matches = get_cosim_matches(out)
     return matches
 
@@ -218,10 +228,8 @@ frame_number2 = frame_number1 + step
 
 tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
 
-im1 = cv2.imread(str(main_path / f"images/{vid_name}_frame_{frame_number1:06d}.jpg"))
-im2 = cv2.imread(str(main_path / f"images/{vid_name}_frame_{frame_number2:06d}.jpg"))
-
 dets1 = tracks[tracks[:, 1] == frame_number1]
+# dets1[8] = tracks[(tracks[:, 1] == 36) & (tracks[:,0]==8)][0] # test for tracklet and frame
 dets2 = tracks[tracks[:, 1] == frame_number2]
 # TODO hack to missuse tracks for detections
 dets1[:, 2] = dets1[:, 0]
@@ -259,7 +267,7 @@ for group1, group2 in matching_groups.items():
     # group2 = (8,9,11)
     bbs1 = get_bboxes(dets1, group1)
     bbs2 = get_bboxes(dets2, group2)
-    cosim_matches = agg_cos_sim_matching(im1, im2, bbs1, bbs2, **kwargs)
+    cosim_matches = agg_cos_sim_matching(main_path, vid_name, bbs1, bbs2, **kwargs)
     print(cosim_matches)
 
 # =============================
