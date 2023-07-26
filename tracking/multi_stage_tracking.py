@@ -18,6 +18,9 @@ w_enlarge, h_enlarge = 0, 0
 
 
 def get_occluded_dets(dets):
+    # TODO if 8, 9, 11, where 9, 11 intersect, 8, 11 but not 8, 9. This return two groups.
+    # if 11 was a smaller number then one group of three is return. I'm not sure if I change
+    # this part.
     occluded = {}
     ids = dets[:, 2]
     for did1, did2 in combinations(ids, 2):
@@ -146,12 +149,12 @@ def cos_sim(im1, im2, bbs1, bbs2, **kwargs):
     )
 
     im_height, im_width, _ = im1.shape
-    clip_bboxs(bb1, im_height, im_width)
-    clip_bboxs(bb2, im_height, im_width)
+    clip_bboxs(bbs1, im_height, im_width)
+    clip_bboxs(bbs2, im_height, im_width)
 
     # print("concate embeddings")
     layers = ["conv1", "layer1", "layer2", "layer3"]
-    output = [bb1[0, 1], bb2[0, 1]]
+    output = []
     for bb1 in bbs1:
         for bb2 in bbs2:
             imc1 = im1[bb1[4] : bb1[6], bb1[3] : bb1[5]]
@@ -172,13 +175,7 @@ def cos_sim(im1, im2, bbs1, bbs2, **kwargs):
     return output
 
 
-# TODO
-# 1. s1: hungarian dist&iou on high quality dets no overlap (I have no ovelap version)
-# 2. s2: hungarian agg cossim on coverlap -> low quality ass (either low value or multiple detection)
-# 3. s3: hungarian dist&iou on low quality dets
-# 4. unmached (tracklets: mis track but keept, dets: new track)
-# 5. kill track (not tracked for long time)
-def calculate_success(out):
+def get_cosim_matches(out):
     # TODO: tricky for multiple dets, low quality. I cover mis det in unmatched
     out = np.array(out).reshape(-1, 3)
     ids1 = np.unique(out[:, 0])
@@ -197,36 +194,32 @@ def calculate_success(out):
     return matches
 
 
-out = [44, 44, 83, 44, 13, 81, 13, 44, 82, 13, 13, 85]
-matches = calculate_success(out)
-exp_matched = [[13, 13, 85], [44, 44, 83]]
-
-
-def agg_cos_sim_matching(dets1, dets2, vid_name, main_path):
-    out = cos_sim(
-        frame_number1,
-        frame_number2,
-        vid_name,
-        dets1,
-        dets2,
-        main_path,
-        **kwargs,
-    )
-    success = calculate_success(out)
-    out += [success]
-    return out
+def agg_cos_sim_matching(im1, im2, bbs1, bbs2, **kwargs):
+    out = cos_sim(im1, im2, bbs1, bbs2, **kwargs)
+    matches = get_cosim_matches(out)
+    return matches
 
 
 kwargs = get_model_args()  # TODO ugly
-"""
-main_path = Path("/home/fatemeh/Downloads/fish/in_sample_vids/240hz")
+# TODO
+# 1. s1: hungarian dist&iou on high quality dets no overlap (I have no ovelap version)
+# 2. s2: hungarian agg cossim on coverlap -> low quality ass (either low value or multiple detection)
+# 3. s3: hungarian dist&iou on low quality dets
+# 4. unmached (tracklets: mis track but keept, dets: new track)
+# 5. kill track (not tracked for long time)
 
-vid_name = 6  # 2
-step = 8
-frame_number1 = 16  # 192
-frame_number2 = frame_number1 + step  # 184
+
+main_path = Path("/home/fatemeh/Downloads/fish/in_sample_vids/30hz")  # 240hz
+
+vid_name = 0  # 6  # 2
+step = 1  # 8
+frame_number1 = 38  # 16 # 184
+frame_number2 = frame_number1 + step
 
 tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
+
+im1 = cv2.imread(str(main_path / f"images/{vid_name}_frame_{frame_number1:06d}.jpg"))
+im2 = cv2.imread(str(main_path / f"images/{vid_name}_frame_{frame_number2:06d}.jpg"))
 
 dets1 = tracks[tracks[:, 1] == frame_number1]
 dets2 = tracks[tracks[:, 1] == frame_number2]
@@ -235,13 +228,10 @@ dets1[:, 2] = dets1[:, 0]
 dets2[:, 2] = dets2[:, 0]
 
 
-# import cv2
 # import matplotlib.pylab as plt
 # from tracking import visualize
-# image1 = cv2.imread(str(main_path / f"images/{vid_name}_frame_{frame_number1:06d}.jpg"))
-# image2 = cv2.imread(str(main_path / f"images/{vid_name}_frame_{frame_number2:06d}.jpg"))
-# visualize.plot_detections_in_image(dets1[:,[0,3,4,5,6]], image1);plt.show(block=False)
-# visualize.plot_detections_in_image(dets2[:,[0,3,4,5,6]], image2);plt.show(block=False)
+# visualize.plot_detections_in_image(dets1[:,[0,3,4,5,6]], im1);plt.show(block=False)
+# visualize.plot_detections_in_image(dets2[:,[0,3,4,5,6]], im2);plt.show(block=False)
 
 occluded1 = get_occluded_dets(dets1)
 occluded2 = get_occluded_dets(dets2)
@@ -264,14 +254,13 @@ matched_dids = [
 print(matched_dids)
 
 # Stage 2: Cos similarity of concatenated embeddings
-# for group1, group2 in matching_groups.items() # (6, 7): (6, 7)
-group1 = (6, 7)
-group2 = (6, 7)
-im1 = cv2.imread(str(main_path / f"images/{vid_name}_frame_{frame_number1:06d}.jpg"))
-im2 = cv2.imread(str(main_path / f"images/{vid_name}_frame_{frame_number2:06d}.jpg"))
-bbs1 = get_bboxes(dets1, group1)
-bbs2 = get_bboxes(dets2, group2)
-"""
+for group1, group2 in matching_groups.items():
+    # group1 = (8,9,11)
+    # group2 = (8,9,11)
+    bbs1 = get_bboxes(dets1, group1)
+    bbs2 = get_bboxes(dets2, group2)
+    cosim_matches = agg_cos_sim_matching(im1, im2, bbs1, bbs2, **kwargs)
+    print(cosim_matches)
 
 # =============================
 main_path = Path("/home/fatemeh/Downloads/fish/in_sample_vids/240hz")
@@ -307,4 +296,13 @@ def test_find_match_groups():
     assert matching_groups == exp_matching_groups
 
 
+def test_get_cosim_matches():
+    out = [44, 44, 83, 44, 13, 81, 13, 44, 82, 13, 13, 85]
+    matches = get_cosim_matches(out)
+    exp_matched = [[13, 13, 85], [44, 44, 83]]
+    assert exp_matched == matches
+
+
 test_find_match_groups()
+test_get_cosim_matches()
+print("passed")

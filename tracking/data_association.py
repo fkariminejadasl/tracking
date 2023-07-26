@@ -896,22 +896,55 @@ def load_tracks(track_file):
     return tracks
 
 
-def get_iou(bbox1, bbox2) -> float:
-    # bbox1,2: (x_topleft, y_topleft, x_bottomright, y_bottomright)
-    # copied and modified from
-    # https://stackoverflow.com/questions/25349178/calculating-percentage-of-bounding-box-overlap-for-image-detector-evaluation
+def giou(bbox1, bbox2) -> float:
+    # bbox1,2: (x_topleft, y_topleft, x_bottomright, y_bottomr1ight)
 
-    # determine the coordinates of the intersection rectangle
+    def correct_bbox(bbox):
+        if bbox[0] > bbox[2]:
+            tmp = bbox[2]
+            bbox[2] = bbox[0]
+            bbox[0] = tmp
+        if bbox[1] > bbox[3]:
+            tmp = bbox[3]
+            bbox[3] = bbox[1]
+            bbox[1] = tmp
+        return bbox
+
+    bbox1 = correct_bbox(bbox1)
+    bbox2 = correct_bbox(bbox2)
+
     x_left = max(bbox1[0], bbox2[0])
     y_top = max(bbox1[1], bbox2[1])
     x_right = min(bbox1[2], bbox2[2])
     y_bottom = min(bbox1[3], bbox2[3])
+    if x_right < x_left or y_bottom < y_top:
+        return -1.0
 
+    intersection_area = (x_right - x_left) * (y_bottom - y_top)
+    area1 = (bbox1[2] - bbox1[0]) * (bbox1[3] - bbox1[1])
+    area2 = (bbox2[2] - bbox2[0]) * (bbox2[3] - bbox2[1])
+    iou = intersection_area / float(area1 + area2 - intersection_area)
+
+    convex_hull = abs(max(bbox1[2], bbox2[2]) - min(bbox1[0], bbox2[0])) * abs(
+        max(bbox1[3], bbox2[3]) - min(bbox1[1], bbox2[1])
+    )
+    assert convex_hull != 0.0, f"{bbox1}, {bbox2}"
+    giou = iou - (1 - intersection_area / float(convex_hull))
+    assert giou >= -1.0, f"{bbox1}, {bbox2}"
+    assert giou <= 1.0, f"{bbox1}, {bbox2}"
+    return giou
+
+
+def get_iou(bbox1, bbox2) -> float:
+    # bbox1,2: (x_topleft, y_topleft, x_bottomright, y_bottomright)
+
+    x_left = max(bbox1[0], bbox2[0])
+    y_top = max(bbox1[1], bbox2[1])
+    x_right = min(bbox1[2], bbox2[2])
+    y_bottom = min(bbox1[3], bbox2[3])
     if x_right < x_left or y_bottom < y_top:
         return 0.0
 
-    # The intersection of two axis-aligned bounding boxes is always an
-    # axis-aligned bounding box
     intersection_area = (x_right - x_left) * (y_bottom - y_top)
 
     area1 = (bbox1[2] - bbox1[0]) * (bbox1[3] - bbox1[1])
@@ -926,7 +959,6 @@ def get_iou(bbox1, bbox2) -> float:
 def is_bbox_in_bbox(bbox1, bbox2, inters_thres=0.85) -> float:
     # bbox1,2: (x_topleft, y_topleft, x_bottomright, y_bottomright)
 
-    # determine the coordinates of the intersection rectangle
     x_left = max(bbox1[0], bbox2[0])
     y_top = max(bbox1[1], bbox2[1])
     x_right = min(bbox1[2], bbox2[2])
@@ -935,8 +967,6 @@ def is_bbox_in_bbox(bbox1, bbox2, inters_thres=0.85) -> float:
     if x_right < x_left or y_bottom < y_top:
         return False
 
-    # The intersection of two axis-aligned bounding boxes is always an
-    # axis-aligned bounding box
     intersection_area = (x_right - x_left) * (y_bottom - y_top)
 
     area1 = (bbox1[2] - bbox1[0]) * (bbox1[3] - bbox1[1])
