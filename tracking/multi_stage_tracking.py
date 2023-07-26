@@ -14,10 +14,15 @@ from tracking import data_association as da
 
 np.random.seed(1000)
 
-w_enlarge, h_enlarge = 0, 0
-
 
 def get_occluded_dets(dets):
+    """
+    input:
+        dets np.ndarray
+    output: list(list(int))
+    output e.g. [[13, 17], [21, 29]]
+    """
+
     # TODO if 8, 9, 11, where 9, 11 intersect, 8, 11 but not 8, 9. This return two groups.
     # if 11 was a smaller number then one group of three is return. I'm not sure if I change
     # this part.
@@ -33,6 +38,14 @@ def get_occluded_dets(dets):
 
 
 def find_match_groups(dets1, dets2, occluded1, occluded2):
+    """
+    inputs:
+        dets1, dets2: np.ndarray
+        occluded1, occluded2: list(list(int))
+    output: dic(tuple(int), tuple(int))
+
+    output e.g. {(6, 7): (6, 7), (13, 17): (13, 17)
+    """
     matching_groups = {}
     for group1 in occluded1:
         group1 = tuple(sorted(set(group1)))
@@ -60,6 +73,12 @@ def find_match_groups(dets1, dets2, occluded1, occluded2):
 
 
 def get_not_occluded(dets1, dets2, matching_groups):
+    """
+    inputs:
+        dets1, dets2: np.ndarray
+        matching_groups: dic(tuple(int), tuple(int))
+    output: tuple(set(int), set(int))
+    """
     dids1 = dets1[:, 2]
     group = matching_groups.keys()
     flatten = [v for vv in group for v in vv]
@@ -111,15 +130,40 @@ def get_model_args():
     return kwargs
 
 
-def get_bboxes(dets: np.ndarray, group):
-    bbs = []
-    for id_ in group:
-        bbs.append(dets[(dets[:, 2] == id_)])
-    bbs = np.concatenate(bbs, axis=0)
-    return bbs
+def hungarian_global_matching(dets1, dets2):
+    """
+    inputs:
+        dets1, dets2: np.ndarray
+    output: tuple(list(int), list(int))
+    """
+    dist = np.zeros((len(dets1), len(dets2)), dtype=np.float32)
+    for i, det1 in enumerate(dets1):
+        for j, det2 in enumerate(dets2):
+            iou_loss = 1 - da.get_iou(det1[3:7], det2[3:7])
+            loc_loss = np.linalg.norm([det2[7] - det1[7], det2[8] - det1[8]])
+            dist[i, j] = iou_loss + loc_loss
+    row_ind, col_ind = linear_sum_assignment(dist)
+    return row_ind, col_ind
 
 
-def bbox_enlarge(bbox, w_enlarge, h_enlarge):
+def get_n_occluded_matches(dets1, dets2, n_occluded1, n_occluded2):
+    """
+    inputs:
+        dets1, dets2: np.ndarray
+        n_occluded1, n_occluded2: set(int)
+    output: list[tuple(int, int)]
+    """
+    s_dets1 = np.array([dets1[dets1[:, 2] == did][0] for did in n_occluded1])
+    s_dets2 = np.array([dets2[dets2[:, 2] == did][0] for did in n_occluded2])
+    inds1, inds2 = hungarian_global_matching(s_dets1, s_dets2)
+    matched_dids = [
+        (s_dets1[ind1, 2], s_dets2[ind2, 2]) for ind1, ind2 in zip(inds1, inds2)
+    ]
+
+    return matched_dids
+
+
+def bbox_enlarge(bbox, w_enlarge=0, h_enlarge=0):
     n_bbox = deepcopy(bbox)
     n_bbox[3] -= w_enlarge
     n_bbox[5] += w_enlarge
@@ -137,13 +181,21 @@ def clip_bboxs(bbox, im_height, im_width):
 
 
 def cos_sim(main_path, vid_name, bbs1, bbs2, **kwargs):
+    """
+    inputs:
+        main_path: Path
+        vid_name: str|int
+        bbs1, bbs2: np.ndarray
+    output: list[int]
+    e.g. output [44, 44, 83, 44, 13, 81, 13, 44, 82, 13, 13, 85]
+    """
     model = kwargs.get("model")
     transform = kwargs.get("transform")
     device = kwargs.get("device")
     activation = kwargs.get("activation")
 
-    bbs1 = np.array([bbox_enlarge(bb, w_enlarge, h_enlarge) for bb in bbs1])
-    bbs2 = np.array([bbox_enlarge(bb, w_enlarge, h_enlarge) for bb in bbs2])
+    bbs1 = np.array([bbox_enlarge(bb) for bb in bbs1])
+    bbs2 = np.array([bbox_enlarge(bb) for bb in bbs2])
     w, h = max(max(bbs1[:, -2]), max(bbs2[:, -2])), max(
         max(bbs1[:, -1]), max(bbs2[:, -1])
     )
@@ -181,12 +233,17 @@ def cos_sim(main_path, vid_name, bbs1, bbs2, **kwargs):
             csim = f1.dot(f2) / (np.linalg.norm(f1) * np.linalg.norm(f2))
             csim = int(np.round(csim * 100))  # percent
             output.extend([bb1[0], bb2[0], csim])
-            print(bb1[:3], bb2[:3], csim)
     return output
 
 
-def get_cosim_matches(out):
-    # TODO: tricky for multiple dets, low quality. I cover mis det in unmatched
+def get_cosim_matches_per_group(out):
+    """
+    input:
+        out: list(int)
+    output: list(list(int))
+    input e.g. [44, 44, 83, 44, 13, 81, 13, 44, 82, 13, 13, 85]
+    output e.g. [[13, 13, 85], [44, 44, 83]]
+    """
     out = np.array(out).reshape(-1, 3)
     ids1 = np.unique(out[:, 0])
     ids2 = np.unique(out[:, 1])
@@ -201,29 +258,65 @@ def get_cosim_matches(out):
         cosim = int(round((1 - dist[row_ind, col_ind]) * 100))
         matches.append([ids1[row_ind], ids2[col_ind], cosim])
     # TODO something here to distiguish low quality ass and multi dets
+    # tricky for multiple dets, low quality. I cover mis det in unmatched
     return matches
 
 
-def agg_cos_sim_matching(main_path, vid_name, bbs1, bbs2, **kwargs):
+def get_occluded_matches_per_group(main_path, vid_name, bbs1, bbs2, **kwargs):
+    """
+    inputs:
+        main_path: Path
+        vid_name: str|int
+        bbs1, bbs2: np.ndarray
+    output: list(tuple(int, int))
+    """
     out = cos_sim(main_path, vid_name, bbs1, bbs2, **kwargs)
-    matches = get_cosim_matches(out)
+    matches = get_cosim_matches_per_group(out)
     return matches
+
+
+def get_bboxes(dets: np.ndarray, group):
+    bbs = []
+    for id_ in group:
+        bbs.append(dets[(dets[:, 2] == id_)])
+    bbs = np.concatenate(bbs, axis=0)
+    return bbs
+
+
+def get_occluded_matches(main_path, vid_name, dets1, dets2, matching_groups, **kwargs):
+    """
+    inputs:
+        main_path: Path
+        vid_name: str|int
+        dets1, dets2: np.ndarray
+        matching_groups: dict(tuple, tuple)
+    output: list(tuple(int, int))
+    """
+    cosim_matches = []
+    for group1, group2 in matching_groups.items():
+        bbs1 = get_bboxes(dets1, group1)
+        bbs2 = get_bboxes(dets2, group2)
+        cosim_matches_group = get_occluded_matches_per_group(
+            main_path, vid_name, bbs1, bbs2, **kwargs
+        )
+        cosim_matches.extend(
+            [tuple(cosim_match_group[:2]) for cosim_match_group in cosim_matches_group]
+        )
+    return cosim_matches
 
 
 kwargs = get_model_args()  # TODO ugly
 # TODO
-# 1. s1: hungarian dist&iou on high quality dets no overlap (I have no ovelap version)
+# 1. s1: hungarian dist&iou on high quality dets no overlap (I have no_ovelap version)
 # 2. s2: hungarian agg cossim on coverlap -> low quality ass (either low value or multiple detection)
 # 3. s3: hungarian dist&iou on low quality dets
 # 4. unmached (tracklets: mis track but keept, dets: new track)
 # 5. kill track (not tracked for long time)
 
 
-main_path = Path("/home/fatemeh/Downloads/fish/in_sample_vids/30hz")  # 240hz
-
-vid_name = 0  # 6  # 2
-step = 1  # 8
-frame_number1 = 38  # 16 # 184
+# 6, 16, 8, "240hz"  # 2, 184, 8, "240hz", # 0, 38, 1, "30hz"
+vid_name, frame_number1, step, folder = 2, 184, 8, "240hz"
+main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
 frame_number2 = frame_number1 + step
 
 tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
@@ -250,27 +343,20 @@ print(occluded1, n_occluded1)
 print(occluded2, n_occluded2)
 print(matching_groups)
 
+
 # Stage 1: Hungarian matching on non occluded detections
-s_dets1 = np.array([dets2[dets2[:, 2] == did][0] for did in n_occluded1])
-s_dets2 = np.array([dets2[dets2[:, 2] == did][0] for did in n_occluded2])
-sc_dets1 = da.make_dets_from_array(s_dets1)
-sc_dets2 = da.make_dets_from_array(s_dets2)
-inds1, inds2 = da.hungarian_global_matching(sc_dets1, sc_dets2)
-matched_dids = [
-    (s_dets1[ind1, 2], s_dets2[ind2, 2]) for ind1, ind2 in zip(inds1, inds2)
-]
-print(matched_dids)
+n_occluded_matches = get_n_occluded_matches(dets1, dets2, n_occluded1, n_occluded2)
+print(n_occluded_matches)
 
 # Stage 2: Cos similarity of concatenated embeddings
-for group1, group2 in matching_groups.items():
-    # group1 = (8,9,11)
-    # group2 = (8,9,11)
-    bbs1 = get_bboxes(dets1, group1)
-    bbs2 = get_bboxes(dets2, group2)
-    cosim_matches = agg_cos_sim_matching(main_path, vid_name, bbs1, bbs2, **kwargs)
-    print(cosim_matches)
+cosim_matches = get_occluded_matches(
+    main_path, vid_name, dets1, dets2, matching_groups, **kwargs
+)
+print(cosim_matches)
+
 
 # =============================
+kwargs = get_model_args()
 main_path = Path("/home/fatemeh/Downloads/fish/in_sample_vids/240hz")
 vid_name = 6
 frame_number1 = 16
@@ -304,13 +390,41 @@ def test_find_match_groups():
     assert matching_groups == exp_matching_groups
 
 
-def test_get_cosim_matches():
+def test_get_cosim_matches_per_group():
     out = [44, 44, 83, 44, 13, 81, 13, 44, 82, 13, 13, 85]
-    matches = get_cosim_matches(out)
+    matches = get_cosim_matches_per_group(out)
     exp_matched = [[13, 13, 85], [44, 44, 83]]
     assert exp_matched == matches
 
 
+def test_stage1():
+    occluded1 = [[6, 7], [13, 17], [21, 29]]
+    occluded2 = [[13, 17], [21, 29]]
+    flatten = [v for vv in occluded1 + occluded2 for v in vv]
+    n_occluded = set(range(31)).difference(flatten)
+    expected = list(zip(n_occluded, n_occluded))
+    matched_dids = get_n_occluded_matches(dets1, dets2, n_occluded, n_occluded)
+    assert expected == matched_dids
+
+
+def test_stage2():
+    matching_groups = {(6, 7): (6, 7), (13, 17): (13, 17), (21, 29): (21, 29)}
+    exp_cosim_matches = [
+        (6, 6),  #  93
+        (7, 7),  #  94
+        (13, 13),  # 69
+        (17, 17),  # 80
+        (21, 21),  # 97
+        (29, 29),  # 86
+    ]
+    cosim_matches = get_occluded_matches(
+        main_path, vid_name, dets1, dets2, matching_groups, **kwargs
+    )
+    assert exp_cosim_matches == cosim_matches
+
+
 test_find_match_groups()
-test_get_cosim_matches()
+test_get_cosim_matches_per_group()
+test_stage1()
+test_stage2()
 print("passed")
