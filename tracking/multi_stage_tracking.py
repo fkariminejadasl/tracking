@@ -283,26 +283,63 @@ def get_bboxes(dets: np.ndarray, group):
     return bbs
 
 
-def get_occluded_matches(main_path, vid_name, dets1, dets2, matching_groups, **kwargs):
+def get_occluded_matches(dets1, dets2, matching_groups, main_path, vid_name, **kwargs):
     """
     inputs:
-        main_path: Path
-        vid_name: str|int
         dets1, dets2: np.ndarray
         matching_groups: dict(tuple, tuple)
+        main_path: Path
+        vid_name: str|int
     output: list(tuple(int, int))
     """
-    cosim_matches = []
+    occluded_matches = []
     for group1, group2 in matching_groups.items():
         bbs1 = get_bboxes(dets1, group1)
         bbs2 = get_bboxes(dets2, group2)
         cosim_matches_group = get_occluded_matches_per_group(
             main_path, vid_name, bbs1, bbs2, **kwargs
         )
-        cosim_matches.extend(
+        occluded_matches.extend(
             [tuple(cosim_match_group[:2]) for cosim_match_group in cosim_matches_group]
         )
-    return cosim_matches
+    return occluded_matches
+
+
+def get_matches(dets1, dets2, main_path, vid_name, **kwargs):
+    """
+    inputs:
+        dets1, dets2: np.ndarray
+        dets1: can be the (predicted) last detections of tracklets or the image detections
+        dets2: is the image detections
+    """
+    occluded1 = get_occluded_dets(dets1)
+    occluded2 = get_occluded_dets(dets2)
+    matching_groups = find_match_groups(dets1, dets2, occluded1, occluded2)
+    n_occluded1, n_occluded2 = get_not_occluded(dets1, dets2, matching_groups)
+
+    # Stage 1: Hungarian matching on non occluded detections
+    n_occluded_matches = get_n_occluded_matches(dets1, dets2, n_occluded1, n_occluded2)
+
+    # Stage 2: Cos similarity of concatenated embeddings
+    occluded_matches = get_occluded_matches(
+        dets1, dets2, matching_groups, main_path, vid_name, **kwargs
+    )
+
+    print(occluded1, n_occluded1)
+    print(occluded2, n_occluded2)
+    print(matching_groups)
+    print(n_occluded_matches)
+    print(occluded_matches)
+
+    return n_occluded_matches + occluded_matches
+
+
+def handle_unmatched(dets1, dets2, unmatched1, unmatched2):
+    pass
+
+
+def kill_tracks():
+    pass
 
 
 kwargs = get_model_args()  # TODO ugly
@@ -313,6 +350,8 @@ kwargs = get_model_args()  # TODO ugly
 # 4. unmached (tracklets: mis track but keept, dets: new track)
 # 5. kill track (not tracked for long time)
 
+"""
+# stay for a while for some simple tests
 
 # 6, 16, 8, "240hz"  # 2, 184, 8, "240hz", # 0, 38, 1, "30hz"
 vid_name, frame_number1, step, folder = 2, 184, 8, "240hz"
@@ -349,11 +388,14 @@ n_occluded_matches = get_n_occluded_matches(dets1, dets2, n_occluded1, n_occlude
 print(n_occluded_matches)
 
 # Stage 2: Cos similarity of concatenated embeddings
-cosim_matches = get_occluded_matches(
-    main_path, vid_name, dets1, dets2, matching_groups, **kwargs
+occluded_matches = get_occluded_matches(
+    dets1, dets2, matching_groups, main_path, vid_name, **kwargs
 )
-print(cosim_matches)
+print(occluded_matches)
 
+# matches = get_matches(dets1, dets2, main_path, vid_name, **kwargs)
+# print("all together:", matches)
+"""
 
 # =============================
 kwargs = get_model_args()
@@ -409,7 +451,7 @@ def test_stage1():
 
 def test_stage2():
     matching_groups = {(6, 7): (6, 7), (13, 17): (13, 17), (21, 29): (21, 29)}
-    exp_cosim_matches = [
+    exp_occluded_matches = [
         (6, 6),  #  93
         (7, 7),  #  94
         (13, 13),  # 69
@@ -417,10 +459,10 @@ def test_stage2():
         (21, 21),  # 97
         (29, 29),  # 86
     ]
-    cosim_matches = get_occluded_matches(
-        main_path, vid_name, dets1, dets2, matching_groups, **kwargs
+    occluded_matches = get_occluded_matches(
+        dets1, dets2, matching_groups, main_path, vid_name, **kwargs
     )
-    assert exp_cosim_matches == cosim_matches
+    assert exp_occluded_matches == occluded_matches
 
 
 test_find_match_groups()
