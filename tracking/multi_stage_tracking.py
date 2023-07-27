@@ -232,7 +232,7 @@ def cos_sim(main_path, vid_name, bbs1, bbs2, **kwargs):
             )
             csim = f1.dot(f2) / (np.linalg.norm(f1) * np.linalg.norm(f2))
             csim = int(np.round(csim * 100))  # percent
-            output.extend([bb1[0], bb2[0], csim])
+            output.extend([bb1[2], bb2[2], csim])
     return output
 
 
@@ -350,7 +350,7 @@ kwargs = get_model_args()  # TODO ugly
 # 4. unmached (tracklets: mis track but keept, dets: new track)
 # 5. kill track (not tracked for long time)
 
-"""
+# """
 # stay for a while for some simple tests
 
 # 6, 16, 8, "240hz"  # 2, 184, 8, "240hz", # 0, 38, 1, "30hz"
@@ -365,7 +365,9 @@ dets1 = tracks[tracks[:, 1] == frame_number1]
 dets2 = tracks[tracks[:, 1] == frame_number2]
 # TODO hack to missuse tracks for detections
 dets1[:, 2] = dets1[:, 0]
-dets2[:, 2] = dets2[:, 0]
+dets2[:, 2] = dets2[:, 0] + 10  # test if matches are correct for det_id
+dets1[:, 0] = -1
+dets2[:, 0] = -1
 
 
 # import matplotlib.pylab as plt
@@ -373,29 +375,58 @@ dets2[:, 2] = dets2[:, 0]
 # visualize.plot_detections_in_image(dets1[:,[0,3,4,5,6]], im1);plt.show(block=False)
 # visualize.plot_detections_in_image(dets2[:,[0,3,4,5,6]], im2);plt.show(block=False)
 
-occluded1 = get_occluded_dets(dets1)
-occluded2 = get_occluded_dets(dets2)
-matching_groups = find_match_groups(dets1, dets2, occluded1, occluded2)
-n_occluded1, n_occluded2 = get_not_occluded(dets1, dets2, matching_groups)
+matches = get_matches(dets1, dets2, main_path, vid_name, **kwargs)
+print("all together:", matches)
 
-print(occluded1, n_occluded1)
-print(occluded2, n_occluded2)
-print(matching_groups)
+trks = np.empty(shape=(0, 14), dtype=np.int64)
+tid = 0
+
+# TODO just for a test
+matches.remove((0, 10))
+matches.remove((5, 15))
+for match in matches:
+    did1, did2 = match
+    det1 = dets1[dets1[:, 2] == did1][0]
+    det2 = dets2[dets2[:, 2] == did2][0]
+    # det1[[0,2]] = tid
+    # det2[[0,2]] = tid
+    det1[[0]] = tid
+    det2[[0]] = tid
+    det1 = np.concatenate((det1, [0, 0, 1]))  # ts, dq, tq
+    det2 = np.concatenate((det2, [0, 0, 1]))
+    det12 = np.stack((det1, det2), axis=0)
+    trks = np.concatenate((trks, det12), axis=0)
+    tid += 1
+
+dids1 = dets1[:, 2]
+dids2 = dets2[:, 2]
+matched1 = [match[0] for match in matches]
+matched2 = [match[1] for match in matches]
+unmatched1 = set(dids1).difference(matched1)  # [0,5]
+unmatched2 = set(dids2).difference(matched2)  # [10, 15]
+
+for did1 in unmatched1:
+    det1 = dets1[dets1[:, 2] == did1][0]
+    if det1[0] == -1:
+        det1[0] = tid
+        tid += 1
+    # det1[2] = det1[0]
+    det1 = np.concatenate((det1, [0, 0, 2]))  # ts, dq, tq
+    trks = np.concatenate((trks, det1[None]), axis=0)
+
+for did2 in unmatched2:
+    det2 = dets2[dets2[:, 2] == did2][0]
+    # det2[[0,2]] = tid
+    det2[[0]] = tid
+    det2 = np.concatenate((det2, [0, 0, 1]))
+    trks = np.concatenate((trks, det2[None]), axis=0)
+    tid += 1
 
 
-# Stage 1: Hungarian matching on non occluded detections
-n_occluded_matches = get_n_occluded_matches(dets1, dets2, n_occluded1, n_occluded2)
-print(n_occluded_matches)
-
-# Stage 2: Cos similarity of concatenated embeddings
-occluded_matches = get_occluded_matches(
-    dets1, dets2, matching_groups, main_path, vid_name, **kwargs
-)
-print(occluded_matches)
-
-# matches = get_matches(dets1, dets2, main_path, vid_name, **kwargs)
-# print("all together:", matches)
-"""
+print(trks[:, :11])
+print(dets1)
+print(dets2)
+# """
 
 # =============================
 kwargs = get_model_args()
@@ -458,6 +489,21 @@ def test_stage2():
         (17, 17),  # 80
         (21, 21),  # 97
         (29, 29),  # 86
+    ]
+    occluded_matches = get_occluded_matches(
+        dets1, dets2, matching_groups, main_path, vid_name, **kwargs
+    )
+    assert exp_occluded_matches == occluded_matches
+
+    dets2[:, 2] = dets2[:, 0] + 10
+    matching_groups = {(6, 7): (16, 17), (13, 17): (23, 27), (21, 29): (31, 39)}
+    exp_occluded_matches = [
+        (6, 16),  #  93
+        (7, 17),  #  94
+        (13, 23),  # 69
+        (17, 27),  # 80
+        (21, 31),  # 97
+        (29, 39),  # 86
     ]
     occluded_matches = get_occluded_matches(
         dets1, dets2, matching_groups, main_path, vid_name, **kwargs
