@@ -152,34 +152,6 @@ def get_success_per_vid(overlaps, vid_name, main_path, step, end_frame):
     return outs
 
 
-def get_success_per_vid(overlaps, vid_name, main_path, step, end_frame):
-    tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
-    outs = []
-    for item in overlaps:
-        frame_number1, track_id1, track_id2 = item
-        frame_number2 = frame_number1 + step
-        if frame_number2 > end_frame:
-            continue
-        dets1 = tracks[tracks[:, 1] == frame_number1]
-        dets2 = tracks[tracks[:, 1] == frame_number2]
-        out = calculate_cos_sim(
-            frame_number1,
-            frame_number2,
-            track_id1,
-            track_id2,
-            vid_name,
-            dets1,
-            dets2,
-            main_path,
-            **kwargs,
-        )
-        if out:
-            success = calculate_success(out)
-            out += [success]
-            outs.append(out)
-    return outs
-
-
 def test_get_overlaps_per_vid():
     main_path = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids")
     overlaps = get_overlaps_per_vid(main_path, "16_cam12")

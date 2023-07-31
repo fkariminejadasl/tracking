@@ -15,6 +15,25 @@ from tracking import data_association as da
 np.random.seed(1000)
 
 
+def merge_intersecting_items(lst):
+    def merge_sort(sublist):
+        sublist.sort()
+        return sublist
+
+    result = []
+    for sublist in lst:
+        merged = False
+        for existing in result:
+            if any(item in existing for item in sublist):
+                existing.extend(item for item in sublist if item not in existing)
+                existing = merge_sort(existing)  # Sort the merged sublist
+                merged = True
+                break
+        if not merged:
+            result.append(merge_sort(sublist))  # Sort and add the new sublist
+    return result
+
+
 def get_occluded_dets(dets):
     """
     input:
@@ -23,9 +42,9 @@ def get_occluded_dets(dets):
     output e.g. [[13, 17], [21, 29]]
     """
 
-    # TODO if 8, 9, 11, where 9, 11 intersect, 8, 11 but not 8, 9. This return two groups.
+    # if 8, 9, 11, where 9, 11 intersect, 8, 11 but not 8, 9. This return two groups.
     # if 11 was a smaller number then one group of three is return. I'm not sure if I change
-    # this part.
+    # this part. -> now is changed by merge_intersecting_items
     occluded = {}
     ids = dets[:, 2]
     for did1, did2 in combinations(ids, 2):
@@ -34,7 +53,7 @@ def get_occluded_dets(dets):
         if da.get_iou(det1[3:7], det2[3:7]) > 0:
             occluded.setdefault(did1, [did1]).append(did2)
     occluded = list(occluded.values())
-    return occluded
+    return merge_intersecting_items(occluded)
 
 
 def find_match_groups(dets1, dets2, occluded1, occluded2):
@@ -334,8 +353,125 @@ def get_matches(dets1, dets2, main_path, vid_name, **kwargs):
     return n_occluded_matches + occluded_matches
 
 
-def handle_unmatched(dets1, dets2, unmatched1, unmatched2):
-    pass
+def handle_tracklets_old(dets1, dets2, matches):
+    trks = np.empty(shape=(0, 14), dtype=np.int64)
+    tid = 0
+
+    for match in matches:
+        did1, did2 = match
+        det1 = dets1[dets1[:, 2] == did1][0]
+        det2 = dets2[dets2[:, 2] == did2][0]
+        # det1[[0,2]] = tid
+        # det2[[0,2]] = tid
+        det1[[0]] = tid
+        det2[[0]] = tid
+        det1 = np.concatenate((det1, [0, 0, 1]))  # ts, dq, tq
+        det2 = np.concatenate((det2, [0, 0, 1]))
+        det12 = np.stack((det1, det2), axis=0)
+        trks = np.concatenate((trks, det12), axis=0)
+        tid += 1
+
+    dids1 = dets1[:, 2]
+    dids2 = dets2[:, 2]
+    matched1 = [match[0] for match in matches]
+    matched2 = [match[1] for match in matches]
+    unmatched1 = set(dids1).difference(matched1)
+    unmatched2 = set(dids2).difference(matched2)
+
+    for did1 in unmatched1:
+        det1 = dets1[dets1[:, 2] == did1][0]
+        if det1[0] == -1:
+            det1[0] = tid
+            tid += 1
+        # det1[2] = det1[0]
+        det1 = np.concatenate((det1, [0, 0, 2]))  # ts, dq, tq
+        trks = np.concatenate((trks, det1[None]), axis=0)
+
+    for did2 in unmatched2:
+        det2 = dets2[dets2[:, 2] == did2][0]
+        # det2[[0,2]] = tid
+        det2[[0]] = tid
+        det2 = np.concatenate((det2, [0, 0, 1]))
+        trks = np.concatenate((trks, det2[None]), axis=0)
+        tid += 1
+
+    return trks
+
+
+def handle_tracklets(dets1, dets2, matches, trks=None):
+    if trks is None:
+        trks = np.empty(shape=(0, 14), dtype=np.int64)
+        tid = 0
+    else:
+        tid = max(trks[:, 0])
+
+    for match in matches:
+        did1, did2 = match
+        det1 = dets1[dets1[:, 2] == did1][0]
+        det2 = dets2[dets2[:, 2] == did2][0]
+        if det1[0] == -1:
+            det1[[0]] = tid
+            det2[[0]] = tid
+            det1 = np.concatenate((det1, [0, 0, 1]))  # ts, dq, tq
+            det2 = np.concatenate((det2, [0, 0, 1]))
+            det12 = np.stack((det1, det2), axis=0)
+            trks = np.concatenate((trks, det12), axis=0)
+            tid += 1
+        else:
+            det2[0] = det1[0]
+            det2 = np.concatenate((det2, [0, 0, 1]))
+            trks = np.concatenate((trks, det2[None]), axis=0)
+
+    dids1 = dets1[:, 2]
+    matched1 = [match[0] for match in matches]
+    unmatched1 = set(dids1).difference(matched1)
+    if dets1[0, 0] == -1:
+        for did1 in unmatched1:
+            det1 = dets1[dets1[:, 2] == did1][0]
+            det1[0] = tid
+            tid += 1
+            det1 = np.concatenate((det1, [0, 0, 2]))  # ts, dq, tq
+            trks = np.concatenate((trks, det1[None]), axis=0)
+    else:
+        for did1 in unmatched1:
+            det1 = dets1[dets1[:, 2] == did1][0]
+            ind = np.where((trks[:, 0] == det1[0]) & (trks[:, 1] == det1[1]))[0]
+            trks[ind, 13] = 2  # ts, dq, tq
+
+    dids2 = dets2[:, 2]
+    matched2 = [match[1] for match in matches]
+    unmatched2 = set(dids2).difference(matched2)
+    for did2 in unmatched2:
+        det2 = dets2[dets2[:, 2] == did2][0]
+        det2[[0]] = tid
+        det2 = np.concatenate((det2, [0, 0, 1]))
+        trks = np.concatenate((trks, det2[None]), axis=0)
+        tid += 1
+
+    return trks
+
+
+def get_last_dets_tracklets(tracks):
+    """
+    Get the last detections and the det id changed to track id
+    input:
+        tracks: np.ndarray
+        with tid, fn, did, x, y, x, y, cx, cy, w, h, dq, tq, st
+    output:
+        np.ndarray
+        same as input.
+    """
+
+    dets = []
+    track_ids = np.unique(tracks[:, 0])
+    for tid in track_ids:
+        tracklet = tracks[tracks[:, 0] == tid]
+        frame_number = max(tracklet[:, 1])
+        det = tracklet[tracklet[:, 1] == frame_number][0]
+        # change det id to track id. If not changed, there might be multiple of same det id.
+        det[2] = det[0]
+        dets.append(det)
+    return np.array(dets).astype(np.int64)
 
 
 def kill_tracks():
@@ -351,8 +487,6 @@ kwargs = get_model_args()  # TODO ugly
 # 5. kill track (not tracked for long time)
 
 # """
-# stay for a while for some simple tests
-
 # 6, 16, 8, "240hz"  # 2, 184, 8, "240hz", # 0, 38, 1, "30hz"
 vid_name, frame_number1, step, folder = 2, 184, 8, "240hz"
 main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
@@ -378,69 +512,59 @@ dets2[:, 0] = -1
 matches = get_matches(dets1, dets2, main_path, vid_name, **kwargs)
 print("all together:", matches)
 
-trks = np.empty(shape=(0, 14), dtype=np.int64)
-tid = 0
-
-# TODO just for a test
+# TODO: remove: just for a test
 matches.remove((0, 10))
 matches.remove((5, 15))
-for match in matches:
-    did1, did2 = match
-    det1 = dets1[dets1[:, 2] == did1][0]
-    det2 = dets2[dets2[:, 2] == did2][0]
-    # det1[[0,2]] = tid
-    # det2[[0,2]] = tid
-    det1[[0]] = tid
-    det2[[0]] = tid
-    det1 = np.concatenate((det1, [0, 0, 1]))  # ts, dq, tq
-    det2 = np.concatenate((det2, [0, 0, 1]))
-    det12 = np.stack((det1, det2), axis=0)
-    trks = np.concatenate((trks, det12), axis=0)
-    tid += 1
-
-dids1 = dets1[:, 2]
-dids2 = dets2[:, 2]
-matched1 = [match[0] for match in matches]
-matched2 = [match[1] for match in matches]
-unmatched1 = set(dids1).difference(matched1)  # [0,5]
-unmatched2 = set(dids2).difference(matched2)  # [10, 15]
-
-for did1 in unmatched1:
-    det1 = dets1[dets1[:, 2] == did1][0]
-    if det1[0] == -1:
-        det1[0] = tid
-        tid += 1
-    # det1[2] = det1[0]
-    det1 = np.concatenate((det1, [0, 0, 2]))  # ts, dq, tq
-    trks = np.concatenate((trks, det1[None]), axis=0)
-
-for did2 in unmatched2:
-    det2 = dets2[dets2[:, 2] == did2][0]
-    # det2[[0,2]] = tid
-    det2[[0]] = tid
-    det2 = np.concatenate((det2, [0, 0, 1]))
-    trks = np.concatenate((trks, det2[None]), axis=0)
-    tid += 1
-
+trks = handle_tracklets(dets1, dets2, matches)
 
 print(trks[:, :11])
 print(dets1)
 print(dets2)
+dets1 = get_last_dets_tracklets(trks)
+dets2 = tracks[tracks[:, 1] == 200]
+dets2[:, 2] = dets2[:, 0]
+dets2[:, 0] = -1
+matches = get_matches(dets1[:, :11], dets2, main_path, vid_name, **kwargs)
+trks = handle_tracklets(dets1[:, :11], dets2, matches, trks)
 # """
+
 
 # =============================
 kwargs = get_model_args()
-main_path = Path("/home/fatemeh/Downloads/fish/in_sample_vids/240hz")
-vid_name = 6
-frame_number1 = 16
-frame_number2 = 24
+vid_name, frame_number1, step, folder = 6, 16, 8, "240hz"
+main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
+frame_number2 = frame_number1 + step
+
 tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
 
 dets1 = tracks[tracks[:, 1] == frame_number1]
 dets2 = tracks[tracks[:, 1] == frame_number2]
-# TODO hack to missuse tracks for detections
+# missuse tracks for detections
 dets1[:, 2] = dets1[:, 0]
 dets2[:, 2] = dets2[:, 0]
+
+
+def test_merge_intersecting_items():
+    occluded = [[8, 10], [7, 9], [6, 8, 10]]
+    expected = [[6, 8, 10], [7, 9]]
+    new = merge_intersecting_items(occluded)
+    assert new == expected
+
+
+def test_get_occluded_dets():
+    bboxes = [
+        [0, 0, 3, 3],
+        [2, 2, 5, 5],
+        [7, 7, 9, 9],
+        [4, 4, 6, 6],
+        [1, 1, 2, 2],
+        [8, 8, 10, 10],
+    ]
+    bboxes = np.array(bboxes).astype(np.int64)
+    other_columns = np.repeat(np.arange(len(bboxes))[None], 3, axis=0).T
+    dets = np.concatenate((other_columns, bboxes), axis=1)
+    groups = get_occluded_dets(dets)
+    assert groups == [[0, 1, 3, 4], [2, 5]]
 
 
 def test_find_match_groups():
@@ -511,8 +635,57 @@ def test_stage2():
     assert exp_occluded_matches == occluded_matches
 
 
+def test_handle_tracklets():
+    exp_trks = np.array(
+        [
+            [0, 184, 1, 1127, 417, 1142, 445, 1135, 431, 15, 28, 0, 0, 1],
+            [0, 192, 11, 1127, 417, 1141, 447, 1134, 432, 14, 29, 0, 0, 1],
+            [1, 184, 2, 1493, 452, 1510, 472, 1501, 462, 17, 20, 0, 0, 1],
+            [1, 192, 12, 1493, 455, 1509, 475, 1501, 465, 17, 20, 0, 0, 1],
+            [2, 184, 3, 1075, 330, 1091, 340, 1083, 335, 16, 10, 0, 0, 1],
+            [2, 192, 13, 1074, 331, 1090, 341, 1082, 336, 17, 10, 0, 0, 1],
+            [3, 184, 6, 1076, 499, 1098, 513, 1087, 506, 22, 13, 0, 0, 1],
+            [3, 192, 16, 1076, 499, 1098, 513, 1087, 506, 22, 13, 0, 0, 1],
+            [4, 184, 7, 1047, 480, 1074, 488, 1060, 484, 27, 8, 0, 0, 1],
+            [4, 192, 17, 1046, 481, 1073, 489, 1059, 485, 27, 8, 0, 0, 1],
+            [5, 184, 8, 1171, 584, 1201, 610, 1186, 597, 30, 27, 0, 0, 1],
+            [5, 192, 18, 1171, 584, 1202, 611, 1187, 597, 31, 27, 0, 0, 1],
+            [6, 184, 4, 1215, 301, 1227, 319, 1221, 310, 12, 18, 0, 0, 1],
+            [6, 192, 14, 1215, 301, 1227, 319, 1221, 310, 12, 18, 0, 0, 1],
+            [7, 184, 0, 1198, 448, 1217, 478, 1207, 463, 19, 30, 0, 0, 2],
+            [8, 184, 5, 1211, 317, 1223, 333, 1217, 325, 13, 15, 0, 0, 2],
+            [9, 192, 10, 1197, 450, 1216, 481, 1206, 466, 19, 30, 0, 0, 1],
+            [10, 192, 15, 1210, 318, 1223, 333, 1217, 326, 13, 15, 0, 0, 1],
+        ]
+    )
+
+    vid_name, frame_number1, step, folder = 2, 184, 8, "240hz"
+    main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
+    frame_number2 = frame_number1 + step
+
+    tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
+
+    dets1 = tracks[tracks[:, 1] == frame_number1]
+    dets2 = tracks[tracks[:, 1] == frame_number2]
+    # missuse tracks for detections
+    dets1[:, 2] = dets1[:, 0]
+    dets2[:, 2] = dets2[:, 0] + 10  # test if matches are correct for det_id
+    dets1[:, 0] = -1
+    dets2[:, 0] = -1
+
+    matches = get_matches(dets1, dets2, main_path, vid_name, **kwargs)
+    matches.remove((0, 10))
+    matches.remove((5, 15))
+    trks = handle_tracklets(dets1, dets2, matches)
+
+    np.testing.assert_array_equal(trks, exp_trks)
+
+
+test_merge_intersecting_items()
+test_get_occluded_dets()
 test_find_match_groups()
 test_get_cosim_matches_per_group()
 test_stage1()
 test_stage2()
+test_handle_tracklets()
 print("passed")
