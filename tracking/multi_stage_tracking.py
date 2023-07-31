@@ -11,6 +11,7 @@ import torchvision
 from scipy.optimize import linear_sum_assignment
 
 from tracking import data_association as da
+from tracking import visualize
 
 np.random.seed(1000)
 
@@ -78,6 +79,7 @@ def find_match_groups(dets1, dets2, occluded1, occluded2):
         group2 = tuple(sorted(set(values)))
         matching_groups[group1] = group2
     for group2 in occluded2:
+        group2 = tuple(sorted(set(group2)))
         values = []
         for did2 in group2:
             det2 = dets2[dets2[:, 2] == did2][0]
@@ -85,7 +87,7 @@ def find_match_groups(dets1, dets2, occluded1, occluded2):
                 did1 = det1[2]
                 if da.get_iou(det1[3:7], det2[3:7]) > 0:
                     values.append(did1)
-        group1 = tuple(sorted(set(group1)))
+        group1 = tuple(sorted(set(values)))
         if group1 not in matching_groups.keys():
             matching_groups[group1] = group2
     return matching_groups
@@ -353,51 +355,6 @@ def get_matches(dets1, dets2, main_path, vid_name, **kwargs):
     return n_occluded_matches + occluded_matches
 
 
-def handle_tracklets_old(dets1, dets2, matches):
-    trks = np.empty(shape=(0, 14), dtype=np.int64)
-    tid = 0
-
-    for match in matches:
-        did1, did2 = match
-        det1 = dets1[dets1[:, 2] == did1][0]
-        det2 = dets2[dets2[:, 2] == did2][0]
-        # det1[[0,2]] = tid
-        # det2[[0,2]] = tid
-        det1[[0]] = tid
-        det2[[0]] = tid
-        det1 = np.concatenate((det1, [0, 0, 1]))  # ts, dq, tq
-        det2 = np.concatenate((det2, [0, 0, 1]))
-        det12 = np.stack((det1, det2), axis=0)
-        trks = np.concatenate((trks, det12), axis=0)
-        tid += 1
-
-    dids1 = dets1[:, 2]
-    dids2 = dets2[:, 2]
-    matched1 = [match[0] for match in matches]
-    matched2 = [match[1] for match in matches]
-    unmatched1 = set(dids1).difference(matched1)
-    unmatched2 = set(dids2).difference(matched2)
-
-    for did1 in unmatched1:
-        det1 = dets1[dets1[:, 2] == did1][0]
-        if det1[0] == -1:
-            det1[0] = tid
-            tid += 1
-        # det1[2] = det1[0]
-        det1 = np.concatenate((det1, [0, 0, 2]))  # ts, dq, tq
-        trks = np.concatenate((trks, det1[None]), axis=0)
-
-    for did2 in unmatched2:
-        det2 = dets2[dets2[:, 2] == did2][0]
-        # det2[[0,2]] = tid
-        det2[[0]] = tid
-        det2 = np.concatenate((det2, [0, 0, 1]))
-        trks = np.concatenate((trks, det2[None]), axis=0)
-        tid += 1
-
-    return trks
-
-
 def handle_tracklets(dets1, dets2, matches, trks=None):
     if trks is None:
         trks = np.empty(shape=(0, 14), dtype=np.int64)
@@ -479,55 +436,54 @@ def kill_tracks():
 
 
 kwargs = get_model_args()  # TODO ugly
+
+# 6, 16, 8, "240hz"  # 2, 184, 8, "240hz", # 0, 38, 1, "30hz"
+vid_name, frame_number1, step, folder = 2, 184, 8, "240hz"
+main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
+
+tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
+
+# import matplotlib.pylab as plt
+# visualize.plot_detections_in_image(dets1[:,[0,3,4,5,6]], im1);plt.show(block=False)
+# visualize.plot_detections_in_image(dets2[:,[0,3,4,5,6]], im2);plt.show(block=False)
+
+start_frame, end_frame, format = 0, 3112, "06d"
+trks = None
+for frame_number1 in range(start_frame, end_frame + 1, step):
+    frame_number2 = frame_number1 + step
+
+    if trks is None:
+        dets1 = tracks[tracks[:, 1] == frame_number1]
+        dets1[:, 2] = dets1[:, 0]  # TODO hack to missuse tracks for detections
+        dets1[:, 0] = -1
+    else:
+        dets1 = get_last_dets_tracklets(trks)
+    dets2 = tracks[tracks[:, 1] == frame_number2]
+    dets2[:, 2] = dets2[:, 0]  # TODO hack to missuse tracks for detections
+    dets2[:, 0] = -1
+
+    matches = get_matches(dets1[:, :11], dets2, main_path, vid_name, **kwargs)
+    trks = handle_tracklets(dets1[:, :11], dets2, matches, trks)
+
+da.save_tracks_to_mot_format(main_path / "ms_tracks.txt", trks[:, :11])
+visualize.save_video_with_tracks_as_images(
+    main_path / "ms_tracks",
+    main_path / f"vids/{vid_name}.mp4",
+    trks[:, :11],
+    start_frame,
+    end_frame,
+    step,
+    format,
+)
+
 # TODO
 # 1. s1: hungarian dist&iou on high quality dets no overlap (I have no_ovelap version)
 # 2. s2: hungarian agg cossim on coverlap -> low quality ass (either low value or multiple detection)
 # 3. s3: hungarian dist&iou on low quality dets
 # 4. unmached (tracklets: mis track but keept, dets: new track)
 # 5. kill track (not tracked for long time)
-
-# """
-# 6, 16, 8, "240hz"  # 2, 184, 8, "240hz", # 0, 38, 1, "30hz"
-vid_name, frame_number1, step, folder = 2, 184, 8, "240hz"
-main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
-frame_number2 = frame_number1 + step
-
-tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
-
-dets1 = tracks[tracks[:, 1] == frame_number1]
-# dets1[8] = tracks[(tracks[:, 1] == 36) & (tracks[:,0]==8)][0] # test for tracklet and frame
-dets2 = tracks[tracks[:, 1] == frame_number2]
-# TODO hack to missuse tracks for detections
-dets1[:, 2] = dets1[:, 0]
-dets2[:, 2] = dets2[:, 0] + 10  # test if matches are correct for det_id
-dets1[:, 0] = -1
-dets2[:, 0] = -1
-
-
-# import matplotlib.pylab as plt
-# from tracking import visualize
-# visualize.plot_detections_in_image(dets1[:,[0,3,4,5,6]], im1);plt.show(block=False)
-# visualize.plot_detections_in_image(dets2[:,[0,3,4,5,6]], im2);plt.show(block=False)
-
-matches = get_matches(dets1, dets2, main_path, vid_name, **kwargs)
-print("all together:", matches)
-
-# TODO: remove: just for a test
-matches.remove((0, 10))
-matches.remove((5, 15))
-trks = handle_tracklets(dets1, dets2, matches)
-
-print(trks[:, :11])
-print(dets1)
-print(dets2)
-dets1 = get_last_dets_tracklets(trks)
-dets2 = tracks[tracks[:, 1] == 200]
-dets2[:, 2] = dets2[:, 0]
-dets2[:, 0] = -1
-matches = get_matches(dets1[:, :11], dets2, main_path, vid_name, **kwargs)
-trks = handle_tracklets(dets1[:, :11], dets2, matches, trks)
-# """
-
+# TODO bug frame 2264: two 9 tids
+# TODO bug frame 2432: switch ids 9 to 1
 
 # =============================
 kwargs = get_model_args()
