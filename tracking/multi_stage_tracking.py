@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 import torchvision
 from scipy.optimize import linear_sum_assignment
+from tqdm import tqdm
 
 from tracking import data_association as da
 from tracking import visualize
@@ -39,8 +40,9 @@ def get_occluded_dets(dets):
     """
     input:
         dets np.ndarray
-    output: list(list(int))
-    output e.g. [[13, 17], [21, 29]]
+    output: list[list[int]]
+
+    output e.g. [[10, 13, 17], [21, 29]]
     """
 
     # if 8, 9, 11, where 9, 11 intersect, 8, 11 but not 8, 9. This return two groups.
@@ -61,8 +63,8 @@ def find_match_groups(dets1, dets2, occluded1, occluded2):
     """
     inputs:
         dets1, dets2: np.ndarray
-        occluded1, occluded2: list(list(int))
-    output: dic(tuple(int), tuple(int))
+        occluded1, occluded2: list[list[int]]
+    output: dic[tuple[int, ...], tuple[int, ...]]
 
     output e.g. {(6, 7): (6, 7), (13, 17): (13, 17)
     """
@@ -97,8 +99,8 @@ def get_not_occluded(dets1, dets2, matching_groups):
     """
     inputs:
         dets1, dets2: np.ndarray
-        matching_groups: dic(tuple(int), tuple(int))
-    output: tuple(set(int), set(int))
+        matching_groups: dic[tuple[int, ...], tuple[int, ...]]
+    output: tuple[set[int], set[int]]
     """
     dids1 = dets1[:, 2]
     group = matching_groups.keys()
@@ -155,7 +157,7 @@ def hungarian_global_matching(dets1, dets2):
     """
     inputs:
         dets1, dets2: np.ndarray
-    output: tuple(list(int), list(int))
+    output: tuple[list[int], list[int]]
     """
     dist = np.zeros((len(dets1), len(dets2)), dtype=np.float32)
     for i, det1 in enumerate(dets1):
@@ -171,8 +173,8 @@ def get_n_occluded_matches(dets1, dets2, n_occluded1, n_occluded2):
     """
     inputs:
         dets1, dets2: np.ndarray
-        n_occluded1, n_occluded2: set(int)
-    output: list[tuple(int, int)]
+        n_occluded1, n_occluded2: set[int]
+    output: list[tuple[int, int]]
     """
     s_dets1 = np.array([dets1[dets1[:, 2] == did][0] for did in n_occluded1])
     s_dets2 = np.array([dets2[dets2[:, 2] == did][0] for did in n_occluded2])
@@ -205,9 +207,10 @@ def cos_sim(main_path, vid_name, bbs1, bbs2, **kwargs):
     """
     inputs:
         main_path: Path
-        vid_name: str|int
+        vid_name: str | int
         bbs1, bbs2: np.ndarray
     output: list[int]
+
     e.g. output [44, 44, 83, 44, 13, 81, 13, 44, 82, 13, 13, 85]
     """
     model = kwargs.get("model")
@@ -260,8 +263,9 @@ def cos_sim(main_path, vid_name, bbs1, bbs2, **kwargs):
 def get_cosim_matches_per_group(out):
     """
     input:
-        out: list(int)
-    output: list(list(int))
+        out: list[int]
+    output: list[list[int]]
+
     input e.g. [44, 44, 83, 44, 13, 81, 13, 44, 82, 13, 13, 85]
     output e.g. [[13, 13, 85], [44, 44, 83]]
     """
@@ -287,9 +291,9 @@ def get_occluded_matches_per_group(main_path, vid_name, bbs1, bbs2, **kwargs):
     """
     inputs:
         main_path: Path
-        vid_name: str|int
+        vid_name: str | int
         bbs1, bbs2: np.ndarray
-    output: list(tuple(int, int))
+    output: list[tuple[int, int]]
     """
     out = cos_sim(main_path, vid_name, bbs1, bbs2, **kwargs)
     matches = get_cosim_matches_per_group(out)
@@ -308,10 +312,10 @@ def get_occluded_matches(dets1, dets2, matching_groups, main_path, vid_name, **k
     """
     inputs:
         dets1, dets2: np.ndarray
-        matching_groups: dict(tuple, tuple)
+        matching_groups: dict[tuple, tuple]
         main_path: Path
-        vid_name: str|int
-    output: list(tuple(int, int))
+        vid_name: str | int
+    output: list[tuple[int, int]]
     """
     occluded_matches = []
     for group1, group2 in matching_groups.items():
@@ -330,8 +334,9 @@ def get_matches(dets1, dets2, main_path, vid_name, **kwargs):
     """
     inputs:
         dets1, dets2: np.ndarray
-        dets1: can be the (predicted) last detections of tracklets or the image detections
-        dets2: is the image detections
+            dets1: can be the (predicted) last detections of tracklets or the image detections
+            dets2: is the image detections
+    output: list[tuple[int, int]]
     """
     occluded1 = get_occluded_dets(dets1)
     occluded2 = get_occluded_dets(dets2)
@@ -346,16 +351,27 @@ def get_matches(dets1, dets2, main_path, vid_name, **kwargs):
         dets1, dets2, matching_groups, main_path, vid_name, **kwargs
     )
 
-    print(occluded1, n_occluded1)
-    print(occluded2, n_occluded2)
-    print(matching_groups)
-    print(n_occluded_matches)
-    print(occluded_matches)
+    # print(occluded1, n_occluded1)
+    # print(occluded2, n_occluded2)
+    # print(matching_groups)
+    # print(n_occluded_matches)
+    # print(occluded_matches)
 
     return n_occluded_matches + occluded_matches
 
 
 def handle_tracklets(dets1, dets2, matches, trks=None):
+    """
+    matched and unmatched detection ids are handled here.
+    unmached (tracklets: inactive track but keept, dets: new track)
+    inputs:
+        dets1, dets2: np.ndarray
+            dets1 is either detections from image or the last dets of the tracklets.
+            dets2 is from image.
+        matches: list[tuple[int, int]]
+            This is a list of matched det_id, where first is for dets1, and the second is for dets2
+    output:
+    """
     if trks is None:
         trks = np.empty(shape=(0, 14), dtype=np.int64)
         tid = 0
@@ -366,7 +382,7 @@ def handle_tracklets(dets1, dets2, matches, trks=None):
         did1, did2 = match
         det1 = dets1[dets1[:, 2] == did1][0]
         det2 = dets2[dets2[:, 2] == did2][0]
-        if det1[0] == -1:
+        if det1[0] == -1:  # det from image
             det1[[0]] = tid
             det2[[0]] = tid
             det1 = np.concatenate((det1, [0, 0, 1]))  # ts, dq, tq
@@ -374,7 +390,7 @@ def handle_tracklets(dets1, dets2, matches, trks=None):
             det12 = np.stack((det1, det2), axis=0)
             trks = np.concatenate((trks, det12), axis=0)
             tid += 1
-        else:
+        else:  # last det of tracklet
             det2[0] = det1[0]
             det2 = np.concatenate((det2, [0, 0, 1]))
             trks = np.concatenate((trks, det2[None]), axis=0)
@@ -382,14 +398,14 @@ def handle_tracklets(dets1, dets2, matches, trks=None):
     dids1 = dets1[:, 2]
     matched1 = [match[0] for match in matches]
     unmatched1 = set(dids1).difference(matched1)
-    if dets1[0, 0] == -1:
+    if dets1[0, 0] == -1:  # det from image
         for did1 in unmatched1:
             det1 = dets1[dets1[:, 2] == did1][0]
             det1[0] = tid
             tid += 1
             det1 = np.concatenate((det1, [0, 0, 2]))  # ts, dq, tq
             trks = np.concatenate((trks, det1[None]), axis=0)
-    else:
+    else:  # last det of tracklet
         for did1 in unmatched1:
             det1 = dets1[dets1[:, 2] == did1][0]
             ind = np.where((trks[:, 0] == det1[0]) & (trks[:, 1] == det1[1]))[0]
@@ -413,10 +429,10 @@ def get_last_dets_tracklets(tracks):
     Get the last detections and the det id changed to track id
     input:
         tracks: np.ndarray
-        with tid, fn, did, x, y, x, y, cx, cy, w, h, dq, tq, st
+            with tid, fn, did, x, y, x, y, cx, cy, w, h, dq, tq, st
     output:
         np.ndarray
-        same as input.
+            same as input.
     """
     dets = []
     track_ids = np.unique(tracks[:, 0])
@@ -433,16 +449,17 @@ def get_last_dets_tracklets(tracks):
 def kill_tracks(tracks, last_dets, c_frame_number, thr=50):
     """
     If the track is inactive for more than thr, it will get stop status.
-    Both tracks and last_dets change.
+    The track status in tracks is changed here.
     input:
-        last_dets: np.ndarray. The last detections of a tracklet
-        c_frame_number: int. The current frame number
-        thr: int. Threshould for maximum number of inactive frames.
-            It is step * factor. I caculated 50.
+        last_dets: np.ndarray
+            The last detections of a tracklet
+        c_frame_number: int
+            The current frame number
+        thr: int
+            Threshould for maximum number of inactive frames. It is step * factor. I caculated 50.
     """
     for det in last_dets:
         if c_frame_number - det[1] > thr:
-            det[13] = 2
             ind = np.where((tracks[:, 0] == det[0]) & (tracks[:, 1] == det[1]))[0][0]
             tracks[ind, 13] = 2
 
@@ -463,7 +480,7 @@ tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
 start_frame, end_frame, format = 0, 3112, "06d"
 stop_thr = step * 50
 trks = None
-for frame_number1 in range(start_frame, end_frame + 1, step):
+for frame_number1 in tqdm(range(start_frame, end_frame + 1, step)):
     frame_number2 = frame_number1 + step
 
     if trks is None:
@@ -477,27 +494,25 @@ for frame_number1 in range(start_frame, end_frame + 1, step):
     dets2[:, 2] = dets2[:, 0]  # TODO hack to missuse tracks for detections
     dets2[:, 0] = -1
 
-    matches = get_matches(dets1[:, :11], dets2, main_path, vid_name, **kwargs)
-    trks = handle_tracklets(dets1[:, :11], dets2, matches, trks)
+    matches = get_matches(dets1, dets2, main_path, vid_name, **kwargs)
+    trks = handle_tracklets(dets1, dets2, matches, trks)
 
-# da.save_tracks_to_mot_format(main_path / "ms_tracks.txt", trks[:, :11])
-# visualize.save_video_with_tracks_as_images(
-#     main_path / "ms_tracks",
-#     main_path / f"vids/{vid_name}.mp4",
-#     trks[:, :11],
-#     start_frame,
-#     end_frame,
-#     step,
-#     format,
-# )
+da.save_tracks_to_mot_format(main_path / "ms_tracks.txt", trks[:, :11])
+visualize.save_video_with_tracks_as_images(
+    main_path / "ms_tracks",
+    main_path / f"vids/{vid_name}.mp4",
+    trks[:, :11],
+    start_frame,
+    end_frame,
+    step,
+    format,
+)
 # """
 
 # TODO
 # 1. s1: hungarian dist&iou on high quality dets no overlap (I have no_ovelap version)
 # 2. s2: hungarian agg cossim on coverlap -> low quality ass (either low value or multiple detection)
 # 3. s3: hungarian dist&iou on low quality dets
-# 4. unmached (tracklets: inactive track but keept, dets: new track)
-# 5. kill track (not tracked for long time)
 # TODO bug frame 2264: two 9 tids
 # TODO bug frame 2432: switch ids 9 to 1
 
