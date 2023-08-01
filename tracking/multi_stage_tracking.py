@@ -418,7 +418,6 @@ def get_last_dets_tracklets(tracks):
         np.ndarray
         same as input.
     """
-
     dets = []
     track_ids = np.unique(tracks[:, 0])
     for tid in track_ids:
@@ -431,8 +430,21 @@ def get_last_dets_tracklets(tracks):
     return np.array(dets).astype(np.int64)
 
 
-def kill_tracks():
-    pass
+def kill_tracks(tracks, last_dets, c_frame_number, thr=50):
+    """
+    If the track is inactive for more than thr, it will get stop status.
+    Both tracks and last_dets change.
+    input:
+        last_dets: np.ndarray. The last detections of a tracklet
+        c_frame_number: int. The current frame number
+        thr: int. Threshould for maximum number of inactive frames.
+            It is step * factor. I caculated 50.
+    """
+    for det in last_dets:
+        if c_frame_number - det[1] > thr:
+            det[13] = 2
+            ind = np.where((tracks[:, 0] == det[0]) & (tracks[:, 1] == det[1]))[0][0]
+            tracks[ind, 13] = 2
 
 
 kwargs = get_model_args()  # TODO ugly
@@ -447,7 +459,9 @@ tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
 # visualize.plot_detections_in_image(dets1[:,[0,3,4,5,6]], im1);plt.show(block=False)
 # visualize.plot_detections_in_image(dets2[:,[0,3,4,5,6]], im2);plt.show(block=False)
 
+# """
 start_frame, end_frame, format = 0, 3112, "06d"
+stop_thr = step * 50
 trks = None
 for frame_number1 in range(start_frame, end_frame + 1, step):
     frame_number2 = frame_number1 + step
@@ -458,6 +472,7 @@ for frame_number1 in range(start_frame, end_frame + 1, step):
         dets1[:, 0] = -1
     else:
         dets1 = get_last_dets_tracklets(trks)
+        kill_tracks(trks, dets1, frame_number2, stop_thr)
     dets2 = tracks[tracks[:, 1] == frame_number2]
     dets2[:, 2] = dets2[:, 0]  # TODO hack to missuse tracks for detections
     dets2[:, 0] = -1
@@ -465,22 +480,23 @@ for frame_number1 in range(start_frame, end_frame + 1, step):
     matches = get_matches(dets1[:, :11], dets2, main_path, vid_name, **kwargs)
     trks = handle_tracklets(dets1[:, :11], dets2, matches, trks)
 
-da.save_tracks_to_mot_format(main_path / "ms_tracks.txt", trks[:, :11])
-visualize.save_video_with_tracks_as_images(
-    main_path / "ms_tracks",
-    main_path / f"vids/{vid_name}.mp4",
-    trks[:, :11],
-    start_frame,
-    end_frame,
-    step,
-    format,
-)
+# da.save_tracks_to_mot_format(main_path / "ms_tracks.txt", trks[:, :11])
+# visualize.save_video_with_tracks_as_images(
+#     main_path / "ms_tracks",
+#     main_path / f"vids/{vid_name}.mp4",
+#     trks[:, :11],
+#     start_frame,
+#     end_frame,
+#     step,
+#     format,
+# )
+# """
 
 # TODO
 # 1. s1: hungarian dist&iou on high quality dets no overlap (I have no_ovelap version)
 # 2. s2: hungarian agg cossim on coverlap -> low quality ass (either low value or multiple detection)
 # 3. s3: hungarian dist&iou on low quality dets
-# 4. unmached (tracklets: mis track but keept, dets: new track)
+# 4. unmached (tracklets: inactive track but keept, dets: new track)
 # 5. kill track (not tracked for long time)
 # TODO bug frame 2264: two 9 tids
 # TODO bug frame 2432: switch ids 9 to 1
@@ -637,6 +653,21 @@ def test_handle_tracklets():
     np.testing.assert_array_equal(trks, exp_trks)
 
 
+def test_kill_tracks():
+    vid_name, folder = 2, "240hz"
+    main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
+
+    tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
+    extension = np.zeros((len(tracks), 3), dtype=np.int64)
+    tracks = np.concatenate((tracks, extension), axis=1)
+
+    dets1 = get_last_dets_tracklets(tracks)
+    kill_tracks(tracks, dets1, 3117, 50)
+    assert tracks[30193, 13] == 0
+    kill_tracks(tracks, dets1, 4000, 50)
+    assert tracks[30193, 13] == 2
+
+
 test_merge_intersecting_items()
 test_get_occluded_dets()
 test_find_match_groups()
@@ -644,4 +675,5 @@ test_get_cosim_matches_per_group()
 test_stage1()
 test_stage2()
 test_handle_tracklets()
+test_kill_tracks()
 print("passed")
