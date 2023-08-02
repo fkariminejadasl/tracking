@@ -6,6 +6,7 @@ from itertools import combinations
 from pathlib import Path
 
 import cv2
+import matplotlib.pylab as plt
 import numpy as np
 import torchvision
 from scipy.optimize import linear_sum_assignment
@@ -376,15 +377,15 @@ def handle_tracklets(dets1, dets2, matches, trks=None):
         trks = np.empty(shape=(0, 14), dtype=np.int64)
         tid = 0
     else:
-        tid = max(trks[:, 0])
+        tid = max(trks[:, 0]) + 1
 
     for match in matches:
         did1, did2 = match
         det1 = dets1[dets1[:, 2] == did1][0]
         det2 = dets2[dets2[:, 2] == did2][0]
         if det1[0] == -1:  # det from image
-            det1[[0]] = tid
-            det2[[0]] = tid
+            det1[0] = tid
+            det2[0] = tid
             det1 = np.concatenate((det1, [0, 0, 1]))  # ts, dq, tq
             det2 = np.concatenate((det2, [0, 0, 1]))
             det12 = np.stack((det1, det2), axis=0)
@@ -416,10 +417,10 @@ def handle_tracklets(dets1, dets2, matches, trks=None):
     unmatched2 = set(dids2).difference(matched2)
     for did2 in unmatched2:
         det2 = dets2[dets2[:, 2] == did2][0]
-        det2[[0]] = tid
+        det2[0] = tid
+        tid += 1
         det2 = np.concatenate((det2, [0, 0, 1]))
         trks = np.concatenate((trks, det2[None]), axis=0)
-        tid += 1
 
     return trks
 
@@ -470,11 +471,16 @@ kwargs = get_model_args()  # TODO ugly
 vid_name, frame_number1, step, folder = 2, 184, 8, "240hz"
 main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
 
-tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
+DEBUG = False
+if DEBUG:
+    start_frame, end_frame, format = 2264, 3112, "06d"
+    tracks = da.load_tracks_from_mot_format(main_path / "ms_tracks.txt.zip")
+    trks = deepcopy(tracks[tracks[:, 1] <= start_frame])
+    extension = np.zeros((len(trks), 3), dtype=np.int64)
+    extension[:, 2] = 1
+    trks = np.concatenate((trks, extension), axis=1)
 
-# import matplotlib.pylab as plt
-# visualize.plot_detections_in_image(dets1[:,[0,3,4,5,6]], im1);plt.show(block=False)
-# visualize.plot_detections_in_image(dets2[:,[0,3,4,5,6]], im2);plt.show(block=False)
+tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
 
 # """
 start_frame, end_frame, format = 0, 3112, "06d"
@@ -490,7 +496,21 @@ for frame_number1 in tqdm(range(start_frame, end_frame + 1, step)):
     else:
         dets1 = get_last_dets_tracklets(trks)
         kill_tracks(trks, dets1, frame_number2, stop_thr)
+
     dets2 = tracks[tracks[:, 1] == frame_number2]
+
+    if DEBUG:
+        im1 = cv2.imread(
+            str(main_path / f"images/{vid_name}_frame_{frame_number1:06d}.jpg")
+        )
+        im2 = cv2.imread(
+            str(main_path / f"images/{vid_name}_frame_{frame_number2:06d}.jpg")
+        )
+        visualize.plot_detections_in_image(dets1[:, [0, 3, 4, 5, 6]], im1)
+        plt.show(block=False)
+        visualize.plot_detections_in_image(dets2[:, [0, 3, 4, 5, 6]], im2)
+        plt.show(block=False)
+
     dets2[:, 2] = dets2[:, 0]  # TODO hack to missuse tracks for detections
     dets2[:, 0] = -1
 
@@ -513,7 +533,6 @@ visualize.save_video_with_tracks_as_images(
 # 1. s1: hungarian dist&iou on high quality dets no overlap (I have no_ovelap version)
 # 2. s2: hungarian agg cossim on coverlap -> low quality ass (either low value or multiple detection)
 # 3. s3: hungarian dist&iou on low quality dets
-# TODO bug frame 2264: two 9 tids
 # TODO bug frame 2432: switch ids 9 to 1
 
 # =============================
