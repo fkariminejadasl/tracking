@@ -43,7 +43,7 @@ def get_occluded_dets(dets):
         dets np.ndarray
     output: list[list[int]]
 
-    output e.g. [[10, 13, 17], [21, 29]]
+    output e.g. [[10, 15, 17], [21, 29]]
     """
 
     # if 8, 9, 11, where 9, 11 intersect, 8, 11 but not 8, 9. This return two groups.
@@ -67,7 +67,7 @@ def find_match_groups(dets1, dets2, occluded1, occluded2):
         occluded1, occluded2: list[list[int]]
     output: dic[tuple[int, ...], tuple[int, ...]]
 
-    output e.g. {(6, 7): (6, 7), (13, 17): (13, 17)
+    output e.g. {(6, 7): (6, 7), (15, 17): (15, 17)
     """
     matching_groups = {}
     for group1 in occluded1:
@@ -212,7 +212,7 @@ def cos_sim(main_path, vid_name, bbs1, bbs2, **kwargs):
         bbs1, bbs2: np.ndarray
     output: list[int]
 
-    e.g. output [44, 44, 83, 44, 13, 81, 13, 44, 82, 13, 13, 85]
+    e.g. output [44, 44, 83, 44, 15, 81, 15, 44, 82, 15, 15, 85]
     """
     model = kwargs.get("model")
     transform = kwargs.get("transform")
@@ -267,8 +267,8 @@ def get_cosim_matches_per_group(out):
         out: list[int]
     output: list[list[int]]
 
-    input e.g. [44, 44, 83, 44, 13, 81, 13, 44, 82, 13, 13, 85]
-    output e.g. [[13, 13, 85], [44, 44, 83]]
+    input e.g. [44, 44, 83, 44, 15, 81, 15, 44, 82, 15, 15, 85]
+    output e.g. [[15, 15, 85], [44, 44, 83]]
     """
     out = np.array(out).reshape(-1, 3)
     ids1 = np.unique(out[:, 0])
@@ -427,7 +427,9 @@ def handle_tracklets(dets1, dets2, matches, trks=None):
 
 def get_last_dets_tracklets(tracks):
     """
-    Get the last detections and the det id changed to track id
+    Get the last detections and the det id changed to track id.
+    The killed tracks are excluded.
+
     input:
         tracks: np.ndarray
             with tid, fn, did, x, y, x, y, cx, cy, w, h, dq, tq, st
@@ -441,9 +443,10 @@ def get_last_dets_tracklets(tracks):
         tracklet = tracks[tracks[:, 0] == tid]
         frame_number = max(tracklet[:, 1])
         det = tracklet[tracklet[:, 1] == frame_number][0]
-        # change det id to track id. If not changed, there might be multiple of same det id.
-        det[2] = det[0]
-        dets.append(det)
+        if det[13] != 3:  # track status (ts) is killed
+            # change det id to track id. If not changed, there might be multiple of same det id.
+            det[2] = det[0]
+            dets.append(det)
     return np.array(dets).astype(np.int64)
 
 
@@ -462,30 +465,31 @@ def kill_tracks(tracks, last_dets, c_frame_number, thr=50):
     for det in last_dets:
         if c_frame_number - det[1] > thr:
             ind = np.where((tracks[:, 0] == det[0]) & (tracks[:, 1] == det[1]))[0][0]
-            tracks[ind, 13] = 2
+            tracks[ind, 13] = 3
 
 
 kwargs = get_model_args()  # TODO ugly
 
-# 6, 16, 8, "240hz"  # 2, 184, 8, "240hz", # 0, 38, 1, "30hz"
+# 2, 184, 8, "240hz", 6, 16, 8, "240hz"  # 0, 38, 1, "30hz"
 vid_name, frame_number1, step, folder = 2, 184, 8, "240hz"
 main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
 
 DEBUG = False
 if DEBUG:
-    start_frame, end_frame, format = 2264, 3112, "06d"
+    start_frame, end_frame, format = 1064, 3112, "06d"
     tracks = da.load_tracks_from_mot_format(main_path / "ms_tracks.txt.zip")
     trks = deepcopy(tracks[tracks[:, 1] <= start_frame])
     extension = np.zeros((len(trks), 3), dtype=np.int64)
     extension[:, 2] = 1
     trks = np.concatenate((trks, extension), axis=1)
+else:
+    start_frame, end_frame, format = 0, 3112, "06d"
+    trks = None
 
 tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
 
 # """
-start_frame, end_frame, format = 0, 3112, "06d"
 stop_thr = step * 50
-trks = None
 for frame_number1 in tqdm(range(start_frame, end_frame + 1, step)):
     frame_number2 = frame_number1 + step
 
@@ -496,6 +500,7 @@ for frame_number1 in tqdm(range(start_frame, end_frame + 1, step)):
     else:
         dets1 = get_last_dets_tracklets(trks)
         kill_tracks(trks, dets1, frame_number2, stop_thr)
+        dets1 = get_last_dets_tracklets(trks)
 
     dets2 = tracks[tracks[:, 1] == frame_number2]
 
@@ -533,7 +538,11 @@ visualize.save_video_with_tracks_as_images(
 # 1. s1: hungarian dist&iou on high quality dets no overlap (I have no_ovelap version)
 # 2. s2: hungarian agg cossim on coverlap -> low quality ass (either low value or multiple detection)
 # 3. s3: hungarian dist&iou on low quality dets
-# TODO bug frame 2432: switch ids 9 to 1
+# N.B. killed tracks are excluded in getting last dets of tracklets
+# ts: track states. 1- new/tracked, 2- untracked/inactive, 3- killed/stopped
+# TODO frame 1064: bug frame 1072: tid 2 appears. 1064 tid 0 change to 2 in 1072. tid 2 last time in fn 312
+# TODO frame 2424: bug matching_groups are overlapping: should be one
+# TODO frame 2424: overlapping in one frame but very far in the other frame
 
 # =============================
 kwargs = get_model_args()
@@ -699,7 +708,7 @@ def test_kill_tracks():
     kill_tracks(tracks, dets1, 3117, 50)
     assert tracks[30193, 13] == 0
     kill_tracks(tracks, dets1, 4000, 50)
-    assert tracks[30193, 13] == 2
+    assert tracks[30193, 13] == 3
 
 
 test_merge_intersecting_items()
