@@ -60,7 +60,35 @@ def get_occluded_dets(dets):
     return merge_intersecting_items(occluded)
 
 
+def merge_overlapping_keys_values(input):
+    """
+    merge overlapping keys
+
+    input, output: dic[tuple[int, ...], tuple[int, ...]]
+
+    input output e.g. {(6, 7): (6, 7), (15, 17): (15, 17)}
+    """
+    merged = {}
+    while input:
+        key1, value1 = input.popitem()
+        rest = deepcopy(input)
+        is_merged = False
+        for key2, value2 in rest.items():
+            if set(key2).intersection(key1):
+                merged_key = tuple(sorted(set(key1 + key2)))
+                merged_value = tuple(sorted(set(value1 + value2)))
+                merged[merged_key] = merged_value
+                key1 = merged_key
+                value1 = merged_value
+                _ = input.pop(key2)
+                is_merged = True
+        if not is_merged:
+            merged[key1] = value1
+    return merged
+
+
 def find_match_groups(dets1, dets2, occluded1, occluded2):
+    # TODO efficient implementation
     """
     inputs:
         dets1, dets2: np.ndarray
@@ -91,8 +119,10 @@ def find_match_groups(dets1, dets2, occluded1, occluded2):
                 if da.get_iou(det1[3:7], det2[3:7]) > 0:
                     values.append(did1)
         group1 = tuple(sorted(set(values)))
-        if group1 not in matching_groups.keys():
-            matching_groups[group1] = group2
+        matching_groups[group1] = group2
+    matching_groups = merge_overlapping_keys_values(matching_groups)
+    # if group1 not in matching_groups.keys():
+    #     matching_groups[group1] = group2
     return matching_groups
 
 
@@ -476,7 +506,7 @@ main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
 
 DEBUG = False
 if DEBUG:
-    start_frame, end_frame, format = 1064, 3112, "06d"
+    start_frame, end_frame, format = 2424, 3112, "06d"
     tracks = da.load_tracks_from_mot_format(main_path / "ms_tracks.txt.zip")
     trks = deepcopy(tracks[tracks[:, 1] <= start_frame])
     extension = np.zeros((len(trks), 3), dtype=np.int64)
@@ -534,15 +564,17 @@ visualize.save_video_with_tracks_as_images(
 )
 # """
 
-# TODO
 # 1. s1: hungarian dist&iou on high quality dets no overlap (I have no_ovelap version)
 # 2. s2: hungarian agg cossim on coverlap -> low quality ass (either low value or multiple detection)
 # 3. s3: hungarian dist&iou on low quality dets
 # N.B. killed tracks are excluded in getting last dets of tracklets
 # ts: track states. 1- new/tracked, 2- untracked/inactive, 3- killed/stopped
-# TODO frame 1064: bug frame 1072: tid 2 appears. 1064 tid 0 change to 2 in 1072. tid 2 last time in fn 312
-# TODO frame 2424: bug matching_groups are overlapping: should be one
-# TODO frame 2424: overlapping in one frame but very far in the other frame
+# good video for debugging
+#   vid_name, step, folder = 2, 8, "240hz"
+#   main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
+# TODO very short tracks: caused by mismatch.
+# TODO save track with dq, tq, ts
+# TODO run on detections
 
 # =============================
 kwargs = get_model_args()
@@ -580,6 +612,20 @@ def test_get_occluded_dets():
     dets = np.concatenate((other_columns, bboxes), axis=1)
     groups = get_occluded_dets(dets)
     assert groups == [[0, 1, 3, 4], [2, 5]]
+
+
+def test_merge_overlapping_keys_values():
+    input = {
+        (4, 6): (0, 8, 6),
+        (3,): (1, 3),
+        (4,): (8, 6),
+        (9, 10): (11, 12, 13),
+        (1, 4): (0, 8),
+        (2, 3): (1, 2, 3),
+    }
+    expected = {(1, 4, 6): (0, 6, 8), (2, 3): (1, 2, 3), (9, 10): (11, 12, 13)}
+    result = merge_overlapping_keys_values(input)
+    assert result == expected
 
 
 def test_find_match_groups():
@@ -713,6 +759,7 @@ def test_kill_tracks():
 
 test_merge_intersecting_items()
 test_get_occluded_dets()
+test_merge_overlapping_keys_values()
 test_find_match_groups()
 test_get_cosim_matches_per_group()
 test_stage1()
