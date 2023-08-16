@@ -205,6 +205,7 @@ def get_n_occluded_matches(dets1, dets2, n_occluded1, n_occluded2):
     inputs:
         dets1, dets2: np.ndarray
         n_occluded1, n_occluded2: set[int]
+            set of the detection ids
     output: list[tuple[int, int]]
     """
     s_dets1 = np.array([dets1[dets1[:, 2] == did][0] for did in n_occluded1])
@@ -504,14 +505,20 @@ kwargs = get_model_args()  # TODO ugly
 vid_name, frame_number1, step, folder = 2, 184, 8, "240hz"
 main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
 
-DEBUG = False
+DEBUG = True
 if DEBUG:
-    start_frame, end_frame, format = 2424, 3112, "06d"
-    tracks = da.load_tracks_from_mot_format(main_path / "ms_tracks.txt.zip")
+    start_frame, end_frame, format = 2432, 3112, "06d"
+    # tracks = da.load_tracks_from_mot_format(main_path / "ms_tracks.zip")
+    tracks = np.loadtxt(main_path / "ms_tracks.txt", dtype=np.int64, delimiter=",")
     trks = deepcopy(tracks[tracks[:, 1] <= start_frame])
-    extension = np.zeros((len(trks), 3), dtype=np.int64)
-    extension[:, 2] = 1
-    trks = np.concatenate((trks, extension), axis=1)
+    # Hack to reproduce result. In this stage track is not killed but later on, the
+    # txt file save the final one.
+    # ind = np.where((trks[:,0]==13) & (trks[:,1]==start_frame))[0][0]
+    # trks[ind, 13] = 2
+    if trks.shape[1] == 11:
+        extension = np.zeros((len(trks), 3), dtype=np.int64)
+        extension[:, 2] = 1
+        trks = np.concatenate((trks, extension), axis=1)
 else:
     start_frame, end_frame, format = 0, 3112, "06d"
     trks = None
@@ -552,7 +559,8 @@ for frame_number1 in tqdm(range(start_frame, end_frame + 1, step)):
     matches = get_matches(dets1, dets2, main_path, vid_name, **kwargs)
     trks = handle_tracklets(dets1, dets2, matches, trks)
 
-da.save_tracks_to_mot_format(main_path / "ms_tracks.txt", trks[:, :11])
+np.savetxt(main_path / "ms_tracks.txt", trks, delimiter=",", fmt="%d")
+da.save_tracks_to_mot_format(main_path / "ms_tracks", trks[:, :11])
 visualize.save_video_with_tracks_as_images(
     main_path / "ms_tracks",
     main_path / f"vids/{vid_name}.mp4",
@@ -572,8 +580,9 @@ visualize.save_video_with_tracks_as_images(
 # good video for debugging
 #   vid_name, step, folder = 2, 8, "240hz"
 #   main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
+# N.B. I can't fairly debug. Because killed track is automatically removed, where in
+# real case it still has status of inactive.
 # TODO very short tracks: caused by mismatch.
-# TODO save track with dq, tq, ts
 # TODO run on detections
 
 # =============================
