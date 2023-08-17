@@ -55,12 +55,12 @@ print(da.get_iou((0, 0, 4, 2), (2, 1, 3, 2)))
 vid_name = "16_cam12"
 main_path = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids")
 vid_file = main_path/f"vids/{vid_name}.mp4"
-visualize.save_video_as_images(main_path/"images",  vid_file, step=8)
+visualize.save_images_of_video(main_path/"images",  vid_file, step=8)
 
 # save tracks as images
 tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
 save_path = main_path/"images_tracks"
-visualize.save_video_with_tracks_as_images(
+visualize.save_images_with_tracks(
     save_path, vid_file, tracks, start_frame=0, end_frame=256, step=8, format="06d"
 )
 
@@ -76,7 +76,7 @@ tracks = da.compute_tracks(
 )
 tracks = da._reindex_tracks(da._remove_short_tracks(tracks))
 tracks = da.make_array_from_tracks(tracks)
-    visualize.save_video_with_tracks_as_images(
+    visualize.save_images_with_tracks(
         main_path/"tracks_hung", vid_file, tracks, start_frame=0, end_frame=256, step=8, format="06d"
     )
 ```

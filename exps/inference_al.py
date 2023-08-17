@@ -302,7 +302,7 @@ tracks = da.make_array_from_tracks(tracks)
 
 video_file = video_dir / f"{vid_name}.mp4"
 save_dir = main_path / "tracks_hungerian"  # tracks_hungerian #tracks_al
-visualize.save_video_with_tracks_as_images(
+visualize.save_images_with_tracks(
     save_dir, video_file, tracks, start_frame, end_frame, step, format
 )
 

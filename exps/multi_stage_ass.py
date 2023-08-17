@@ -278,11 +278,11 @@ with open(save_path, "a") as afile:
 # First implementation on the ground truth data. Only s1 and s2 will be implemented and p5 will be solved.
 
 
-# [visualize.save_video_as_images(main_path/"images", vid_path, step=8) for vid_path in main_path.glob("vids/*mp4")]
+# [visualize.save_images_of_video(main_path/"images", vid_path, step=8) for vid_path in main_path.glob("vids/*mp4")]
 # for vid_path in main_path.glob("vids/*mp4"):
 #     vid_name = vid_path.stem
 #     tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
-#     visualize.save_video_with_tracks_as_images(
+#     visualize.save_images_with_tracks(
 #         main_path / "images_tracks",
 #         vid_path,
 #         tracks,

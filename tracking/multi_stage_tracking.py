@@ -561,7 +561,7 @@ for frame_number1 in tqdm(range(start_frame, end_frame + 1, step)):
 
 np.savetxt(main_path / "ms_tracks.txt", trks, delimiter=",", fmt="%d")
 da.save_tracks_to_mot_format(main_path / "ms_tracks", trks[:, :11])
-visualize.save_video_with_tracks_as_images(
+visualize.save_images_with_tracks(
     main_path / "ms_tracks",
     main_path / f"vids/{vid_name}.mp4",
     trks[:, :11],
@@ -571,6 +571,27 @@ visualize.save_video_with_tracks_as_images(
     format,
 )
 # """
+"""
+visualize.save_images_with_detections(main_path/"images_dets", main_path/"vids/2.mp4", main_path/"yolo", start_frame=0, end_frame=3112, step=8)
+
+# yolo detect predict model=/home/fatemeh/Downloads/fish/best_model/det_best_bgr29.pt source=/home/fatemeh/test/2.mp4 save_txt=True save_conf=True save=True
+vc = cv2.VideoCapture("/home/fatemeh/Downloads/fish/in_sample_vids/240hz/vids/2.mp4")
+frame = visualize.get_frame(0, vc)
+dets = da.get_detections_array(Path("/home/fatemeh/Downloads/fish/in_sample_vids/240hz/yolo/2_1.txt"), frame.shape[1], frame.shape[0], 0)
+visualize.plot_detections_in_image(dets[:,2:7], frame);plt.show(block=False)
+
+from ultralytics import YOLO
+model = YOLO(Path("/home/fatemeh/Downloads/fish/best_model/det_best_bgr29.pt"))
+results = model(Path("/home/fatemeh/Downloads/fish/in_sample_vids/240hz/images/2_frame_000000.jpg"))
+for result in results:
+    boxes = result.boxes  # Boxes object for bbox outputs
+    masks = result.masks  # Masks object for segmentation masks outputs
+    keypoints = result.keypoints  # Keypoints object for pose outputs
+    probs = result.probs
+res = boxes.data.cpu().numpy().astype(np.int64)
+a = np.concatenate((np.arange(len(res))[:,None], res), axis=1)
+visualize.plot_detections_in_image(a[:,:5], frame);plt.show(block=False)
+"""
 
 # 1. s1: hungarian dist&iou on high quality dets no overlap (I have no_ovelap version)
 # 2. s2: hungarian agg cossim on coverlap -> low quality ass (either low value or multiple detection)

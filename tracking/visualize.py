@@ -32,7 +32,52 @@ def get_video_parameters(vc: cv2.VideoCapture):
         return
 
 
-def save_video_as_images(
+def get_start_end_frames(start_frame, end_frame, total_no_frames):
+    if start_frame is None:
+        start_frame = 0
+    if end_frame is None:
+        end_frame = total_no_frames - 1
+    return start_frame, end_frame
+
+
+def _put_bbox_in_image(
+    frame,
+    x_tl,
+    y_tl,
+    x_br,
+    y_br,
+    color,
+    track_id,
+    show_det_id=False,
+    det_id=0,
+    black=True,
+):
+    cv2.rectangle(
+        frame,
+        (x_tl, y_tl),
+        (x_br, y_br),
+        color=color,
+        thickness=1,
+    )
+    if show_det_id:
+        text = f"{track_id},{det_id}"
+    else:
+        text = f"{track_id}"
+    if black:
+        color = (0, 0, 0)
+    cv2.putText(
+        frame,
+        text,
+        (x_tl, y_tl),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.5,  # font scale
+        color,
+        1,  # Thinckness
+        2,  # line type
+    )
+
+
+def save_images_of_video(
     save_path: Path,
     video_file: Path,
     start_frame=None,
@@ -40,14 +85,14 @@ def save_video_as_images(
     step: int = 1,
     format: str = "06d",
 ):
+    save_path.mkdir(parents=True, exist_ok=True)
+
     vc = cv2.VideoCapture(video_file.as_posix())
     assert vc.isOpened()
     height, width, total_no_frames, fps = get_video_parameters(vc)
     start_frame, end_frame = get_start_end_frames(
         start_frame, end_frame, total_no_frames
     )
-
-    save_path.mkdir(parents=True, exist_ok=True)
 
     vc.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
     for frame_number in tqdm(range(start_frame, end_frame + 1)):
@@ -58,15 +103,7 @@ def save_video_as_images(
     vc.release()
 
 
-def get_start_end_frames(start_frame, end_frame, total_no_frames):
-    if start_frame is None:
-        start_frame = 0
-    if end_frame is None:
-        end_frame = total_no_frames - 1
-    return start_frame, end_frame
-
-
-def save_video_with_tracks_as_images(
+def save_images_with_tracks(
     save_path: Path,
     video_file: Path,
     tracks: np.ndarray,
@@ -75,6 +112,8 @@ def save_video_with_tracks_as_images(
     step: int = 1,
     format: str = "06d",
 ):
+    save_path.mkdir(parents=True, exist_ok=True)
+
     vc = cv2.VideoCapture(video_file.as_posix())
     assert vc.isOpened()
     height, width, total_no_frames, fps = get_video_parameters(vc)
@@ -87,8 +126,6 @@ def save_video_with_tracks_as_images(
     tracks_ids_to_inds = {track_id: i for i, track_id in enumerate(tracks_ids)}
     show_det_id = False
     black = True
-
-    save_path.mkdir(parents=True, exist_ok=True)
 
     vc.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
     for frame_number in tqdm(range(start_frame, end_frame + 1)):
@@ -105,15 +142,15 @@ def save_video_with_tracks_as_images(
                 color = (color[2], color[1], color[0])
 
                 x_tl, y_tl, x_br, y_br = det[3:7]
-                _plot_cv2_bbox(
+                _put_bbox_in_image(
                     frame,
                     x_tl,
                     y_tl,
                     x_br,
                     y_br,
                     color,
-                    show_det_id,
                     track_id,
+                    show_det_id,
                     det_id,
                     black,
                 )
@@ -133,6 +170,64 @@ def save_video_with_tracks_as_images(
             cv2.imwrite((save_path / f"{name}").as_posix(), frame)
 
     vc.release()
+
+
+def save_images_with_detections(
+    save_path: Path,
+    video_file: Path,
+    dets_path: Path,
+    color=(0, 0, 255),
+    start_frame=None,
+    end_frame=None,
+    step=1,
+    format: str = "06d",
+):
+    """
+    Yolo detections saved as {vid_name}_{frame_number + 1}.txt.
+    Basically frame number is one-based. I use zeor-based.
+    """
+    save_path.mkdir(parents=True, exist_ok=True)
+
+    vc = cv2.VideoCapture(video_file.as_posix())
+    assert vc.isOpened()
+    height, width, total_no_frames, fps = get_video_parameters(vc)
+    start_frame, end_frame = get_start_end_frames(
+        start_frame, end_frame, total_no_frames
+    )
+
+    vc.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    for frame_number in tqdm(range(start_frame, end_frame + 1)):
+        _, frame = vc.read()
+        if frame_number % step == 0:
+            det_path = dets_path / f"{video_file.stem}_{frame_number+1}.txt"
+            dets = get_detections(det_path, width, height, frame_number)
+
+            for det in dets:
+                x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
+
+                _put_bbox_in_image(
+                    frame,
+                    x_tl,
+                    y_tl,
+                    x_br,
+                    y_br,
+                    color,
+                    det.det_id,
+                )
+
+            cv2.putText(
+                frame,
+                f"{frame_number}",
+                (15, 25),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1,  # font scale
+                (0, 0, 0),  # color
+                1,  # Thinckness
+                2,  # line type
+            )
+
+            name = f"{video_file.stem}_frame_{frame_number:{format}}.jpg"
+            cv2.imwrite((save_path / f"{name}").as_posix(), frame)
 
 
 def _create_output_video(
@@ -204,6 +299,7 @@ def show_cropped_video(
     out.release()
 
 
+# TODO integrated in save_images_with_detections
 def plot_detections_in_video(
     output_video_file: Path,
     video_file: Union[Path, cv2.VideoCapture],
@@ -305,34 +401,7 @@ def plot_frameid_y_for_stereo(tracks1, track1_ids, tracks2, track2_ids):
     plt.show(block=False)
 
 
-def _plot_cv2_bbox(
-    frame, x_tl, y_tl, x_br, y_br, color, show_det_id, track_id, det_id, black
-):
-    cv2.rectangle(
-        frame,
-        (x_tl, y_tl),
-        (x_br, y_br),
-        color=color,
-        thickness=1,
-    )
-    if show_det_id:
-        text = f"{track_id},{det_id}"
-    else:
-        text = f"{track_id}"
-    if black:
-        color = (0, 0, 0)
-    cv2.putText(
-        frame,
-        text,
-        (x_tl, y_tl),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.5,  # font scale
-        color,
-        1,  # Thinckness
-        2,  # line type
-    )
-
-
+# TODO integrated in save_images_with_tracks
 def plot_tracks_array_in_video(
     output_video_file,
     tracks: np.ndarray,
@@ -372,15 +441,15 @@ def plot_tracks_array_in_video(
                 color = (color[2], color[1], color[0])
 
                 x_tl, y_tl, x_br, y_br = det[3:7]
-                _plot_cv2_bbox(
+                _put_bbox_in_image(
                     frame,
                     x_tl,
                     y_tl,
                     x_br,
                     y_br,
                     color,
-                    show_det_id,
                     track_id,
+                    show_det_id,
                     det_id,
                     black,
                 )
@@ -392,6 +461,7 @@ def plot_tracks_array_in_video(
     out.release()
 
 
+# TODO integrated in save_images_with_tracks
 def plot_tracks_in_video(
     output_video_file,
     tracks,
@@ -428,15 +498,15 @@ def plot_tracks_in_video(
                     )
 
                     det_id = det.det_id
-                    _plot_cv2_bbox(
+                    _put_bbox_in_image(
                         frame,
                         x_tl,
                         y_tl,
                         x_br,
                         y_br,
                         color,
-                        show_det_id,
                         track_id,
+                        show_det_id,
                         det_id,
                         black,
                     )
