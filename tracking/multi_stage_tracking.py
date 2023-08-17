@@ -42,6 +42,7 @@ def get_occluded_dets(dets):
     input:
         dets np.ndarray
     output: list[list[int]]
+        The values are the detection ids.
 
     output e.g. [[10, 15, 17], [21, 29]]
     """
@@ -94,6 +95,7 @@ def find_match_groups(dets1, dets2, occluded1, occluded2):
         dets1, dets2: np.ndarray
         occluded1, occluded2: list[list[int]]
     output: dic[tuple[int, ...], tuple[int, ...]]
+        The values are the detection ids.
 
     output e.g. {(6, 7): (6, 7), (15, 17): (15, 17)
     """
@@ -121,8 +123,6 @@ def find_match_groups(dets1, dets2, occluded1, occluded2):
         group1 = tuple(sorted(set(values)))
         matching_groups[group1] = group2
     matching_groups = merge_overlapping_keys_values(matching_groups)
-    # if group1 not in matching_groups.keys():
-    #     matching_groups[group1] = group2
     return matching_groups
 
 
@@ -132,6 +132,7 @@ def get_not_occluded(dets1, dets2, matching_groups):
         dets1, dets2: np.ndarray
         matching_groups: dic[tuple[int, ...], tuple[int, ...]]
     output: tuple[set[int], set[int]]
+        The values are the detection ids.
     """
     dids1 = dets1[:, 2]
     group = matching_groups.keys()
@@ -189,6 +190,7 @@ def hungarian_global_matching(dets1, dets2):
     inputs:
         dets1, dets2: np.ndarray
     output: tuple[list[int], list[int]]
+        The values are the indices.
     """
     dist = np.zeros((len(dets1), len(dets2)), dtype=np.float32)
     for i, det1 in enumerate(dets1):
@@ -207,6 +209,7 @@ def get_n_occluded_matches(dets1, dets2, n_occluded1, n_occluded2):
         n_occluded1, n_occluded2: set[int]
             set of the detection ids
     output: list[tuple[int, int]]
+        The values are the detection ids.
     """
     s_dets1 = np.array([dets1[dets1[:, 2] == did][0] for did in n_occluded1])
     s_dets2 = np.array([dets2[dets2[:, 2] == did][0] for did in n_occluded2])
@@ -242,6 +245,7 @@ def cos_sim(main_path, vid_name, bbs1, bbs2, **kwargs):
         vid_name: str | int
         bbs1, bbs2: np.ndarray
     output: list[int]
+        The values are the detection ids.
 
     e.g. output [44, 44, 83, 44, 15, 81, 15, 44, 82, 15, 15, 85]
     """
@@ -297,6 +301,7 @@ def get_cosim_matches_per_group(out):
     input:
         out: list[int]
     output: list[list[int]]
+        The values are the detection ids and cosine similarity.
 
     input e.g. [44, 44, 83, 44, 15, 81, 15, 44, 82, 15, 15, 85]
     output e.g. [[15, 15, 85], [44, 44, 83]]
@@ -326,6 +331,7 @@ def get_occluded_matches_per_group(main_path, vid_name, bbs1, bbs2, **kwargs):
         vid_name: str | int
         bbs1, bbs2: np.ndarray
     output: list[tuple[int, int]]
+        The values are the detection ids.
     """
     out = cos_sim(main_path, vid_name, bbs1, bbs2, **kwargs)
     matches = get_cosim_matches_per_group(out)
@@ -333,6 +339,14 @@ def get_occluded_matches_per_group(main_path, vid_name, bbs1, bbs2, **kwargs):
 
 
 def get_bboxes(dets: np.ndarray, group):
+    """
+    inputs:
+        dets: np.ndarray
+        group: Tuple[int]
+            The values are the detection ids.
+    output: np.ndarray
+        list of selected detections
+    """
     bbs = []
     for id_ in group:
         bbs.append(dets[(dets[:, 2] == id_)])
@@ -348,6 +362,7 @@ def get_occluded_matches(dets1, dets2, matching_groups, main_path, vid_name, **k
         main_path: Path
         vid_name: str | int
     output: list[tuple[int, int]]
+        The values are the detection ids
     """
     occluded_matches = []
     for group1, group2 in matching_groups.items():
@@ -369,6 +384,7 @@ def get_matches(dets1, dets2, main_path, vid_name, **kwargs):
             dets1: can be the (predicted) last detections of tracklets or the image detections
             dets2: is the image detections
     output: list[tuple[int, int]]
+        The values are the detection ids
     """
     occluded1 = get_occluded_dets(dets1)
     occluded2 = get_occluded_dets(dets2)
@@ -382,12 +398,6 @@ def get_matches(dets1, dets2, main_path, vid_name, **kwargs):
     occluded_matches = get_occluded_matches(
         dets1, dets2, matching_groups, main_path, vid_name, **kwargs
     )
-
-    # print(occluded1, n_occluded1)
-    # print(occluded2, n_occluded2)
-    # print(matching_groups)
-    # print(n_occluded_matches)
-    # print(occluded_matches)
 
     return n_occluded_matches + occluded_matches
 
@@ -460,6 +470,7 @@ def get_last_dets_tracklets(tracks):
     """
     Get the last detections and the det id changed to track id.
     The killed tracks are excluded.
+    The output detections have det ids replaced by track ids.
 
     input:
         tracks: np.ndarray
@@ -485,6 +496,7 @@ def kill_tracks(tracks, last_dets, c_frame_number, thr=50):
     """
     If the track is inactive for more than thr, it will get stop status.
     The track status in tracks is changed here.
+
     input:
         last_dets: np.ndarray
             The last detections of a tracklet
