@@ -366,6 +366,8 @@ def get_occluded_matches(dets1, dets2, matching_groups, main_path, vid_name, **k
     """
     occluded_matches = []
     for group1, group2 in matching_groups.items():
+        if (not group1) or (not group2):
+            return []
         bbs1 = get_bboxes(dets1, group1)
         bbs2 = get_bboxes(dets2, group2)
         cosim_matches_group = get_occluded_matches_per_group(
@@ -517,7 +519,7 @@ kwargs = get_model_args()  # TODO ugly
 vid_name, frame_number1, step, folder = 2, 184, 8, "240hz"
 main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
 
-DEBUG = True
+DEBUG = False
 if DEBUG:
     start_frame, end_frame, format = 2432, 3112, "06d"
     # tracks = da.load_tracks_from_mot_format(main_path / "ms_tracks.zip")
@@ -535,23 +537,37 @@ else:
     start_frame, end_frame, format = 0, 3112, "06d"
     trks = None
 
-tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
+# tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
 
 # """
 stop_thr = step * 50
-for frame_number1 in tqdm(range(start_frame, end_frame + 1, step)):
+for frame_number1 in tqdm(range(start_frame, end_frame - step + 1, step)):
     frame_number2 = frame_number1 + step
 
     if trks is None:
-        dets1 = tracks[tracks[:, 1] == frame_number1]
-        dets1[:, 2] = dets1[:, 0]  # TODO hack to missuse tracks for detections
-        dets1[:, 0] = -1
+        # dets1 = tracks[tracks[:, 1] == frame_number1]
+        # dets1[:, 2] = dets1[:, 0]  # TODO hack to missuse tracks for detections
+        # dets1[:, 0] = -1
+        dets1 = da.get_detections_array(
+            main_path / f"yolo/{vid_name}_{frame_number1 + 1}.txt",
+            1920,
+            1080,
+            frame_number1,
+        )
     else:
         dets1 = get_last_dets_tracklets(trks)
         kill_tracks(trks, dets1, frame_number2, stop_thr)
         dets1 = get_last_dets_tracklets(trks)
 
-    dets2 = tracks[tracks[:, 1] == frame_number2]
+    # dets2 = tracks[tracks[:, 1] == frame_number2]
+    # dets2[:, 2] = dets2[:, 0]  # TODO hack to missuse tracks for detections
+    # dets2[:, 0] = -1
+    dets2 = da.get_detections_array(
+        main_path / f"yolo/{vid_name}_{frame_number2 + 1}.txt",
+        1920,
+        1080,
+        frame_number2,
+    )
 
     if DEBUG:
         im1 = cv2.imread(
@@ -560,13 +576,10 @@ for frame_number1 in tqdm(range(start_frame, end_frame + 1, step)):
         im2 = cv2.imread(
             str(main_path / f"images/{vid_name}_frame_{frame_number2:06d}.jpg")
         )
-        visualize.plot_detections_in_image(dets1[:, [0, 3, 4, 5, 6]], im1)
+        visualize.plot_detections_in_image(dets1[:, [2, 3, 4, 5, 6]], im1)
         plt.show(block=False)
-        visualize.plot_detections_in_image(dets2[:, [0, 3, 4, 5, 6]], im2)
+        visualize.plot_detections_in_image(dets2[:, [2, 3, 4, 5, 6]], im2)
         plt.show(block=False)
-
-    dets2[:, 2] = dets2[:, 0]  # TODO hack to missuse tracks for detections
-    dets2[:, 0] = -1
 
     matches = get_matches(dets1, dets2, main_path, vid_name, **kwargs)
     trks = handle_tracklets(dets1, dets2, matches, trks)
@@ -615,8 +628,12 @@ visualize.plot_detections_in_image(a[:,:5], frame);plt.show(block=False)
 #   main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
 # N.B. I can't fairly debug. Because killed track is automatically removed, where in
 # real case it still has status of inactive.
+# TODO save tracks as it process
+# TODO low quality det
+# TODO run on detections: fix for DEBUG
+# TODO gt for track as option
+# TODO debug the issue on dets
 # TODO very short tracks: caused by mismatch.
-# TODO run on detections
 
 # =============================
 kwargs = get_model_args()
