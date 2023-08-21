@@ -21,6 +21,39 @@ from tracking.stereo_gt import get_disparity_info_from_stereo_track
 # It seems due to vc.set(cv2.CAP_PROP_POS_FRAMES, frame_number).
 
 
+def save_image_with_dets(save_path, video_name, dets, image, format="06d"):
+    """
+    inputs:
+        video_name: str
+            just the name not extension
+        dets: np.ndarray
+            track_id, frame_number, det_id, xtl, ytl, xbr, ybr, xc, yc, w, h,
+    """
+    save_path.mkdir(parents=True, exist_ok=True)
+
+    frame_number = dets[0, 1]
+    color = (0, 0, 255)
+    for det in dets:
+        track_id = det[0]
+
+        x_tl, y_tl, x_br, y_br = det[3:7]
+        _put_bbox_in_image(image, x_tl, y_tl, x_br, y_br, color, track_id)
+
+    cv2.putText(
+        image,
+        f"{frame_number}",
+        (15, 25),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        1,  # font scale
+        (0, 0, 0),  # color
+        1,  # Thinckness
+        2,  # line type
+    )
+
+    name = f"{video_name}_frame_{frame_number:{format}}.jpg"
+    cv2.imwrite((save_path / f"{name}").as_posix(), image)
+
+
 def get_video_parameters(vc: cv2.VideoCapture):
     if vc.isOpened():
         height = int(vc.get(cv2.CAP_PROP_FRAME_HEIGHT))

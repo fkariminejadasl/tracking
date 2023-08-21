@@ -534,7 +534,7 @@ if DEBUG:
         extension[:, 2] = 1
         trks = np.concatenate((trks, extension), axis=1)
 else:
-    start_frame, end_frame, format = 0, 3112, "06d"
+    start_frame, end_frame, format = 0, 32, "06d" # 0, 3112, "06d"
     trks = None
 
 # tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
@@ -584,6 +584,14 @@ for frame_number1 in tqdm(range(start_frame, end_frame - step + 1, step)):
     matches = get_matches(dets1, dets2, main_path, vid_name, **kwargs)
     trks = handle_tracklets(dets1, dets2, matches, trks)
 
+    # save intermediate results
+    dets = get_last_dets_tracklets(trks)
+    image = cv2.imread(
+        str(main_path / f"images/{vid_name}_frame_{frame_number2:06d}.jpg")
+    )
+    visualize.save_image_with_dets(main_path / "ms_tracks_inter", vid_name, dets, image)
+
+
 np.savetxt(main_path / "ms_tracks.txt", trks, delimiter=",", fmt="%d")
 da.save_tracks_to_mot_format(main_path / "ms_tracks", trks[:, :11])
 visualize.save_images_with_tracks(
@@ -628,7 +636,11 @@ visualize.plot_detections_in_image(a[:,:5], frame);plt.show(block=False)
 #   main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
 # N.B. I can't fairly debug. Because killed track is automatically removed, where in
 # real case it still has status of inactive.
-# TODO save tracks as it process
+# TODO hungerian
+# tracks = da.compute_tracks(main_path/"yolo", "2", 1920, 1080, 1, 3117, 8)
+# tracks = da._reindex_tracks(da._remove_short_tracks(tracks))
+# trks = da.make_array_from_tracks(tracks)
+# visualize.save_images_with_tracks(main_path/"hung", main_path/"vids/2.mp4", trks, 0, 3112, 8, '06d')
 # TODO low quality det
 # TODO run on detections: fix for DEBUG
 # TODO gt for track as option
