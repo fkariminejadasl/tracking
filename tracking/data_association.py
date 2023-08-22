@@ -558,7 +558,7 @@ def _make_new_track(det: Detection, new_track_id) -> Track:
     return track
 
 
-def _initialize_track_frame1(dets):
+def _initialize_track(dets):
     new_track_id = 0
     tracks = {}
     ids = range(len(dets))
@@ -573,18 +573,14 @@ def initialize_tracks(
     filename_fixpart: str,
     width: int,
     height: int,
-    first_frame: int = 1,
+    first_frame: int = 0,
     format: str = "",
 ):
-    det_path = det_folder / f"{filename_fixpart}_{first_frame:{format}}.txt"
-    if format == "":
-        frame_number = first_frame - 1
-    else:
-        frame_number = first_frame
-    dets = get_detections(det_path, width, height, frame_number)
-    # dets = get_cleaned_detections(det_path, width, height, frame_number)
+    det_path = det_folder / f"{filename_fixpart}_{first_frame + 1:{format}}.txt"
+    dets = get_detections(det_path, width, height, first_frame)
+    dets = get_cleaned_detections(det_path, width, height, first_frame)
 
-    tracks, new_track_id = _initialize_track_frame1(dets)
+    tracks, new_track_id = _initialize_track(dets)
     return tracks, new_track_id
 
 
@@ -708,7 +704,7 @@ def compute_tracks(
     filename_fixpart: str,
     width: int,
     height: int,
-    start_frame: int = 1,
+    start_frame: int = 0,
     end_frame=None,
     step: int = 1,
     format: str = "",
@@ -731,7 +727,7 @@ def compute_tracks(
             current_frame = frame_number
         det_path = det_folder / f"{filename_fixpart}_{current_frame:{format}}.txt"
         dets = get_detections(det_path, width, height, frame_number)
-        # dets = get_cleaned_detections(det_path, width, height, frame_number)
+        dets = get_cleaned_detections(det_path, width, height, frame_number)
         pred_dets = _get_predicted_locations(tracks, frame_number)
 
         # track maches

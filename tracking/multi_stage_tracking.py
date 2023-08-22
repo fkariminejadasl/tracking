@@ -534,7 +534,7 @@ if DEBUG:
         extension[:, 2] = 1
         trks = np.concatenate((trks, extension), axis=1)
 else:
-    start_frame, end_frame, format = 0, 32, "06d" # 0, 3112, "06d"
+    start_frame, end_frame, format = 0, 32, "06d"  # 0, 3112, "06d"
     trks = None
 
 # tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
@@ -637,7 +637,7 @@ visualize.plot_detections_in_image(a[:,:5], frame);plt.show(block=False)
 # N.B. I can't fairly debug. Because killed track is automatically removed, where in
 # real case it still has status of inactive.
 # TODO hungerian
-# tracks = da.compute_tracks(main_path/"yolo", "2", 1920, 1080, 1, 3117, 8)
+# tracks = da.compute_tracks(main_path/"yolo", "2", 1920, 1080, 0, 3112, 8)
 # tracks = da._reindex_tracks(da._remove_short_tracks(tracks))
 # trks = da.make_array_from_tracks(tracks)
 # visualize.save_images_with_tracks(main_path/"hung", main_path/"vids/2.mp4", trks, 0, 3112, 8, '06d')

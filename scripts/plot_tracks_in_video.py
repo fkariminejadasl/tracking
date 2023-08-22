@@ -62,9 +62,9 @@ def parse_args():
 
 def main():
     args = parse_args()
-    track_file = args.track_file.expanduser()
-    video_file = args.video_file.expanduser()
-    save_file = args.save_file.expanduser()
+    track_file = args.track_file.expanduser().resolve()
+    video_file = args.video_file.expanduser().resolve()
+    save_file = args.save_file.expanduser().resolve()
 
     save_file.parent.mkdir(parents=True, exist_ok=True)
     vc = cv2.VideoCapture(video_file.as_posix())

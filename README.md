@@ -68,7 +68,7 @@ visualize.save_images_with_tracks(
 det_path = main_path / f"yolo/{vid_name}/obj_train_data"
 filename_fixpart = "frame"
 start_frame, end_frame, step, format = 0, 256, 8, "06d"
-image = cv2.imread(str(main_path/f"images/{vid_name}_frame_{start_frame:06d}.jpg"))
+image = cv2.imread(str(main_path/f"images/{vid_name}_frame_{start_frame:{format}}.jpg"))
 width, height = image.shape[1], image.shape[0]
 
 tracks = da.compute_tracks(
@@ -76,9 +76,9 @@ tracks = da.compute_tracks(
 )
 tracks = da._reindex_tracks(da._remove_short_tracks(tracks))
 tracks = da.make_array_from_tracks(tracks)
-    visualize.save_images_with_tracks(
-        main_path/"tracks_hung", vid_file, tracks, start_frame=0, end_frame=256, step=8, format="06d"
-    )
+visualize.save_images_with_tracks(
+    main_path/"tracks_hung", vid_file, tracks, start_frame=0, end_frame=256, step=8, format="06d"
+)
 ```
 
 ## Run a script
@@ -87,13 +87,13 @@ tracks = da.make_array_from_tracks(tracks)
 
 `-r` result folder, `-d` for your detection folder, where detections are saved, `-v` is the full path to the video file. The other options can be skipped. For more information, use `--help`.
 ```bash
-python ~/dev/tracking/scripts/track_fishes.py -r /home/fatemeh/results/dataset5 -d /home/fatemeh/data/dataset5/cam1_labels -v /home/fatemeh/data/dataset5/04_07_22_F_2_rect_valid.mp4 --video_bbox 270,100,1800,1200 --fps 1 --total_no_frames 10
+python ~/dev/tracking/scripts/track_fishes.py -r ~/Downloads/fish/in_sample_vids/240hz/tmp -d ~/Downloads/fish/in_sample_vids/240hz/yolo -v ~/Downloads/fish/in_sample_vids/240hz/vids/2.mp4 -sf 0 --format "" --step 1 --save_name mytest
 ```
 
-NB. '-r', '-d' or '-v' could be relative path, if you are current location is. For example, both video file and detections are in the same folder of `cd /home/fatemeh/data/dataset5`. Only need to give the relative path.
+The relative path for arguments is also accepted:
 ```bash
-cd /home/fatemeh/data/dataset5
-python ~/dev/tracking/scripts/track_fishes.py -r /home/fatemeh/results/dataset5 -d cam1_labels -v 04_07_22_F_2_rect_valid.mp4 --video_bbox 270,100,1800,1200 --fps 1 --total_no_frames 10 --save_name test2
+cd ~/Downloads/fish/in_sample_vids/240hz
+python ~/dev/tracking/scripts/track_fishes.py -r tmp -d yolo -v vids/2.mp4 -sf 0 --format "" --step 1 --save_name mytest
 ```
 
 ### match ground-truth stereo tracks

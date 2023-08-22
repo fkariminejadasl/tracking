@@ -12,23 +12,28 @@ from tracking.data_association import (
     _reindex_tracks,
     _remove_short_tracks,
     compute_tracks,
+    make_array_from_tracks,
     save_tracks_to_mot_format,
 )
-from tracking.visualize import get_video_parameters, plot_tracks_in_video
+from tracking.visualize import (
+    get_video_parameters,
+    plot_tracks_in_video,
+    save_images_with_tracks,
+)
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Track fishes")
     parser.add_argument(
         "-r",
-        "--result_folder",
+        "--save_path",
         help="Path to save the result",
         required=True,
         type=Path,
     )
     parser.add_argument(
         "-d",
-        "--det_folder",
+        "--dets_path",
         help="Path where the detections are",
         required=True,
         type=Path,
@@ -44,14 +49,39 @@ def parse_args():
         default="tracks_test",
     )
     parser.add_argument(
-        "--fps",
-        help="frame per second",
+        "-sf",
+        "--start_frame",
+        help="starting frame. Frames counts from zero.",
+        required=False,
+        type=int,
+        default=0,
+    )
+    parser.add_argument(
+        "-ef",
+        "--end_frame",
+        help="The end frame. The counting of frames is zero-based.",
         required=False,
         type=int,
     )
     parser.add_argument(
-        "--total_no_frames",
-        help="total number of frames",
+        "--step",
+        help="only track with this step size",
+        required=False,
+        type=int,
+        default=8,
+    )
+    parser.add_argument(
+        "--format",
+        help="detection files are saved with this format. \
+        e.g. name_0000123.txt the format is '06d'. \
+        e.g. name_123.txt the format is ''",
+        required=False,
+        type=str,
+        default="",
+    )
+    parser.add_argument(
+        "--fps",
+        help="frame per second",
         required=False,
         type=int,
     )
@@ -71,22 +101,36 @@ def parse_args():
 
 def main():
     args = parse_args()
-    result_folder = args.result_folder.expanduser()
-    det_folder = args.det_folder.expanduser()
-    video_file = args.video_file.expanduser()
+    save_path = args.save_path.expanduser().resolve()
+    dets_path = args.dets_path.expanduser().resolve()
+    video_file = args.video_file.expanduser().resolve()
     filename_fixpart = video_file.stem
-
-    result_folder.mkdir(parents=True, exist_ok=True)
+    save_path.mkdir(parents=True, exist_ok=True)
     vc = cv2.VideoCapture(video_file.as_posix())
 
     height, width, total_no_frames, fps = get_video_parameters(vc)
     if args.fps is None:
         args.fps = fps
-    if args.total_no_frames is None:
-        args.total_no_frames = total_no_frames
+    if args.end_frame is None:
+        args.end_frame = total_no_frames - 1
+
+    print(
+        save_path,
+        dets_path,
+        video_file,
+        f"end_frame={args.end_frame}",
+        f"fps={args.fps}",
+    )
 
     tracks = compute_tracks(
-        det_folder, filename_fixpart, width, height, end_frame=args.total_no_frames - 1
+        dets_path,
+        filename_fixpart,
+        width,
+        height,
+        args.start_frame,
+        args.end_frame,
+        args.step,
+        args.format,
     )
     tracks = _reindex_tracks(_remove_short_tracks(tracks))
 
@@ -102,20 +146,31 @@ def main():
         video_width = bottom_right_x - top_left_x
         video_height = bottom_right_y - top_left_y
 
+    save_images_with_tracks(
+        save_path / f"{args.save_name}",
+        save_path / f"{video_file}",
+        make_array_from_tracks(tracks),
+        args.start_frame,
+        args.end_frame,
+        args.step,
+        args.format,
+    )
+
     plot_tracks_in_video(
-        result_folder / f"{args.save_name}.mp4",
+        save_path / f"{args.save_name}.mp4",
         tracks,
         vc,
         top_left,
         video_width,
         video_height,
-        start_frame=0,
-        end_frame=args.total_no_frames - 1,
+        args.start_frame,
+        args.end_frame,
+        args.step,
         fps=args.fps,
         show_det_id=False,
         black=True,
     )
-    save_tracks_to_mot_format(result_folder / f"{args.save_name}", tracks)
+    save_tracks_to_mot_format(save_path / f"{args.save_name}", tracks)
 
 
 if __name__ == "__main__":

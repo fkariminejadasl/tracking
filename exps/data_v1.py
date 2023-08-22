@@ -167,7 +167,7 @@ def prepare_data_for_yolo_all(
 
 
 if __name__ == "__main__":
-    save_path = Path("~/Downloads/vids/dat8_v1/").expanduser()
-    videos_main_path = Path("~/Downloads/vids/all").expanduser()
-    labels_main_path = Path("~/Downloads/vids/yolo").expanduser()
+    save_path = Path("~/Downloads/vids/dat8_v1/").expanduser().resolve()
+    videos_main_path = Path("~/Downloads/vids/all").expanduser().resolve()
+    labels_main_path = Path("~/Downloads/vids/yolo").expanduser().resolve()
     prepare_data_for_yolo_all(save_path, videos_main_path, labels_main_path)
