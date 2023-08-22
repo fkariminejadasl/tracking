@@ -367,7 +367,7 @@ def get_occluded_matches(dets1, dets2, matching_groups, main_path, vid_name, **k
     occluded_matches = []
     for group1, group2 in matching_groups.items():
         if (not group1) or (not group2):
-            return []
+            continue
         bbs1 = get_bboxes(dets1, group1)
         bbs2 = get_bboxes(dets2, group2)
         cosim_matches_group = get_occluded_matches_per_group(
@@ -534,7 +534,7 @@ if DEBUG:
         extension[:, 2] = 1
         trks = np.concatenate((trks, extension), axis=1)
 else:
-    start_frame, end_frame, format = 0, 32, "06d"  # 0, 3112, "06d"
+    start_frame, end_frame, format = 0, 3112, "06d"
     trks = None
 
 # tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
@@ -636,11 +636,14 @@ visualize.plot_detections_in_image(a[:,:5], frame);plt.show(block=False)
 #   main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
 # N.B. I can't fairly debug. Because killed track is automatically removed, where in
 # real case it still has status of inactive.
-# TODO hungerian
 # tracks = da.compute_tracks(main_path/"yolo", "2", 1920, 1080, 0, 3112, 8)
 # tracks = da._reindex_tracks(da._remove_short_tracks(tracks))
 # trks = da.make_array_from_tracks(tracks)
 # visualize.save_images_with_tracks(main_path/"hung", main_path/"vids/2.mp4", trks, 0, 3112, 8, '06d')
+# TODO bug predict location (constat speed): take care of visualization/saving
+# TODO bug stage 2: matching of inactive is in the previous image not their own: take care of visualization/saving
+# TODO frame1=96: 9-9 but trks status is not updated to 1
+# TODO ByteTrack
 # TODO low quality det
 # TODO run on detections: fix for DEBUG
 # TODO gt for track as option
