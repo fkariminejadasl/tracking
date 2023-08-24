@@ -539,7 +539,7 @@ else:
 
 # tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
 
-# """
+"""
 stop_thr = step * 50
 for frame_number1 in tqdm(range(start_frame, end_frame - step + 1, step)):
     frame_number2 = frame_number1 + step
@@ -603,7 +603,8 @@ visualize.save_images_with_tracks(
     step,
     format,
 )
-# """
+"""
+
 """
 visualize.save_images_with_detections(main_path/"images_dets", main_path/"vids/2.mp4", main_path/"yolo", start_frame=0, end_frame=3112, step=8)
 
@@ -626,6 +627,46 @@ a = np.concatenate((np.arange(len(res))[:,None], res), axis=1)
 visualize.plot_detections_in_image(a[:,:5], frame);plt.show(block=False)
 """
 
+# bytetrack, bottrack
+# for i in $(ls */2_frame_001656.jpg); do b=$(dirname $i); cp $i tmp/$b.jpg; done
+from ultralytics import YOLO
+
+model = YOLO(Path("/home/fatemeh/Downloads/fish/best_model/det_best_bgr29.pt"))
+
+track_method = "bytetrack"
+trks = np.empty((0, 7), dtype=np.int64)
+for frame_number1 in tqdm(range(start_frame, end_frame - step + 1, step)):
+    image = cv2.imread(
+        str(main_path / f"images/{vid_name}_frame_{frame_number1:06d}.jpg")
+    )
+    results = model.track(
+        image,
+        persist=True,
+        tracker=f"/home/fatemeh/Downloads/fish/configs/{track_method}.yaml",
+    )
+
+    xyxy = results[0].boxes.xyxy
+    track_ids = results[0].boxes.id[:, None]
+    ones = frame_number1 * np.ones(len(xyxy))[:, None]
+    dets = np.concatenate((track_ids, ones, track_ids, xyxy), axis=1).astype(np.int64)
+    trks = np.concatenate((trks, dets), axis=0)
+
+    visualize.save_image_with_dets(
+        main_path / f"{track_method}_tracks_inter", vid_name, dets, image
+    )
+    # visualize.plot_detections_in_image(dets[:, [0,3,4,5,6]], image)
+
+np.savetxt(main_path / f"{track_method}_tracks.txt", trks, delimiter=",", fmt="%d")
+visualize.save_images_with_tracks(
+    main_path / f"{track_method}_tracks",
+    main_path / f"vids/{vid_name}.mp4",
+    trks,
+    start_frame,
+    end_frame,
+    step,
+    format,
+)
+
 # 1. s1: hungarian dist&iou on high quality dets no overlap (I have no_ovelap version)
 # 2. s2: hungarian agg cossim on coverlap -> low quality ass (either low value or multiple detection)
 # 3. s3: hungarian dist&iou on low quality dets
@@ -640,15 +681,17 @@ visualize.plot_detections_in_image(a[:,:5], frame);plt.show(block=False)
 # tracks = da._reindex_tracks(da._remove_short_tracks(tracks))
 # trks = da.make_array_from_tracks(tracks)
 # visualize.save_images_with_tracks(main_path/"hung", main_path/"vids/2.mp4", trks, 0, 3112, 8, '06d')
+# TODO check ultralytics code why bytetrack bboxes are different
+# TODO compare ms_track, hungerian, bytetrack, botsort
+# TODO script for bytetrack/botsort
+# TODO gt for track as option
+# TODO save as images or video should be combined
 # TODO bug predict location (constat speed): take care of visualization/saving
 # TODO bug stage 2: matching of inactive is in the previous image not their own: take care of visualization/saving
-# TODO frame1=96: 9-9 but trks status is not updated to 1
-# TODO ByteTrack
 # TODO low quality det
-# TODO run on detections: fix for DEBUG
-# TODO gt for track as option
 # TODO debug the issue on dets
 # TODO very short tracks: caused by mismatch.
+# TODO (maybe) In DeepMOT, for track birth, track is born if detections appear in 3 consecutive frames and have at least .3 IOU overlap.
 
 # =============================
 kwargs = get_model_args()
