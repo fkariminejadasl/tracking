@@ -11,6 +11,7 @@ import numpy as np
 import torchvision
 from scipy.optimize import linear_sum_assignment
 from tqdm import tqdm
+from ultralytics import YOLO
 
 from tracking import data_association as da
 from tracking import visualize
@@ -513,6 +514,7 @@ def kill_tracks(tracks, last_dets, c_frame_number, thr=50):
             tracks[ind, 13] = 3
 
 
+"""
 kwargs = get_model_args()  # TODO ugly
 
 # 2, 184, 8, "240hz", 6, 16, 8, "240hz"  # 0, 38, 1, "30hz"
@@ -539,7 +541,6 @@ else:
 
 # tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
 
-"""
 stop_thr = step * 50
 for frame_number1 in tqdm(range(start_frame, end_frame - step + 1, step)):
     frame_number2 = frame_number1 + step
@@ -627,38 +628,168 @@ a = np.concatenate((np.arange(len(res))[:,None], res), axis=1)
 visualize.plot_detections_in_image(a[:,:5], frame);plt.show(block=False)
 """
 
-# bytetrack, bottrack
-# for i in $(ls */2_frame_001656.jpg); do b=$(dirname $i); cp $i tmp/$b.jpg; done
-from ultralytics import YOLO
 
-model = YOLO(Path("/home/fatemeh/Downloads/fish/best_model/det_best_bgr29.pt"))
+def multistage_track(
+    main_path,
+    # image_folder,
+    vid_name,
+    start_frame,
+    end_frame,
+    step,
+):
+    kwargs = get_model_args()  # TODO ugly
 
-track_method = "bytetrack"
-trks = np.empty((0, 7), dtype=np.int64)
-for frame_number1 in tqdm(range(start_frame, end_frame - step + 1, step)):
-    image = cv2.imread(
-        str(main_path / f"images/{vid_name}_frame_{frame_number1:06d}.jpg")
-    )
-    results = model.track(
-        image,
-        persist=True,
-        tracker=f"/home/fatemeh/Downloads/fish/configs/{track_method}.yaml",
-    )
+    # DEBUG = False
+    # if DEBUG:
+    #     start_frame, end_frame, format = 2432, 3112, "06d"
+    #     # tracks = da.load_tracks_from_mot_format(main_path / "ms_tracks.zip")
+    #     tracks = np.loadtxt(main_path / "ms_tracks.txt", dtype=np.int64, delimiter=",")
+    #     trks = deepcopy(tracks[tracks[:, 1] <= start_frame])
+    #     # Hack to reproduce result. In this stage track is not killed but later on, the
+    #     # txt file save the final one.
+    #     # ind = np.where((trks[:,0]==13) & (trks[:,1]==start_frame))[0][0]
+    #     # trks[ind, 13] = 2
+    #     if trks.shape[1] == 11:
+    #         extension = np.zeros((len(trks), 3), dtype=np.int64)
+    #         extension[:, 2] = 1
+    #         trks = np.concatenate((trks, extension), axis=1)
+    # else:
+    #     start_frame, end_frame, format = 0, 3112, "06d"
+    #     trks = None
+    trks = None
 
-    xyxy = results[0].boxes.xyxy
-    track_ids = results[0].boxes.id[:, None]
-    ones = frame_number1 * np.ones(len(xyxy))[:, None]
-    dets = np.concatenate((track_ids, ones, track_ids, xyxy), axis=1).astype(np.int64)
-    trks = np.concatenate((trks, dets), axis=0)
+    # tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
 
-    visualize.save_image_with_dets(
-        main_path / f"{track_method}_tracks_inter", vid_name, dets, image
-    )
-    # visualize.plot_detections_in_image(dets[:, [0,3,4,5,6]], image)
+    stop_thr = step * 50
+    for frame_number1 in tqdm(range(start_frame, end_frame - step + 1, step)):
+        frame_number2 = frame_number1 + step
 
-np.savetxt(main_path / f"{track_method}_tracks.txt", trks, delimiter=",", fmt="%d")
+        if trks is None:
+            # dets1 = tracks[tracks[:, 1] == frame_number1]
+            # dets1[:, 2] = dets1[:, 0]  # TODO hack to missuse tracks for detections
+            # dets1[:, 0] = -1
+            dets1 = da.get_detections_array(
+                main_path / f"yolo/{vid_name}_{frame_number1 + 1}.txt",
+                1920,
+                1080,
+                frame_number1,
+            )
+        else:
+            dets1 = get_last_dets_tracklets(trks)
+            kill_tracks(trks, dets1, frame_number2, stop_thr)
+            dets1 = get_last_dets_tracklets(trks)
+
+        # dets2 = tracks[tracks[:, 1] == frame_number2]
+        # dets2[:, 2] = dets2[:, 0]  # TODO hack to missuse tracks for detections
+        # dets2[:, 0] = -1
+        dets2 = da.get_detections_array(
+            main_path / f"yolo/{vid_name}_{frame_number2 + 1}.txt",
+            1920,
+            1080,
+            frame_number2,
+        )
+
+        # if DEBUG:
+        #     im1 = cv2.imread(
+        #         str(main_path / f"images/{vid_name}_frame_{frame_number1:06d}.jpg")
+        #     )
+        #     im2 = cv2.imread(
+        #         str(main_path / f"images/{vid_name}_frame_{frame_number2:06d}.jpg")
+        #     )
+        #     visualize.plot_detections_in_image(dets1[:, [2, 3, 4, 5, 6]], im1)
+        #     plt.show(block=False)
+        #     visualize.plot_detections_in_image(dets2[:, [2, 3, 4, 5, 6]], im2)
+        #     plt.show(block=False)
+
+        matches = get_matches(dets1, dets2, main_path, vid_name, **kwargs)
+        trks = handle_tracklets(dets1, dets2, matches, trks)
+
+        # # save intermediate results
+        # dets = get_last_dets_tracklets(trks)
+        # image = cv2.imread(
+        #     str(main_path / f"images/{vid_name}_frame_{frame_number2:06d}.jpg")
+        # )
+        # visualize.save_image_with_dets(
+        #     main_path / "ms_tracks_inter", vid_name, dets, image
+        # )
+
+    return trks
+
+
+def ultralytics_track(
+    main_path,
+    image_folder,
+    vid_name,
+    start_frame,
+    end_frame,
+    step,
+    det_checkpoint,
+    config_file="botsort.yaml",
+):
+    """ "
+    input:
+        config_file: Path|None
+            if None, botsort.yaml file is used. The options are botsort and bytetrack.
+
+    output:
+        track: np.ndarray
+            with tid, fn, did, x, y, x, y, cx, cy, w, h, dq, tq, st
+    """
+    model = YOLO(det_checkpoint)
+
+    trks = np.empty((0, 7), dtype=np.int64)
+    for frame_number in tqdm(range(start_frame, end_frame + 1, step)):
+        image = cv2.imread(
+            str(main_path / f"{image_folder}/{vid_name}_frame_{frame_number:06d}.jpg")
+        )
+        results = model.track(image, persist=True, tracker=config_file, verbose=False)
+
+        xyxy = results[0].boxes.xyxy
+        track_ids = results[0].boxes.id[:, None]
+        ones = frame_number * np.ones(len(xyxy))[:, None]
+        dets = np.concatenate((track_ids, ones, track_ids, xyxy), axis=1).astype(
+            np.int64
+        )
+        trks = np.concatenate((trks, dets), axis=0)
+
+        # visualize.save_image_with_dets(
+        #     main_path / f"{track_method}_tracks_inter", vid_name, dets, image
+        # )
+        # visualize.plot_detections_in_image(dets[:, [0,3,4,5,6]], image)
+    cen_whs = np.array([list(da.cen_wh_from_tl_br(*item[3:])) for item in trks])
+    trks = np.concatenate((trks, cen_whs), axis=1).astype(np.int64)
+    return trks
+
+
+vid_name, frame_number1, step, folder = 2, 184, 8, "240hz"
+main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
+start_frame, end_frame, format = 0, 25, "06d"
+track_method = "botsort"
+image_folder = "images_e1"
+save_name = f"{track_method}_8"
+det_checkpoint = Path("/home/fatemeh/Downloads/fish/best_model/det_best_bgr29.pt")
+config_file = Path(f"/home/fatemeh/Downloads/fish/configs/{track_method}.yaml")
+trks = multistage_track(
+    main_path,
+    vid_name,
+    start_frame,
+    end_frame,
+    step,
+)
+# trks = ultralytics_track(
+#     main_path,
+#     image_folder,
+#     vid_name,
+#     start_frame,
+#     end_frame,
+#     step,
+#     det_checkpoint,
+#     config_file="botsort.yaml",
+# )
+np.savetxt(main_path / f"{save_name}.txt", trks, delimiter=",", fmt="%d")
+da.save_tracks_to_mot_format(main_path / save_name, trks[:, :11])
 visualize.save_images_with_tracks(
-    main_path / f"{track_method}_tracks",
+    main_path / save_name,
     main_path / f"vids/{vid_name}.mp4",
     trks,
     start_frame,
