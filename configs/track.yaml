@@ -1,0 +1,17 @@
+# save_name: myname # The name of the file used to save tracks and video
+save_path: /home/fatemeh # Path to save the result
+dets_path: # Path where the detections are
+video_file: #
+start_frame: 0 # starting frame. Frames counts from zero.
+end_frame: 25 # The end frame. The counting of frames is zero-based.
+step: 8 # only track with this step size
+format: 06d # detection files are saved with this format. e.g. name_0000123.txt the format is '06d'. e.g. name_123.txt the format is ''
+vid_name: 2
+folder: 240hz
+main_path: /home/fatemeh/Downloads/fish/in_sample_vids
+fps: # frame per second
+video_bbox: # Crop and save the videos. Values are given by comma separated, top_left.x,top_left.y,bottom_right.x,bottom_right.y.
+det_checkpoint: /home/fatemeh/Downloads/fish/best_model/det_best_bgr29.pt
+image_folder: images_e1
+track_method: botsort # botsort, bytetrack, ms, hung
+config_file: /home/fatemeh/Downloads/fish/configs/botsort.yaml

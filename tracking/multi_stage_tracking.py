@@ -761,42 +761,42 @@ def ultralytics_track(
     return trks
 
 
-vid_name, frame_number1, step, folder = 2, 184, 8, "240hz"
-main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
-start_frame, end_frame, format = 0, 25, "06d"
-track_method = "botsort"
-image_folder = "images_e1"
-save_name = f"{track_method}_8"
-det_checkpoint = Path("/home/fatemeh/Downloads/fish/best_model/det_best_bgr29.pt")
-config_file = Path(f"/home/fatemeh/Downloads/fish/configs/{track_method}.yaml")
-trks = multistage_track(
-    main_path,
-    vid_name,
-    start_frame,
-    end_frame,
-    step,
-)
-# trks = ultralytics_track(
+# vid_name, frame_number1, step, folder = 2, 184, 8, "240hz"
+# main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
+# start_frame, end_frame, format = 0, 25, "06d"
+# track_method = "botsort"
+# image_folder = "images_e1"
+# save_name = f"{track_method}_8"
+# det_checkpoint = Path("/home/fatemeh/Downloads/fish/best_model/det_best_bgr29.pt")
+# config_file = Path(f"/home/fatemeh/Downloads/fish/configs/{track_method}.yaml")
+# trks = multistage_track(
 #     main_path,
-#     image_folder,
 #     vid_name,
 #     start_frame,
 #     end_frame,
 #     step,
-#     det_checkpoint,
-#     config_file="botsort.yaml",
 # )
-np.savetxt(main_path / f"{save_name}.txt", trks, delimiter=",", fmt="%d")
-da.save_tracks_to_mot_format(main_path / save_name, trks[:, :11])
-visualize.save_images_with_tracks(
-    main_path / save_name,
-    main_path / f"vids/{vid_name}.mp4",
-    trks,
-    start_frame,
-    end_frame,
-    step,
-    format,
-)
+# # trks = ultralytics_track(
+# #     main_path,
+# #     image_folder,
+# #     vid_name,
+# #     start_frame,
+# #     end_frame,
+# #     step,
+# #     det_checkpoint,
+# #     config_file="botsort.yaml",
+# # )
+# np.savetxt(main_path / f"{save_name}.txt", trks, delimiter=",", fmt="%d")
+# da.save_tracks_to_mot_format(main_path / save_name, trks[:, :11])
+# visualize.save_images_with_tracks(
+#     main_path / save_name,
+#     main_path / f"vids/{vid_name}.mp4",
+#     trks,
+#     start_frame,
+#     end_frame,
+#     step,
+#     format,
+# )
 
 # 1. s1: hungarian dist&iou on high quality dets no overlap (I have no_ovelap version)
 # 2. s2: hungarian agg cossim on coverlap -> low quality ass (either low value or multiple detection)
