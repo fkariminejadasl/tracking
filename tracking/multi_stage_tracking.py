@@ -239,10 +239,10 @@ def clip_bboxs(bbox, im_height, im_width):
     return bbox
 
 
-def cos_sim(main_path, vid_name, bbs1, bbs2, **kwargs):
+def cos_sim(image_path, vid_name, bbs1, bbs2, **kwargs):
     """
     inputs:
-        main_path: Path
+        image_path: Path
         vid_name: str | int
         bbs1, bbs2: np.ndarray
     output: list[int]
@@ -262,9 +262,7 @@ def cos_sim(main_path, vid_name, bbs1, bbs2, **kwargs):
     )
 
     frame_number2 = bbs2[0, 1]
-    im2 = cv2.imread(
-        str(main_path / f"images/{vid_name}_frame_{frame_number2:06d}.jpg")
-    )
+    im2 = cv2.imread(str(image_path / f"{vid_name}_frame_{frame_number2:06d}.jpg"))
     im_height, im_width, _ = im2.shape
     clip_bboxs(bbs1, im_height, im_width)
     clip_bboxs(bbs2, im_height, im_width)
@@ -276,7 +274,7 @@ def cos_sim(main_path, vid_name, bbs1, bbs2, **kwargs):
         for bb2 in bbs2:
             frame_number1 = bb1[1]
             im1 = cv2.imread(
-                str(main_path / f"images/{vid_name}_frame_{frame_number1:06d}.jpg")
+                str(image_path / f"{vid_name}_frame_{frame_number1:06d}.jpg")
             )
 
             imc1 = im1[bb1[4] : bb1[6], bb1[3] : bb1[5]]
@@ -325,16 +323,16 @@ def get_cosim_matches_per_group(out):
     return matches
 
 
-def get_occluded_matches_per_group(main_path, vid_name, bbs1, bbs2, **kwargs):
+def get_occluded_matches_per_group(image_path, vid_name, bbs1, bbs2, **kwargs):
     """
     inputs:
-        main_path: Path
+        image_path: Path
         vid_name: str | int
         bbs1, bbs2: np.ndarray
     output: list[tuple[int, int]]
         The values are the detection ids.
     """
-    out = cos_sim(main_path, vid_name, bbs1, bbs2, **kwargs)
+    out = cos_sim(image_path, vid_name, bbs1, bbs2, **kwargs)
     matches = get_cosim_matches_per_group(out)
     return matches
 
@@ -355,12 +353,12 @@ def get_bboxes(dets: np.ndarray, group):
     return bbs
 
 
-def get_occluded_matches(dets1, dets2, matching_groups, main_path, vid_name, **kwargs):
+def get_occluded_matches(dets1, dets2, matching_groups, image_path, vid_name, **kwargs):
     """
     inputs:
         dets1, dets2: np.ndarray
         matching_groups: dict[tuple, tuple]
-        main_path: Path
+        image_path: Path
         vid_name: str | int
     output: list[tuple[int, int]]
         The values are the detection ids
@@ -372,7 +370,7 @@ def get_occluded_matches(dets1, dets2, matching_groups, main_path, vid_name, **k
         bbs1 = get_bboxes(dets1, group1)
         bbs2 = get_bboxes(dets2, group2)
         cosim_matches_group = get_occluded_matches_per_group(
-            main_path, vid_name, bbs1, bbs2, **kwargs
+            image_path, vid_name, bbs1, bbs2, **kwargs
         )
         occluded_matches.extend(
             [tuple(cosim_match_group[:2]) for cosim_match_group in cosim_matches_group]
@@ -380,7 +378,7 @@ def get_occluded_matches(dets1, dets2, matching_groups, main_path, vid_name, **k
     return occluded_matches
 
 
-def get_matches(dets1, dets2, main_path, vid_name, **kwargs):
+def get_matches(dets1, dets2, image_path, vid_name, **kwargs):
     """
     inputs:
         dets1, dets2: np.ndarray
@@ -399,7 +397,7 @@ def get_matches(dets1, dets2, main_path, vid_name, **kwargs):
 
     # Stage 2: Cos similarity of concatenated embeddings
     occluded_matches = get_occluded_matches(
-        dets1, dets2, matching_groups, main_path, vid_name, **kwargs
+        dets1, dets2, matching_groups, image_path, vid_name, **kwargs
     )
 
     return n_occluded_matches + occluded_matches
@@ -521,6 +519,8 @@ kwargs = get_model_args()  # TODO ugly
 vid_name, frame_number1, step, folder = 2, 184, 8, "240hz"
 main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
 
+image_path = main_path / "images"
+
 DEBUG = False
 if DEBUG:
     start_frame, end_frame, format = 2432, 3112, "06d"
@@ -564,7 +564,7 @@ for frame_number1 in tqdm(range(start_frame, end_frame - step + 1, step)):
     # dets2[:, 2] = dets2[:, 0]  # TODO hack to missuse tracks for detections
     # dets2[:, 0] = -1
     dets2 = da.get_detections_array(
-        main_path / f"yolo/{vid_name}_{frame_number2 + 1}.txt",
+        image"yolo/{vid_name}_{frame_number2 + 1}.txt",
         1920,
         1080,
         frame_number2,
@@ -572,23 +572,23 @@ for frame_number1 in tqdm(range(start_frame, end_frame - step + 1, step)):
 
     if DEBUG:
         im1 = cv2.imread(
-            str(main_path / f"images/{vid_name}_frame_{frame_number1:06d}.jpg")
+            str(image_path / f"{vid_name}_frame_{frame_number1:06d}.jpg")
         )
         im2 = cv2.imread(
-            str(main_path / f"images/{vid_name}_frame_{frame_number2:06d}.jpg")
+            str(image_path / f"{vid_name}_frame_{frame_number2:06d}.jpg")
         )
         visualize.plot_detections_in_image(dets1[:, [2, 3, 4, 5, 6]], im1)
         plt.show(block=False)
         visualize.plot_detections_in_image(dets2[:, [2, 3, 4, 5, 6]], im2)
         plt.show(block=False)
 
-    matches = get_matches(dets1, dets2, main_path, vid_name, **kwargs)
+    matches = get_matches(dets1, dets2, image_path, vid_name, **kwargs)
     trks = handle_tracklets(dets1, dets2, matches, trks)
 
     # save intermediate results
     dets = get_last_dets_tracklets(trks)
     image = cv2.imread(
-        str(main_path / f"images/{vid_name}_frame_{frame_number2:06d}.jpg")
+        str(image_path / f"{vid_name}_frame_{frame_number2:06d}.jpg")
     )
     visualize.save_image_with_dets(main_path / "ms_tracks_inter", vid_name, dets, image)
 
@@ -631,14 +631,14 @@ visualize.plot_detections_in_image(a[:,:5], frame);plt.show(block=False)
 
 def multistage_track(
     main_path,
-    # image_folder,
+    image_folder,
     vid_name,
     start_frame,
     end_frame,
     step,
 ):
     kwargs = get_model_args()  # TODO ugly
-
+    image_path = main_path / f"{image_folder}"
     # DEBUG = False
     # if DEBUG:
     #     start_frame, end_frame, format = 2432, 3112, "06d"
@@ -691,26 +691,26 @@ def multistage_track(
 
         # if DEBUG:
         #     im1 = cv2.imread(
-        #         str(main_path / f"images/{vid_name}_frame_{frame_number1:06d}.jpg")
+        #         str(image_path / f"/{vid_name}_frame_{frame_number1:06d}.jpg")
         #     )
         #     im2 = cv2.imread(
-        #         str(main_path / f"images/{vid_name}_frame_{frame_number2:06d}.jpg")
+        #         str(image_path / f"{vid_name}_frame_{frame_number2:06d}.jpg")
         #     )
         #     visualize.plot_detections_in_image(dets1[:, [2, 3, 4, 5, 6]], im1)
         #     plt.show(block=False)
         #     visualize.plot_detections_in_image(dets2[:, [2, 3, 4, 5, 6]], im2)
         #     plt.show(block=False)
 
-        matches = get_matches(dets1, dets2, main_path, vid_name, **kwargs)
+        matches = get_matches(dets1, dets2, image_path, vid_name, **kwargs)
         trks = handle_tracklets(dets1, dets2, matches, trks)
 
         # # save intermediate results
         # dets = get_last_dets_tracklets(trks)
         # image = cv2.imread(
-        #     str(main_path / f"images/{vid_name}_frame_{frame_number2:06d}.jpg")
+        #     str(image_path / f"{vid_name}_frame_{frame_number2:06d}.jpg")
         # )
         # visualize.save_image_with_dets(
-        #     main_path / "ms_tracks_inter", vid_name, dets, image
+        #     image_path / "ms_tracks_inter", vid_name, dets, image
         # )
 
     return trks
@@ -771,6 +771,7 @@ def ultralytics_track(
 # config_file = Path(f"/home/fatemeh/Downloads/fish/configs/{track_method}.yaml")
 # trks = multistage_track(
 #     main_path,
+#     image_folder,
 #     vid_name,
 #     start_frame,
 #     end_frame,
@@ -828,6 +829,7 @@ def ultralytics_track(
 kwargs = get_model_args()
 vid_name, frame_number1, step, folder = 6, 16, 8, "240hz"
 main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
+image_path = main_path / "images"
 frame_number2 = frame_number1 + step
 
 tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
@@ -924,7 +926,7 @@ def test_stage2():
         (29, 29),  # 86
     ]
     occluded_matches = get_occluded_matches(
-        dets1, dets2, matching_groups, main_path, vid_name, **kwargs
+        dets1, dets2, matching_groups, image_path, vid_name, **kwargs
     )
     assert exp_occluded_matches == occluded_matches
 
@@ -939,7 +941,7 @@ def test_stage2():
         (29, 39),  # 86
     ]
     occluded_matches = get_occluded_matches(
-        dets1, dets2, matching_groups, main_path, vid_name, **kwargs
+        dets1, dets2, matching_groups, image_path, vid_name, **kwargs
     )
     assert exp_occluded_matches == occluded_matches
 
@@ -970,6 +972,7 @@ def test_handle_tracklets():
 
     vid_name, frame_number1, step, folder = 2, 184, 8, "240hz"
     main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
+    image_path = main_path / "images"
     frame_number2 = frame_number1 + step
 
     tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
@@ -982,7 +985,7 @@ def test_handle_tracklets():
     dets1[:, 0] = -1
     dets2[:, 0] = -1
 
-    matches = get_matches(dets1, dets2, main_path, vid_name, **kwargs)
+    matches = get_matches(dets1, dets2, image_path, vid_name, **kwargs)
     matches.remove((0, 10))
     matches.remove((5, 15))
     trks = handle_tracklets(dets1, dets2, matches)

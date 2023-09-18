@@ -64,6 +64,7 @@ if __name__ == "__main__":
     if track_method == "ms":
         trks = multistage_track(
             main_path,
+            image_folder,
             vid_name,
             start_frame,
             end_frame,

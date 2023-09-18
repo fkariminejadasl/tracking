@@ -12,6 +12,6 @@ main_path: /home/fatemeh/Downloads/fish/in_sample_vids
 fps: # frame per second
 video_bbox: # Crop and save the videos. Values are given by comma separated, top_left.x,top_left.y,bottom_right.x,bottom_right.y.
 det_checkpoint: /home/fatemeh/Downloads/fish/best_model/det_best_bgr29.pt
-image_folder: images_e1
-track_method: botsort # botsort, bytetrack, ms, hung
+image_folder: images # images_e1
+track_method: ms # botsort, bytetrack, ms, hung
 config_file: /home/fatemeh/Downloads/fish/configs/botsort.yaml
