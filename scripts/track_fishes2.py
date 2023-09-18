@@ -11,20 +11,9 @@ import cv2
 import numpy as np
 import yaml
 
-from tracking.data_association import (
-    Point,
-    _reindex_tracks,
-    _remove_short_tracks,
-    compute_tracks,
-    make_array_from_tracks,
-    save_tracks_to_mot_format,
-)
+from tracking.data_association import save_tracks_to_mot_format
 from tracking.multi_stage_tracking import multistage_track, ultralytics_track
-from tracking.visualize import (
-    get_video_parameters,
-    plot_tracks_in_video,
-    save_images_with_tracks,
-)
+from tracking.visualize import save_images_of_video, save_images_with_tracks
 
 
 def process_config(config_path):
@@ -60,6 +49,17 @@ if __name__ == "__main__":
 
     main_path = main_path / f"{folder}"
     save_name = f"{track_method}_8"
+
+    if inputs.video_file is not None:
+        video_file = Path(inputs.video_file)
+        save_images_of_video(
+            main_path / f"{image_folder}",
+            video_file,
+            start_frame,
+            end_frame,
+            step,
+            format,
+        )
 
     if track_method == "ms":
         trks = multistage_track(
