@@ -35,8 +35,6 @@ if __name__ == "__main__":
         print(f"{key}: {value}")
     inputs = SimpleNamespace(**inputs)
 
-    vid_name = inputs.vid_name
-    folder = inputs.folder
     start_frame = inputs.start_frame
     end_frame = inputs.end_frame
     step = inputs.step
@@ -45,13 +43,21 @@ if __name__ == "__main__":
     image_folder = inputs.image_folder
     det_checkpoint = Path(inputs.det_checkpoint)
     main_path = Path(inputs.main_path)
-    config_file = Path(inputs.config_file)
+    track_config_file = inputs.track_config_file
+    video_file = Path(inputs.video_file)
+    dets_path = Path(inputs.dets_path)
 
-    main_path = main_path / f"{folder}"
+    image_path = main_path / image_folder
     save_name = f"{track_method}_8"
+    vid_name = video_file.stem
+    track_config_file = (
+        Path(inputs.track_config_file)
+        if inputs.track_config_file
+        else Path(f"{track_method}.yaml")
+    )
 
-    if inputs.video_file is not None:
-        video_file = Path(inputs.video_file)
+    is_empty = not any(image_path.iterdir())
+    if is_empty:
         save_images_of_video(
             main_path / f"{image_folder}",
             video_file,
@@ -63,8 +69,8 @@ if __name__ == "__main__":
 
     if track_method == "ms":
         trks = multistage_track(
-            main_path,
-            image_folder,
+            image_path,
+            dets_path,
             vid_name,
             start_frame,
             end_frame,
@@ -79,13 +85,13 @@ if __name__ == "__main__":
             end_frame,
             step,
             det_checkpoint,
-            config_file="botsort.yaml",
+            config_file=track_config_file,
         )
     np.savetxt(main_path / f"{save_name}.txt", trks, delimiter=",", fmt="%d")
     save_tracks_to_mot_format(main_path / save_name, trks[:, :11])
     save_images_with_tracks(
         main_path / save_name,
-        main_path / f"vids/{vid_name}.mp4",
+        video_file,
         trks,
         start_frame,
         end_frame,
