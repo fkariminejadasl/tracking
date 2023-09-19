@@ -630,7 +630,7 @@ visualize.plot_detections_in_image(a[:,:5], frame);plt.show(block=False)
 """
 
 
-def multistage_track(
+def multistage_track_origin(
     image_path,
     det_path,
     vid_name,
@@ -688,6 +688,100 @@ def multistage_track(
             1080,
             frame_number2,
         )
+
+        # if DEBUG:
+        #     im1 = cv2.imread(
+        #         str(image_path / f"/{vid_name}_frame_{frame_number1:06d}.jpg")
+        #     )
+        #     im2 = cv2.imread(
+        #         str(image_path / f"{vid_name}_frame_{frame_number2:06d}.jpg")
+        #     )
+        #     visualize.plot_detections_in_image(dets1[:, [2, 3, 4, 5, 6]], im1)
+        #     plt.show(block=False)
+        #     visualize.plot_detections_in_image(dets2[:, [2, 3, 4, 5, 6]], im2)
+        #     plt.show(block=False)
+
+        matches = get_matches(dets1, dets2, image_path, vid_name, **kwargs)
+        trks = handle_tracklets(dets1, dets2, matches, trks)
+
+        # # save intermediate results
+        # dets = get_last_dets_tracklets(trks)
+        # image = cv2.imread(
+        #     str(image_path / f"{vid_name}_frame_{frame_number2:06d}.jpg")
+        # )
+        # visualize.save_image_with_dets(
+        #     image_path / "ms_tracks_inter", vid_name, dets, image
+        # )
+
+    return trks
+
+
+def multistage_track(
+    image_path,
+    det_path,
+    vid_name,
+    start_frame,
+    end_frame,
+    step,
+):
+    det_is_array = False
+    print(det_path, type(det_path), det_path.is_file())
+    if det_path.is_file():
+        det_is_array = True
+        tracks = da.load_tracks_from_mot_format(det_path)
+        tracks[:, 2] = tracks[:, 0]  # dets or tracks used as dets
+        tracks[:, 0] = -1
+
+    kwargs = get_model_args()  # TODO ugly
+    # DEBUG = False
+    # if DEBUG:
+    #     start_frame, end_frame, format = 2432, 3112, "06d"
+    #     # tracks = da.load_tracks_from_mot_format(main_path / "ms_tracks.zip")
+    #     tracks = np.loadtxt(main_path / "ms_tracks.txt", dtype=np.int64, delimiter=",")
+    #     trks = deepcopy(tracks[tracks[:, 1] <= start_frame])
+    #     # Hack to reproduce result. In this stage track is not killed but later on, the
+    #     # txt file save the final one.
+    #     # ind = np.where((trks[:,0]==13) & (trks[:,1]==start_frame))[0][0]
+    #     # trks[ind, 13] = 2
+    #     if trks.shape[1] == 11:
+    #         extension = np.zeros((len(trks), 3), dtype=np.int64)
+    #         extension[:, 2] = 1
+    #         trks = np.concatenate((trks, extension), axis=1)
+    # else:
+    #     start_frame, end_frame, format = 0, 3112, "06d"
+    #     trks = None
+    trks = None
+
+    # tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
+
+    stop_thr = step * 50
+    for frame_number1 in tqdm(range(start_frame, end_frame - step + 1, step)):
+        frame_number2 = frame_number1 + step
+
+        if trks is None:
+            if det_is_array:
+                dets1 = tracks[tracks[:, 1] == frame_number1]
+            else:
+                dets1 = da.get_detections_array(
+                    det_path / f"{vid_name}_{frame_number1 + 1}.txt",
+                    1920,
+                    1080,
+                    frame_number1,
+                )
+        else:
+            dets1 = get_last_dets_tracklets(trks)
+            kill_tracks(trks, dets1, frame_number2, stop_thr)
+            dets1 = get_last_dets_tracklets(trks)
+
+        if det_is_array:
+            dets2 = tracks[tracks[:, 1] == frame_number2]
+        else:
+            dets2 = da.get_detections_array(
+                det_path / f"{vid_name}_{frame_number2 + 1}.txt",
+                1920,
+                1080,
+                frame_number2,
+            )
 
         # if DEBUG:
         #     im1 = cv2.imread(

@@ -1,6 +1,6 @@
 # save_name: myname # The name of the file used to save tracks and video
 save_path: /home/fatemeh # Path to save the result
-dets_path: /home/fatemeh/Downloads/fish/in_sample_vids/240hz/yolo # Path where the detections are
+dets_path: /home/fatemeh/Downloads/fish/in_sample_vids/240hz/ms_8_dets.zip # /home/fatemeh/Downloads/fish/in_sample_vids/240hz/yolo # Path or file where the detections are
 det_checkpoint: /home/fatemeh/Downloads/fish/best_model/det_best_bgr29.pt
 main_path: /home/fatemeh/Downloads/fish/in_sample_vids/240hz
 video_file: /home/fatemeh/Downloads/fish/in_sample_vids/240hz/vids/2.mp4 #
@@ -13,4 +13,4 @@ video_bbox: # Crop and save the videos. Values are given by comma separated, top
 image_folder: images_test # images_e1
 track_method: ms # botsort, bytetrack, ms, hung
 track_config_file: # /home/fatemeh/Downloads/fish/configs/botsort.yaml
-save_images: no # save either images or images with tracks. Options: yes|no
+save_images: yes # save either images or images with tracks. Options: yes|no or true|false

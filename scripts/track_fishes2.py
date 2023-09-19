@@ -11,7 +11,11 @@ import numpy as np
 import yaml
 
 from tracking.data_association import save_tracks_to_mot_format
-from tracking.multi_stage_tracking import multistage_track, ultralytics_track
+from tracking.multi_stage_tracking import (
+    multistage_track,
+    ultralytics_detect,
+    ultralytics_track,
+)
 from tracking.visualize import save_images_of_video, save_images_with_tracks
 
 
@@ -44,9 +48,13 @@ if __name__ == "__main__":
     main_path = Path(inputs.main_path)
     track_config_file = inputs.track_config_file
     video_file = Path(inputs.video_file)
-    dets_path = Path(inputs.dets_path)
+    dets_path = inputs.dets_path
     save_images = inputs.save_images
 
+    is_valid = False
+    if dets_path:
+        dets_path = Path(dets_path)
+        is_valid = dets_path.exists()
     save_name = f"{track_method}_8"
     vid_name = video_file.stem
     track_config_file = (
@@ -58,7 +66,7 @@ if __name__ == "__main__":
     image_path = main_path / image_folder
     image_path.mkdir(parents=True, exist_ok=True)
     is_empty = not any(image_path.iterdir())
-    if is_empty and save_images == "yes":
+    if is_empty and save_images:
         save_images_of_video(
             main_path / f"{image_folder}",
             video_file,
@@ -69,6 +77,24 @@ if __name__ == "__main__":
         )
 
     if track_method == "ms":
+        # TODO is_valid for other path. Put them in the beginning
+        if isinstance(dets_path, Path) and dets_path.is_dir():
+            is_valid = not any(dets_path.iterdir())
+        if not dets_path or not is_valid:
+            dets_path = main_path / f"{save_name}_dets"
+            print("=====>", dets_path)
+            dets = ultralytics_detect(
+                main_path,
+                image_folder,
+                vid_name,
+                start_frame,
+                end_frame,
+                step,
+                det_checkpoint,
+            )
+            save_tracks_to_mot_format(dets_path, dets[:, :11])
+            # TODO solve it in save_tracks_to_mot_format to get .zip file
+            dets_path = main_path / f"{save_name}_dets.zip"
         trks = multistage_track(
             image_path,
             dets_path,
@@ -90,7 +116,7 @@ if __name__ == "__main__":
         )
 
     save_tracks_to_mot_format(main_path / save_name, trks[:, :11])
-    if save_images == "yes":
+    if save_images:
         np.savetxt(main_path / f"{save_name}.txt", trks, delimiter=",", fmt="%d")
         save_images_with_tracks(
             main_path / save_name,
