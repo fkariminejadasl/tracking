@@ -7,7 +7,6 @@ sys.path.insert(0, path)
 
 from types import SimpleNamespace
 
-import cv2
 import numpy as np
 import yaml
 
@@ -46,8 +45,8 @@ if __name__ == "__main__":
     track_config_file = inputs.track_config_file
     video_file = Path(inputs.video_file)
     dets_path = Path(inputs.dets_path)
+    save_images = inputs.save_images
 
-    image_path = main_path / image_folder
     save_name = f"{track_method}_8"
     vid_name = video_file.stem
     track_config_file = (
@@ -56,8 +55,10 @@ if __name__ == "__main__":
         else Path(f"{track_method}.yaml")
     )
 
+    image_path = main_path / image_folder
+    image_path.mkdir(parents=True, exist_ok=True)
     is_empty = not any(image_path.iterdir())
-    if is_empty:
+    if is_empty and save_images == "yes":
         save_images_of_video(
             main_path / f"{image_folder}",
             video_file,
@@ -87,14 +88,16 @@ if __name__ == "__main__":
             det_checkpoint,
             config_file=track_config_file,
         )
-    np.savetxt(main_path / f"{save_name}.txt", trks, delimiter=",", fmt="%d")
+
     save_tracks_to_mot_format(main_path / save_name, trks[:, :11])
-    save_images_with_tracks(
-        main_path / save_name,
-        video_file,
-        trks,
-        start_frame,
-        end_frame,
-        step,
-        format,
-    )
+    if save_images == "yes":
+        np.savetxt(main_path / f"{save_name}.txt", trks, delimiter=",", fmt="%d")
+        save_images_with_tracks(
+            main_path / save_name,
+            video_file,
+            trks,
+            start_frame,
+            end_frame,
+            step,
+            format,
+        )

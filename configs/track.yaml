@@ -13,3 +13,4 @@ video_bbox: # Crop and save the videos. Values are given by comma separated, top
 image_folder: images_test # images_e1
 track_method: ms # botsort, bytetrack, ms, hung
 track_config_file: # /home/fatemeh/Downloads/fish/configs/botsort.yaml
+save_images: no # save either images or images with tracks. Options: yes|no

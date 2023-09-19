@@ -1,5 +1,6 @@
 import enum
 import shutil
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Tuple, Union
@@ -755,7 +756,10 @@ def save_tracks_to_mot_format(
     """MOT format is 1-based, including bbox. https://arxiv.org/abs/2003.09003
     mot format: frame_id, track_id, xtl, ytl, w, h, score, class, visibility
     array format: track_id, frame_number, det_id, xtl, ytl, xbr, ybr, xc, yc, w, h
+    NB. detections can be saved here. The detection ids are used instead of track ids.
     """
+    tracks = deepcopy(tracks)
+
     track_folder = save_file.parent / "gt"
     track_folder.mkdir(parents=True, exist_ok=True)
     with open(track_folder / "labels.txt", "w") as wf:
@@ -774,6 +778,8 @@ def save_tracks_to_mot_format(
     if isinstance(tracks, np.ndarray):
         with open(track_file, "w") as file:
             for item in tracks:
+                if item[0] == -1:  # track_id=-1: detections. no track info.
+                    item[0] = item[2]  # deepcopy it not
                 file.write(
                     f"{int(item[1])+1},{int(item[0])+1},{item[3]+1},{item[4]+1},{int(item[9])},{int(item[10])},1,1,1.0\n"
                 )

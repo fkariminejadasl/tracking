@@ -820,7 +820,10 @@ def ultralytics_track(
 #     step,
 #     det_checkpoint,
 # )
-# print(trks)
+# da.save_tracks_to_mot_format(main_path / "test", trks[:, :11])
+# dets = da.load_tracks_from_mot_format(main_path / "test.zip")
+# dets[:, 2] = dets[:, 0]
+# dets[:, 0] = -1
 # trks = multistage_track(
 #     main_path,
 #     image_folder,
