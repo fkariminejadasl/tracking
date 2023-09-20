@@ -1,6 +1,6 @@
 # save_name: myname # The name of the file used to save tracks and video
 save_path: /home/fatemeh # Path to save the result
-dets_path: /home/fatemeh/Downloads/fish/in_sample_vids/240hz/ms_8_dets.zip # /home/fatemeh/Downloads/fish/in_sample_vids/240hz/yolo # Path or file where the detections are
+dets_path: # /home/fatemeh/Downloads/fish/in_sample_vids/240hz/ms_8_dets.zip # Path or file where the detections are
 det_checkpoint: /home/fatemeh/Downloads/fish/best_model/det_best_bgr29.pt
 main_path: /home/fatemeh/Downloads/fish/in_sample_vids/240hz
 video_file: /home/fatemeh/Downloads/fish/in_sample_vids/240hz/vids/2.mp4 #
