@@ -14,7 +14,9 @@ from tracking.data_association import save_tracks_to_mot_format
 from tracking.multi_stage_tracking import (
     multistage_track,
     ultralytics_detect,
+    ultralytics_detect_video,
     ultralytics_track,
+    ultralytics_track_video,
 )
 from tracking.visualize import save_images_of_video, save_images_with_tracks
 
@@ -84,15 +86,23 @@ if __name__ == "__main__":
         if not dets_path or not is_valid:
             dets_path = main_path / f"{save_name}_dets"
             print("=====> Detection")
-            dets = ultralytics_detect(
-                main_path,
-                image_folder,
-                vid_name,
-                start_frame,
-                end_frame,
-                step,
-                det_checkpoint,
-            )
+            if is_empty:
+                dets = ultralytics_detect_video(
+                    video_file,
+                    start_frame,
+                    end_frame,
+                    step,
+                    det_checkpoint,
+                )
+            else:
+                dets = ultralytics_detect(
+                    image_path,
+                    vid_name,
+                    start_frame,
+                    end_frame,
+                    step,
+                    det_checkpoint,
+                )
             save_tracks_to_mot_format(dets_path, dets[:, :11])
             # TODO solve it in save_tracks_to_mot_format to get .zip file
             dets_path = main_path / f"{save_name}_dets.zip"
@@ -106,18 +116,28 @@ if __name__ == "__main__":
             end_frame,
             step,
         )
+
     if track_method == "botsort" or track_method == "bytetrack":
         print("=====> Tracking")
-        trks = ultralytics_track(
-            main_path,
-            image_folder,
-            vid_name,
-            start_frame,
-            end_frame,
-            step,
-            det_checkpoint,
-            config_file=track_config_file,
-        )
+        if is_empty:
+            trks = ultralytics_track_video(
+                video_file,
+                start_frame,
+                end_frame,
+                step,
+                det_checkpoint,
+                config_file=track_config_file,
+            )
+        else:
+            trks = ultralytics_track(
+                image_path,
+                vid_name,
+                start_frame,
+                end_frame,
+                step,
+                det_checkpoint,
+                config_file=track_config_file,
+            )
 
     save_tracks_to_mot_format(main_path / save_name, trks[:, :11])
     if save_images:
@@ -132,3 +152,7 @@ if __name__ == "__main__":
             step,
             format,
         )
+
+    # cleanup
+    if is_empty and not save_images:
+        image_path.rmdir()

@@ -1,16 +1,16 @@
 # save_name: myname # The name of the file used to save tracks and video
 save_path: /home/fatemeh # Path to save the result
-dets_path: # /home/fatemeh/Downloads/fish/in_sample_vids/240hz/ms_8_dets.zip # Path or file where the detections are
+dets_path: # /home/fatemeh/Downloads/fish/in_sample_vids/240hz/ms_8_dets.zip # Path or zipfile where the detections are
 det_checkpoint: /home/fatemeh/Downloads/fish/best_model/det_best_bgr29.pt
 main_path: /home/fatemeh/Downloads/fish/in_sample_vids/240hz
 video_file: /home/fatemeh/Downloads/fish/in_sample_vids/240hz/vids/2.mp4 #
 start_frame: 8 # starting frame. Frames counts from zero.
-end_frame: 25 # The end frame. The counting of frames is zero-based.
+end_frame: 32 # The end frame. The counting of frames is zero-based.
 step: 8 # only track with this step size
 format: 06d # detection files are saved with this format. e.g. name_0000123.txt the format is '06d'. e.g. name_123.txt the format is ''
 fps: # frame per second
 video_bbox: # Crop and save the videos. Values are given by comma separated, top_left.x,top_left.y,bottom_right.x,bottom_right.y.
-image_folder: images_test # images_e1
-track_method: ms # botsort, bytetrack, ms, hung
+image_folder: images_test2 # images_e1
+track_method: botsort # botsort, bytetrack, ms, hung
 track_config_file: # /home/fatemeh/Downloads/fish/configs/botsort.yaml
-save_images: yes # save either images or images with tracks. Options: yes|no or true|false
+save_images: no # save either images or images with tracks. Options: yes|no or true|false

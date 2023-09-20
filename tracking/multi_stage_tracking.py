@@ -725,8 +725,7 @@ def multistage_track(
 
 
 def ultralytics_detect(
-    main_path,
-    image_folder,
+    image_path,
     vid_name,
     start_frame,
     end_frame,
@@ -738,15 +737,13 @@ def ultralytics_detect(
 
     output:
         track: np.ndarray
-            with tid, fn, did, x, y, x, y, cx, cy, w, h, dq, tq, st
+            with tid=-1, fn, did, x, y, x, y, cx, cy, w, h, dq, tq, st
     """
     model = YOLO(det_checkpoint)
 
     trks = np.empty((0, 7), dtype=np.int64)
     for frame_number in tqdm(range(start_frame, end_frame + 1, step)):
-        image = cv2.imread(
-            str(main_path / f"{image_folder}/{vid_name}_frame_{frame_number:06d}.jpg")
-        )
+        image = cv2.imread(str(image_path / f"{vid_name}_frame_{frame_number:06d}.jpg"))
         results = model(image, verbose=False)
 
         xyxy = results[0].boxes.xyxy.cpu()
@@ -766,8 +763,7 @@ def ultralytics_detect(
 
 
 def ultralytics_track(
-    main_path,
-    image_folder,
+    image_path,
     vid_name,
     start_frame,
     end_frame,
@@ -788,9 +784,7 @@ def ultralytics_track(
 
     trks = np.empty((0, 7), dtype=np.int64)
     for frame_number in tqdm(range(start_frame, end_frame + 1, step)):
-        image = cv2.imread(
-            str(main_path / f"{image_folder}/{vid_name}_frame_{frame_number:06d}.jpg")
-        )
+        image = cv2.imread(str(image_path / f"{vid_name}_frame_{frame_number:06d}.jpg"))
         results = model.track(image, persist=True, tracker=config_file, verbose=False)
 
         xyxy = results[0].boxes.xyxy
@@ -810,6 +804,94 @@ def ultralytics_track(
     return trks
 
 
+def ultralytics_detect_video(
+    video_file,
+    start_frame,
+    end_frame,
+    step,
+    det_checkpoint,
+):
+    """ "
+    input:
+
+    output:
+        track: np.ndarray
+            with tid=-1, fn, did, x, y, x, y, cx, cy, w, h, dq, tq, st
+    """
+    model = YOLO(det_checkpoint)
+
+    trks = np.empty((0, 7), dtype=np.int64)
+    vc = cv2.VideoCapture(video_file.as_posix())
+    vc.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    for frame_number in tqdm(range(start_frame, end_frame + 1)):
+        _, image = vc.read()
+        if frame_number % step == 0:
+            results = model(image, verbose=False)
+
+            xyxy = results[0].boxes.xyxy.cpu()
+            track_ids = -np.ones(len(xyxy))[:, None]
+            ones = frame_number * np.ones(len(xyxy))[:, None]
+            det_ids = np.arange(len(xyxy))[:, None]
+            dets = np.concatenate((track_ids, ones, det_ids, xyxy), axis=1).astype(
+                np.int64
+            )
+            trks = np.concatenate((trks, dets), axis=0)
+
+            # visualize.save_image_with_dets(
+            #     main_path / f"{track_method}_tracks_inter", vid_name, dets, image
+            # )
+            # visualize.plot_detections_in_image(dets[:, [0,3,4,5,6]], image)
+    cen_whs = np.array([list(da.cen_wh_from_tl_br(*item[3:])) for item in trks])
+    trks = np.concatenate((trks, cen_whs), axis=1).astype(np.int64)
+    return trks
+
+
+def ultralytics_track_video(
+    video_file,
+    start_frame,
+    end_frame,
+    step,
+    det_checkpoint,
+    config_file="botsort.yaml",
+):
+    """
+    input:
+        config_file: Path|None
+            if None, botsort.yaml file is used. The options are botsort and bytetrack.
+
+    output:
+        track: np.ndarray
+            with tid, fn, did, x, y, x, y, cx, cy, w, h, dq, tq, st
+    """
+    model = YOLO(det_checkpoint)
+
+    trks = np.empty((0, 7), dtype=np.int64)
+    vc = cv2.VideoCapture(video_file.as_posix())
+    vc.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    for frame_number in tqdm(range(start_frame, end_frame + 1)):
+        _, image = vc.read()
+        if frame_number % step == 0:
+            results = model.track(
+                image, persist=True, tracker=config_file, verbose=False
+            )
+
+            xyxy = results[0].boxes.xyxy
+            track_ids = results[0].boxes.id[:, None]
+            ones = frame_number * np.ones(len(xyxy))[:, None]
+            dets = np.concatenate((track_ids, ones, track_ids, xyxy), axis=1).astype(
+                np.int64
+            )
+            trks = np.concatenate((trks, dets), axis=0)
+
+            # visualize.save_image_with_dets(
+            #     main_path / f"{track_method}_tracks_inter", vid_name, dets, image
+            # )
+            # visualize.plot_detections_in_image(dets[:, [0,3,4,5,6]], image)
+    cen_whs = np.array([list(da.cen_wh_from_tl_br(*item[3:])) for item in trks])
+    trks = np.concatenate((trks, cen_whs), axis=1).astype(np.int64)
+    return trks
+
+
 # vid_name, frame_number1, step, folder = 2, 184, 8, "240hz"
 # main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
 # start_frame, end_frame, format = 0, 25, "06d"
@@ -818,10 +900,10 @@ def ultralytics_track(
 # save_name = f"{track_method}_8"
 # det_checkpoint = Path("/home/fatemeh/Downloads/fish/best_model/det_best_bgr29.pt")
 # config_file = Path(f"/home/fatemeh/Downloads/fish/configs/{track_method}.yaml")
+# image_path = main_path / image_folder
 
 # trks = ultralytics_detect(
-#     main_path,
-#     image_folder,
+#     image_path,
 #     vid_name,
 #     start_frame,
 #     end_frame,
@@ -841,8 +923,7 @@ def ultralytics_track(
 #     step,
 # )
 # # trks = ultralytics_track(
-# #     main_path,
-# #     image_folder,
+# #     image_path,
 # #     vid_name,
 # #     start_frame,
 # #     end_frame,
