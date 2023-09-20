@@ -52,12 +52,13 @@ if __name__ == "__main__":
     video_file = Path(inputs.video_file)
     dets_path = inputs.dets_path
     save_images = inputs.save_images
+    save_name = inputs.save_name
 
     is_valid = False
     if dets_path:
         dets_path = Path(dets_path)
         is_valid = dets_path.exists()
-    save_name = f"{track_method}_8"
+    save_name = f"{track_method}_{save_name}"
     vid_name = video_file.stem
     track_config_file = (
         Path(inputs.track_config_file)
@@ -65,6 +66,8 @@ if __name__ == "__main__":
         else Path(f"{track_method}.yaml")
     )
 
+    # TODO this is super ugly. If image_folder is not empty and contain no image,
+    # it will donwload own bus.jpg.
     image_path = main_path / image_folder
     image_path.mkdir(parents=True, exist_ok=True)
     is_empty = not any(image_path.iterdir())
@@ -120,6 +123,7 @@ if __name__ == "__main__":
     if track_method == "botsort" or track_method == "bytetrack":
         print("=====> Tracking")
         if is_empty:
+            print("====> read from video")
             trks = ultralytics_track_video(
                 video_file,
                 start_frame,
