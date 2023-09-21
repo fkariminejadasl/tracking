@@ -762,20 +762,38 @@ def hungarian_track(
     """
     Track objects in a video using the Hungarian algorithm.
 
-    Parameters:
-        dets_path (Path): Path to the directory containing detection files.
-        filename_fixpart (str): Fixed part of the filenames for detections.
-        width (int): Width of the video frames.
-        height (int): Height of the video frames.
-        start_frame (int): Starting frame number for tracking.
-        end_frame (int): Ending frame number for tracking.
-        step (int): Frame step size for processing.
-        format (str): Format of the detection files.
+    Parameters
+    ----------
+    dets_path : str
+        Path to the directory containing detection files.
+    filename_fixpart : str
+        Fixed part of the filenames for detections.
+    width : int
+        Width of the video frames.
+    height : int
+        Height of the video frames.
+    start_frame : int
+        Starting frame number for tracking.
+    end_frame : int
+        Ending frame number for tracking.
+    step : int
+        Frame step size for processing.
+    format : str, optional
+        Format of the detection files. Default is "".
 
-    Returns:
-        Tracks : np.ndarray
-            with tid, fn, did, x, y, x, y, cx, cy, w, h, dq, tq, st
+    Returns
+    -------
+    np.ndarray
+        Array representing the tracks where each row corresponds to a detected object
+        in a frame, and columns contain information about the object properties:
+        tid, fn, did, x, y, x, y, cx, cy, w, h, dq, tq, st
+
+    Notes
+    -----
+    This function uses the Hungarian algorithm to associate detections across frames
+    and generate tracks.
     """
+
     tracks = compute_tracks(
         dets_path,
         filename_fixpart,

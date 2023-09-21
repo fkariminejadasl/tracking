@@ -85,15 +85,9 @@ visualize.save_images_with_tracks(
 
 ### tracking script
 
-`-r` result folder, `-d` for your detection folder, where detections are saved, `-v` is the full path to the video file. The other options can be skipped. For more information, use `--help`.
+The parameters are set in `track.yaml`. The help is given in this file.
 ```bash
-python ~/dev/tracking/scripts/track_fishes.py -r ~/Downloads/fish/in_sample_vids/240hz/tmp -d ~/Downloads/fish/in_sample_vids/240hz/yolo -v ~/Downloads/fish/in_sample_vids/240hz/vids/2.mp4 -sf 0 --format "" --step 1 --save_name mytest
-```
-
-The relative path for arguments is also accepted:
-```bash
-cd ~/Downloads/fish/in_sample_vids/240hz
-python ~/dev/tracking/scripts/track_fishes.py -r tmp -d yolo -v vids/2.mp4 -sf 0 --format "" --step 1 --save_name mytest
+python ~/dev/tracking/scripts/track_fishes.py ~/dev/tracking/configs/track.yaml
 ```
 
 ### match ground-truth stereo tracks
