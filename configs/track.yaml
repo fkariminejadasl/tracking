@@ -1,15 +1,14 @@
 det_checkpoint: /content/det_best_bgr29.pt
 main_path: /content
-video_file: /content/2.mp4 #
+video_file: /content/2.mp4
 save_name: exp1 # The name of the file used to save tracks and video
 dets_path: # /home/fatemeh/Downloads/fish/in_sample_vids/240hz/ms_8_dets.zip # Path or zipfile where the detections are
 start_frame: 8 # starting frame. Frames counts from zero.
-end_frame: 32 # The end frame. The counting of frames is zero-based.
+end_frame: 32 # The end frame. The counting of frames is zero-based. Value: int|None
 step: 8 # only track with this step size
 format: 06d # detection files are saved with this format. e.g. name_0000123.txt the format is '06d'. e.g. name_123.txt the format is ''
-fps: # frame per second
 video_bbox: # Crop and save the videos. Values are given by comma separated, top_left.x,top_left.y,bottom_right.x,bottom_right.y.
 image_folder: tmp10 # images_e1
 track_config_file: # /home/fatemeh/Downloads/fish/configs/botsort.yaml
-track_method: botsort # botsort, bytetrack, ms, hung
-save_images: no # save either images or images with tracks. Options: yes|no or true|false
+track_method: hungarian # values: botsort | bytetrack | ms | hungarian
+save_images: yes # save either images or images with tracks. Options: yes|no or true|false

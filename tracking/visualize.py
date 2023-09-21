@@ -54,15 +54,19 @@ def save_image_with_dets(save_path, video_name, dets, image, format="06d"):
     cv2.imwrite((save_path / f"{name}").as_posix(), image)
 
 
-def get_video_parameters(vc: cv2.VideoCapture):
-    if vc.isOpened():
-        height = int(vc.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        width = int(vc.get(cv2.CAP_PROP_FRAME_WIDTH))
-        total_no_frames = int(vc.get(cv2.CAP_PROP_FRAME_COUNT))
-        fps = vc.get(cv2.CAP_PROP_FPS)
-        return height, width, total_no_frames, fps
-    else:
-        return
+def get_video_parameters(vc):
+    clean = False
+    if isinstance(vc, (Path, str)):
+        clean = True
+        vc = cv2.VideoCapture(str(vc))
+    assert vc.isOpened()
+    height = int(vc.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    width = int(vc.get(cv2.CAP_PROP_FRAME_WIDTH))
+    total_no_frames = int(vc.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps = vc.get(cv2.CAP_PROP_FPS)
+    if clean:
+        vc.release()
+    return height, width, total_no_frames, fps
 
 
 def get_start_end_frames(start_frame, end_frame, total_no_frames):

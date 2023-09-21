@@ -746,7 +746,48 @@ def compute_tracks(
         tracks, new_track_id = _track_current_unmatched(
             dets, inds, frame_number, tracks, new_track_id
         )
+    return tracks
+
+
+def hungarian_track(
+    dets_path,
+    filename_fixpart,
+    width,
+    height,
+    start_frame,
+    end_frame,
+    step,
+    format: str = "",
+) -> np.ndarray:
+    """
+    Track objects in a video using the Hungarian algorithm.
+
+    Parameters:
+        dets_path (Path): Path to the directory containing detection files.
+        filename_fixpart (str): Fixed part of the filenames for detections.
+        width (int): Width of the video frames.
+        height (int): Height of the video frames.
+        start_frame (int): Starting frame number for tracking.
+        end_frame (int): Ending frame number for tracking.
+        step (int): Frame step size for processing.
+        format (str): Format of the detection files.
+
+    Returns:
+        Tracks : np.ndarray
+            with tid, fn, did, x, y, x, y, cx, cy, w, h, dq, tq, st
+    """
+    tracks = compute_tracks(
+        dets_path,
+        filename_fixpart,
+        width,
+        height,
+        start_frame,
+        end_frame,
+        step,
+        format,
+    )
     # tracks = _reindex_tracks(_remove_short_tracks(tracks))
+    tracks = make_array_from_tracks(tracks)
     return tracks
 
 

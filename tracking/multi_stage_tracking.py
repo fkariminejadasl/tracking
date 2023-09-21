@@ -163,8 +163,6 @@ def get_model_args():
     model.eval()
     model.requires_grad_(False)
 
-    activation = {}
-
     def get_activation(name):
         def hook(model, input, output):
             activation[name] = output.detach()
@@ -777,7 +775,7 @@ def ultralytics_track(
             if None, botsort.yaml file is used. The options are botsort and bytetrack.
 
     output:
-        track: np.ndarray
+        tracks: np.ndarray
             with tid, fn, did, x, y, x, y, cx, cy, w, h, dq, tq, st
     """
     model = YOLO(det_checkpoint)

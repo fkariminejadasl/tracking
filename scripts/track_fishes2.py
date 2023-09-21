@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import numpy as np
 import yaml
 
-from tracking.data_association import save_tracks_to_mot_format
+from tracking.data_association import hungarian_track, save_tracks_to_mot_format
 from tracking.multi_stage_tracking import (
     multistage_track,
     ultralytics_detect,
@@ -18,7 +18,11 @@ from tracking.multi_stage_tracking import (
     ultralytics_track,
     ultralytics_track_video,
 )
-from tracking.visualize import save_images_of_video, save_images_with_tracks
+from tracking.visualize import (
+    get_video_parameters,
+    save_images_of_video,
+    save_images_with_tracks,
+)
 
 
 def process_config(config_path):
@@ -54,6 +58,9 @@ if __name__ == "__main__":
     save_images = inputs.save_images
     save_name = inputs.save_name
 
+    height, width, total_no_frames, _ = get_video_parameters(video_file)
+    if end_frame is None:
+        end_frame = total_no_frames - 1
     is_valid = False
     if dets_path:
         dets_path = Path(dets_path)
@@ -110,7 +117,7 @@ if __name__ == "__main__":
             # TODO solve it in save_tracks_to_mot_format to get .zip file
             dets_path = main_path / f"{save_name}_dets.zip"
 
-        print("=====> Tracking")
+        print(f"=====> {track_method} tracking")
         trks = multistage_track(
             image_path,
             dets_path,
@@ -121,7 +128,7 @@ if __name__ == "__main__":
         )
 
     if track_method == "botsort" or track_method == "bytetrack":
-        print("=====> Tracking")
+        print(f"=====> {track_method} tracking")
         if is_empty:
             print("====> read from video")
             trks = ultralytics_track_video(
@@ -142,6 +149,19 @@ if __name__ == "__main__":
                 det_checkpoint,
                 config_file=track_config_file,
             )
+
+    if track_method == "hungarian":
+        print(f"=====> {track_method} tracking")
+        # TODO only works with detection files
+        trks = hungarian_track(
+            dets_path,
+            vid_name,
+            width,
+            height,
+            start_frame,
+            end_frame,
+            step,
+        )
 
     save_tracks_to_mot_format(main_path / save_name, trks[:, :11])
     if save_images:
