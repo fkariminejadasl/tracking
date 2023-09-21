@@ -812,10 +812,26 @@ def hungarian_track(
 def save_tracks_to_mot_format(
     save_file: Path, tracks: Union[np.ndarray, Dict[str, Track]], make_zip: bool = True
 ):
-    """MOT format is 1-based, including bbox. https://arxiv.org/abs/2003.09003
-    mot format: frame_id, track_id, xtl, ytl, w, h, score, class, visibility
-    array format: track_id, frame_number, det_id, xtl, ytl, xbr, ybr, xc, yc, w, h
-    NB. detections can be saved here. The detection ids are used instead of track ids.
+    """
+    Save tracks in MOT format.
+
+    Parameters
+    ----------
+    save_file : Path
+        The zip file to save the MOT format files. e.g. /data/tmp.zip
+    tracks : Union[np.ndarray, Dict[str, Track]]
+        Either a NumPy array or a dictionary of tracks. If it's a NumPy array,
+        it should have the format: (track_id, frame_number, det_id, xtl, ytl, xbr, ybr, xc, yc, w, h).
+        If it's a dictionary, it should have track IDs as keys and Track objects as values.
+    make_zip : bool, optional
+        Whether to create a zip archive of the saved files. Default is True.
+
+    Notes
+    -----
+    MOT format is 1-based, including bbox. For more information, see: https://arxiv.org/abs/2003.09003
+    The MOT format is as follows: frame_id, track_id, xtl, ytl, w, h, score, class, visibility
+    The array format corresponds to: track_id, frame_number, det_id, xtl, ytl, xbr, ybr, xc, yc, w, h
+    NB. detections can be saved here. The detection IDs are used instead of track IDs.
     """
     tracks = deepcopy(tracks)
 
@@ -843,7 +859,7 @@ def save_tracks_to_mot_format(
                     f"{int(item[1])+1},{int(item[0])+1},{item[3]+1},{item[4]+1},{int(item[9])},{int(item[10])},1,1,1.0\n"
                 )
     if make_zip:
-        shutil.make_archive(save_file, "zip", save_file.parent, "gt")
+        shutil.make_archive(save_file.with_suffix(""), "zip", save_file.parent, "gt")
         shutil.rmtree(track_folder)
 
 

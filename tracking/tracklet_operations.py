@@ -1,3 +1,5 @@
+from typing import List
+
 import numpy as np
 
 from tracking.data_association import (
@@ -242,7 +244,7 @@ def get_matched_disparity_info(
 
 def get_matches_from_candidates_disparity_infos_(
     candidates_disparity_infos, min_match_length=50
-) -> list[int]:
+) -> List[int]:
     # candidates: track_id1, track_id2, frame_number, align_error, disparity, match_length, percentile_error
 
     # select only one track: multiple matches
@@ -351,7 +353,7 @@ def select_from_candidates(candidates, track_ids):
 
 def get_matches_from_candidates_disparity_infos(
     candidates,
-) -> list[int]:
+) -> List[int]:
     # identify overlaps
     overlapped_ids = identify_overlaps(candidates)
     # select the good track and remove the other overlapped tracks

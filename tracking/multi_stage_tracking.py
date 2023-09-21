@@ -593,7 +593,7 @@ for frame_number1 in tqdm(range(start_frame, end_frame - step + 1, step)):
 
 
 np.savetxt(main_path / "ms_tracks.txt", trks, delimiter=",", fmt="%d")
-da.save_tracks_to_mot_format(main_path / "ms_tracks", trks[:, :11])
+da.save_tracks_to_mot_format(main_path / "ms_tracks.zip", trks[:, :11])
 visualize.save_images_with_tracks(
     main_path / "ms_tracks",
     main_path / f"vids/{vid_name}.mp4",
@@ -908,7 +908,7 @@ def ultralytics_track_video(
 #     step,
 #     det_checkpoint,
 # )
-# da.save_tracks_to_mot_format(main_path / "test", trks[:, :11])
+# da.save_tracks_to_mot_format(main_path / "test.zip", trks[:, :11])
 # dets = da.load_tracks_from_mot_format(main_path / "test.zip")
 # dets[:, 2] = dets[:, 0]
 # dets[:, 0] = -1
@@ -930,7 +930,7 @@ def ultralytics_track_video(
 # #     config_file="botsort.yaml",
 # # )
 # np.savetxt(main_path / f"{save_name}.txt", trks, delimiter=",", fmt="%d")
-# da.save_tracks_to_mot_format(main_path / save_name, trks[:, :11])
+# da.save_tracks_to_mot_format(main_path / f"{save_name}.zip", trks[:, :11])
 # visualize.save_images_with_tracks(
 #     main_path / save_name,
 #     main_path / f"vids/{vid_name}.mp4",

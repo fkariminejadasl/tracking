@@ -89,7 +89,7 @@ if __name__ == "__main__":
         if isinstance(dets_path, Path) and dets_path.is_dir():
             is_valid = any(dets_path.iterdir())
         if not dets_path or not is_valid:
-            dets_path = main_path / f"{save_name}_dets"
+            dets_path = main_path / f"{save_name}_dets.zip"
             print("=====> Detection")
             if is_empty:
                 dets = ultralytics_detect_video(
@@ -109,8 +109,6 @@ if __name__ == "__main__":
                     det_checkpoint,
                 )
             save_tracks_to_mot_format(dets_path, dets[:, :11])
-            # TODO solve it in save_tracks_to_mot_format to get .zip file
-            dets_path = main_path / f"{save_name}_dets.zip"
 
         print(f"=====> {track_method} tracking")
         trks = multistage_track(

@@ -10,5 +10,5 @@ end_frame: 32 # The end frame. The counting of frames is zero-based. Value: int|
 step: 8 # only track with this step size
 format: 06d # detection files are saved with this format. e.g. name_0000123.txt the format is '06d'. e.g. name_123.txt the format is ''
 track_config_file: # /home/fatemeh/Downloads/fish/configs/botsort.yaml
-track_method: hungarian # values: botsort | bytetrack | ms | hungarian
+track_method: botsort # values: botsort | bytetrack | ms | hungarian
 save_images: yes # save either images or images with tracks. Options: yes|no or true|false
