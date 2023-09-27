@@ -414,6 +414,7 @@ def handle_tracklets(dets1, dets2, matches, trks=None):
             This is a list of matched det_id, where first is for dets1, and the second is for dets2
     output:
     """
+    # TODO This if can be gone
     if trks is None:
         trks = np.empty(shape=(0, 14), dtype=np.int64)
         tid = 0
@@ -440,6 +441,7 @@ def handle_tracklets(dets1, dets2, matches, trks=None):
     dids1 = dets1[:, 2]
     matched1 = [match[0] for match in matches]
     unmatched1 = set(dids1).difference(matched1)
+    # TODO This if can be gone
     if dets1[0, 0] == -1:  # det from image
         for did1 in unmatched1:
             det1 = dets1[dets1[:, 2] == did1][0]
@@ -550,33 +552,29 @@ def multistage_track(
     # tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
 
     stop_thr = step * 50
-    for frame_number1 in tqdm(range(start_frame, end_frame - step + 1, step)):
-        frame_number2 = frame_number1 + step
-
-        if trks is None:
-            if det_is_array:
-                dets1 = tracks[tracks[:, 1] == frame_number1]
-            else:
-                dets1 = da.get_detections_array(
-                    det_path / f"{vid_name}_{frame_number1 + 1}.txt",
-                    1920,
-                    1080,
-                    frame_number1,
-                )
-        else:
-            dets1 = get_last_dets_tracklets(trks)
-            kill_tracks(trks, dets1, frame_number2, stop_thr)
-            dets1 = get_last_dets_tracklets(trks)
-
+    for frame_number in tqdm(range(start_frame, end_frame - step + 1, step)):
         if det_is_array:
-            dets2 = tracks[tracks[:, 1] == frame_number2]
+            dets2 = tracks[tracks[:, 1] == frame_number]
         else:
             dets2 = da.get_detections_array(
-                det_path / f"{vid_name}_{frame_number2 + 1}.txt",
+                det_path / f"{vid_name}_{frame_number + 1}.txt",
                 1920,
                 1080,
-                frame_number2,
+                frame_number,
             )
+
+        if trks is None:
+            trks = dets2.copy().astype(np.int64)
+            trks[:, 0] = trks[:, 2]
+            extension = np.repeat(
+                np.array([[0, 0, 1]]), len(trks), axis=0
+            )  # ts, dq, tq
+            trks = np.concatenate((trks, extension), axis=1)
+            continue
+        else:
+            dets1 = get_last_dets_tracklets(trks)
+            kill_tracks(trks, dets2, frame_number, stop_thr)
+            dets1 = get_last_dets_tracklets(trks)
 
         # if DEBUG:
         #     im1 = cv2.imread(
@@ -590,7 +588,24 @@ def multistage_track(
         #     visualize.plot_detections_in_image(dets2[:, [2, 3, 4, 5, 6]], im2)
         #     plt.show(block=False)
 
-        matches = get_matches(dets1, dets2, image_path, vid_name, **kwargs)
+        # matches = get_matches(dets1, dets2, image_path, vid_name, **kwargs)
+        occluded1 = get_occluded_dets(dets1)
+        occluded2 = get_occluded_dets(dets2)
+        matching_groups = find_match_groups(dets1, dets2, occluded1, occluded2)
+        n_occluded1, n_occluded2 = get_not_occluded(dets1, dets2, matching_groups)
+
+        # Stage 1: Hungarian matching on non occluded detections
+        n_occluded_matches = get_n_occluded_matches(
+            dets1, dets2, n_occluded1, n_occluded2
+        )
+
+        # Stage 2: Cos similarity of concatenated embeddings
+        occluded_matches = get_occluded_matches(
+            dets1, dets2, matching_groups, image_path, vid_name, **kwargs
+        )
+
+        matches = n_occluded_matches + occluded_matches
+
         trks = handle_tracklets(dets1, dets2, matches, trks)
 
         # # save intermediate results
