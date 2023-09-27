@@ -3,10 +3,10 @@ Fish tracking
 
 Installation
 ------------
-The minimum pyton version is 3.10. If there is not a new version of python, conda is the cleanest way.
+The minimum pyton version is 3.8. If there is not a new version of python, conda is the cleanest way.
 These are only command requires in conda, which are different than python venv.
 ```bash
-conda create -n ftrack python=3.10 # create virtualenv
+conda create -n ftrack python=3.8 -y # create virtualenv
 conda activate ftrack # activate
 conda deactivate # deactivate
 conda remove --name ftrack --all # remove the virtualenv
@@ -53,14 +53,14 @@ print(da.get_iou((0, 0, 4, 2), (2, 1, 3, 2)))
 
 # save video as images
 vid_name = "16_cam12"
-main_path = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids")
+main_path = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids")
 vid_file = main_path/f"vids/{vid_name}.mp4"
-visualize.save_video_as_images(main_path/"images",  vid_file, step=8)
+visualize.save_images_of_video(main_path/"images",  vid_file, step=8)
 
 # save tracks as images
 tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
 save_path = main_path/"images_tracks"
-visualize.save_video_with_tracks_as_images(
+visualize.save_images_with_tracks(
     save_path, vid_file, tracks, start_frame=0, end_frame=256, step=8, format="06d"
 )
 
@@ -68,7 +68,7 @@ visualize.save_video_with_tracks_as_images(
 det_path = main_path / f"yolo/{vid_name}/obj_train_data"
 filename_fixpart = "frame"
 start_frame, end_frame, step, format = 0, 256, 8, "06d"
-image = cv2.imread(str(main_path/f"images/{vid_name}_frame_{start_frame:06d}.jpg"))
+image = cv2.imread(str(main_path/f"images/{vid_name}_frame_{start_frame:{format}}.jpg"))
 width, height = image.shape[1], image.shape[0]
 
 tracks = da.compute_tracks(
@@ -76,24 +76,18 @@ tracks = da.compute_tracks(
 )
 tracks = da._reindex_tracks(da._remove_short_tracks(tracks))
 tracks = da.make_array_from_tracks(tracks)
-    visualize.save_video_with_tracks_as_images(
-        main_path/"tracks_hung", vid_file, tracks, start_frame=0, end_frame=256, step=8, format="06d"
-    )
+visualize.save_images_with_tracks(
+    main_path/"tracks_hung", vid_file, tracks, start_frame=0, end_frame=256, step=8, format="06d"
+)
 ```
 
 ## Run a script
 
 ### tracking script
 
-`-r` result folder, `-d` for your detection folder, where detections are saved, `-v` is the full path to the video file. The other options can be skipped. For more information, use `--help`.
+The parameters are set in `track.yaml`. The help is given in this file.
 ```bash
-python ~/dev/tracking/scripts/track_fishes.py -r /home/fatemeh/results/dataset5 -d /home/fatemeh/data/dataset5/cam1_labels -v /home/fatemeh/data/dataset5/04_07_22_F_2_rect_valid.mp4 --video_bbox 270,100,1800,1200 --fps 1 --total_no_frames 10
-```
-
-NB. '-r', '-d' or '-v' could be relative path, if you are current location is. For example, both video file and detections are in the same folder of `cd /home/fatemeh/data/dataset5`. Only need to give the relative path.
-```bash
-cd /home/fatemeh/data/dataset5
-python ~/dev/tracking/scripts/track_fishes.py -r /home/fatemeh/results/dataset5 -d cam1_labels -v 04_07_22_F_2_rect_valid.mp4 --video_bbox 270,100,1800,1200 --fps 1 --total_no_frames 10 --save_name test2
+python ~/dev/tracking/scripts/track_fishes.py ~/dev/tracking/configs/track.yaml
 ```
 
 ### match ground-truth stereo tracks

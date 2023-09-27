@@ -278,15 +278,14 @@ transform = torchvision.transforms.Compose(
 )
 crop_w, crop_h = 512, 256
 
-video_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/vids")
-track_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/mots")
-image_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/images")
-overview_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/overview")
+main_path = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids")
+video_dir = main_path / "vids"
+track_dir = main_path / "mots"
+image_dir = main_path / "images"
+overview_dir = main_path / "overview"
 
 vid_name = "437_cam12"
-det_dir = Path(
-    f"/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/yolo/{vid_name}/obj_train_data"
-)
+det_dir = main_path / f"yolo/{vid_name}/obj_train_data"
 filename_fixpart = "frame"
 total_no_frames, step, format = 257, 8, "06d"
 start_frame, end_frame = 0, total_no_frames - 1
@@ -302,10 +301,8 @@ tracks = da.make_array_from_tracks(tracks)
 # tracks = da.load_tracks_from_mot_format(track_dir / f"{vid_name}.zip")
 
 video_file = video_dir / f"{vid_name}.mp4"
-save_dir = Path(
-    "/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/tracks_hungerian"
-)  # tracks_hungerian #tracks_al
-visualize.save_video_with_tracks_as_images(
+save_dir = main_path / "tracks_hungerian"  # tracks_hungerian #tracks_al
+visualize.save_images_with_tracks(
     save_dir, video_file, tracks, start_frame, end_frame, step, format
 )
 

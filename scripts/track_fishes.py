@@ -1,122 +1,175 @@
 import argparse
-import sys
 from pathlib import Path
+from types import SimpleNamespace
 
-path = (Path(__file__).parents[1]).as_posix()
-sys.path.insert(0, path)
+import numpy as np
+import yaml
 
-import cv2
-
-from tracking.data_association import (
-    Point,
-    _reindex_tracks,
-    _remove_short_tracks,
-    compute_tracks,
-    save_tracks_to_mot_format,
+from tracking.data_association import hungarian_track, save_tracks_to_mot_format
+from tracking.multi_stage_tracking import (
+    multistage_track,
+    ultralytics_detect,
+    ultralytics_detect_video,
+    ultralytics_track,
+    ultralytics_track_video,
 )
-from tracking.visualize import get_video_parameters, plot_tracks_in_video
+from tracking.visualize import (
+    get_video_parameters,
+    save_images_of_video,
+    save_images_with_tracks,
+)
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="Track fishes")
-    parser.add_argument(
-        "-r",
-        "--result_folder",
-        help="Path to save the result",
-        required=True,
-        type=Path,
-    )
-    parser.add_argument(
-        "-d",
-        "--det_folder",
-        help="Path where the detections are",
-        required=True,
-        type=Path,
-    )
-    parser.add_argument(
-        "-v", "--video_file", help="Video file with full path", required=True, type=Path
-    )
-    parser.add_argument(
-        "--save_name",
-        help="The name of the file used to save tracks and video",
-        required=False,
-        type=str,
-        default="tracks_test",
-    )
-    parser.add_argument(
-        "--fps",
-        help="frame per second",
-        required=False,
-        type=int,
-    )
-    parser.add_argument(
-        "--total_no_frames",
-        help="total number of frames",
-        required=False,
-        type=int,
-    )
-    parser.add_argument(
-        "--video_bbox",
-        help="""
-        Crop and save the videos. Values are given by comma separated, 
-        top_left.x,top_left.y,bottom_right.x,bottom_right.y.
-        """,
-        required=False,
-        type=str,
-    )
-    args = parser.parse_args()
-    print(args)
-    return args
-
-
-def main():
-    args = parse_args()
-    result_folder = args.result_folder.expanduser()
-    det_folder = args.det_folder.expanduser()
-    video_file = args.video_file.expanduser()
-    filename_fixpart = video_file.stem
-
-    result_folder.mkdir(parents=True, exist_ok=True)
-    vc = cv2.VideoCapture(video_file.as_posix())
-
-    height, width, total_no_frames, fps = get_video_parameters(vc)
-    if args.fps is None:
-        args.fps = fps
-    if args.total_no_frames is None:
-        args.total_no_frames = total_no_frames
-
-    tracks = compute_tracks(
-        det_folder, filename_fixpart, width, height, end_frame=args.total_no_frames - 1
-    )
-    tracks = _reindex_tracks(_remove_short_tracks(tracks))
-
-    if args.video_bbox is None:
-        top_left = Point(x=0, y=0)
-        video_width = width
-        video_height = height
-    else:
-        top_left_x, top_left_y, bottom_right_x, bottom_right_y = map(
-            int, args.video_bbox.split(",")
-        )
-        top_left = Point(top_left_x, top_left_y)
-        video_width = bottom_right_x - top_left_x
-        video_height = bottom_right_y - top_left_y
-
-    plot_tracks_in_video(
-        result_folder / f"{args.save_name}.mp4",
-        tracks,
-        vc,
-        top_left,
-        video_width,
-        video_height,
-        start_frame=0,
-        end_frame=args.total_no_frames - 1,
-        fps=args.fps,
-        show_det_id=False,
-        black=True,
-    )
-    save_tracks_to_mot_format(result_folder / f"{args.save_name}", tracks)
+def process_config(config_path):
+    with open(config_path, "r") as config_file:
+        try:
+            return yaml.safe_load(config_file)
+        except yaml.YAMLError as error:
+            print(error)
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Process a config file.")
+    parser.add_argument("config_file", type=Path, help="Path to the config file")
+
+    args = parser.parse_args()
+    config_path = args.config_file
+    inputs = process_config(config_path)
+    for key, value in inputs.items():
+        print(f"{key}: {value}")
+    inputs = SimpleNamespace(**inputs)
+
+    start_frame = inputs.start_frame
+    end_frame = inputs.end_frame
+    step = inputs.step
+    format = inputs.format
+    track_method = inputs.track_method
+    image_folder = inputs.image_folder
+    det_checkpoint = Path(inputs.det_checkpoint)
+    main_path = Path(inputs.main_path)
+    track_config_file = inputs.track_config_file
+    video_file = Path(inputs.video_file)
+    dets_path = inputs.dets_path
+    save_images = inputs.save_images
+    save_name = inputs.save_name
+
+    height, width, total_no_frames, _ = get_video_parameters(video_file)
+    if end_frame is None:
+        end_frame = total_no_frames - 1
+    is_valid = False
+    if dets_path:
+        dets_path = Path(dets_path)
+        is_valid = dets_path.exists()
+    save_name = f"{track_method}_{save_name}"
+    vid_name = video_file.stem
+    track_config_file = (
+        Path(inputs.track_config_file)
+        if inputs.track_config_file
+        else Path(f"{track_method}.yaml")
+    )
+
+    # TODO this is super ugly. If image_folder is not empty and contain no image,
+    # it will donwload own bus.jpg.
+    image_path = main_path / image_folder
+    image_path.mkdir(parents=True, exist_ok=True)
+    is_empty = not any(image_path.iterdir())
+    if is_empty and save_images:
+        print("=====> Save Images")
+        save_images_of_video(
+            main_path / f"{image_folder}",
+            video_file,
+            start_frame,
+            end_frame,
+            step,
+            format,
+        )
+
+    if track_method == "ms":
+        # TODO is_valid for other path. Put them in the beginning
+        if isinstance(dets_path, Path) and dets_path.is_dir():
+            is_valid = any(dets_path.iterdir())
+        if not dets_path or not is_valid:
+            dets_path = main_path / f"{save_name}_dets.zip"
+            print("=====> Detection")
+            if is_empty:
+                dets = ultralytics_detect_video(
+                    video_file,
+                    start_frame,
+                    end_frame,
+                    step,
+                    det_checkpoint,
+                )
+            else:
+                dets = ultralytics_detect(
+                    image_path,
+                    vid_name,
+                    start_frame,
+                    end_frame,
+                    step,
+                    det_checkpoint,
+                )
+            save_tracks_to_mot_format(dets_path, dets[:, :11])
+
+        print(f"=====> {track_method} tracking")
+        trks = multistage_track(
+            image_path,
+            dets_path,
+            vid_name,
+            start_frame,
+            end_frame,
+            step,
+        )
+
+    if track_method == "botsort" or track_method == "bytetrack":
+        print(f"=====> {track_method} tracking")
+        if is_empty:
+            print("====> read from video")
+            trks = ultralytics_track_video(
+                video_file,
+                start_frame,
+                end_frame,
+                step,
+                det_checkpoint,
+                config_file=track_config_file,
+            )
+        else:
+            trks = ultralytics_track(
+                image_path,
+                vid_name,
+                start_frame,
+                end_frame,
+                step,
+                det_checkpoint,
+                config_file=track_config_file,
+            )
+
+    if track_method == "hungarian":
+        print(f"=====> {track_method} tracking")
+        # TODO only works with detection files
+        trks = hungarian_track(
+            dets_path,
+            vid_name,
+            width,
+            height,
+            start_frame,
+            end_frame,
+            step,
+        )
+
+    save_tracks_to_mot_format(main_path / save_name, trks[:, :11])
+    if save_images:
+        print("=====> Save Tracks in Images")
+        np.savetxt(main_path / f"{save_name}.txt", trks, delimiter=",", fmt="%d")
+        save_images_with_tracks(
+            main_path / save_name,
+            video_file,
+            trks,
+            start_frame,
+            end_frame,
+            step,
+            format,
+        )
+
+    # cleanup
+    if is_empty and not save_images:
+        image_path.rmdir()

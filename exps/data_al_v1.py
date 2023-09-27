@@ -1,6 +1,7 @@
 import multiprocessing
 import sys
 from pathlib import Path
+from typing import List, Optional, Tuple
 
 import cv2
 import matplotlib.pylab as plt
@@ -17,7 +18,7 @@ import tracking.data_association as da
 import tracking.visualize as visualize
 
 
-def _get_video_name_and_frame_number(image_path: Path) -> tuple[str, int]:
+def _get_video_name_and_frame_number(image_path: Path) -> Tuple[str, int]:
     split_name = image_path.stem.split("_frame_")
     video_name = split_name[0]
     frame_number = int(split_name[1])
@@ -26,7 +27,7 @@ def _get_video_name_and_frame_number(image_path: Path) -> tuple[str, int]:
 
 def get_next_image_paths(
     image_path1: Path, tracks, dtime_limit: int = 4
-) -> None | list:
+) -> Optional[List]:
     vid_name_600 = [
         "04_07_22_F_2_rect_valid",
         "04_07_22_G_2_rect_valid",
@@ -306,7 +307,7 @@ def generate_data_per_video(video_path: Path):
     if video_path.stem in vid_name_600:
         step = 1
     print(f"Image:{image_dir},\nVideo: {video_path}")
-    visualize.save_video_as_images(image_dir, video_path, step=step)
+    visualize.save_images_of_video(image_dir, video_path, step=step)
 
     tracks = da.load_tracks_from_mot_format(track_paths / f"{video_name}.zip")
     for image_path1 in tqdm(sorted(image_dir.glob(f"{video_name}*.jpg"))):

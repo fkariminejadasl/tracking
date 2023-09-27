@@ -48,8 +48,12 @@ def save_meta_file(dst_path: Path):
 
 
 if __name__ == "__main__":
-    src_path = Path("~/Downloads/combChromis_norm.v5i.yolov5pytorch/train").expanduser()
-    dst_path = Path("~/Downloads/data8_v2").expanduser()
+    src_path = (
+        Path("~/Downloads/combChromis_norm.v5i.yolov5pytorch/train")
+        .expanduser()
+        .resolve()
+    )
+    dst_path = Path("~/Downloads/data8_v2").expanduser().resolve()
 
     create_folders(dst_path)
     separate_train_valid(src_path, dst_path)

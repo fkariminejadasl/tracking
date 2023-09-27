@@ -91,7 +91,7 @@ def test_load_tracks_from_cvat_txt_format():
 
 def test_load_tracks_from_mot_format():
     with tempfile.TemporaryDirectory() as tmp_dir:
-        save_tracks_to_mot_format(Path(tmp_dir) / "tmp.txt", atracks, make_zip=False)
+        save_tracks_to_mot_format(Path(tmp_dir) / "tmp.zip", atracks, make_zip=False)
         atracks_new = load_tracks_from_mot_format(Path(tmp_dir) / "gt/gt.txt")
         np.testing.assert_equal(atracks_new[:, :2], atracks[:, :2])
         np.testing.assert_almost_equal(atracks_new[:, 3:], atracks[:, 3:], decimal=0)

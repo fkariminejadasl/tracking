@@ -1,7 +1,9 @@
 import enum
 import shutil
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Dict, List, Tuple, Union
 
 import numpy as np
 from scipy.optimize import linear_sum_assignment
@@ -69,7 +71,7 @@ def _copy_detection(det: Detection):
     )
 
 
-def _copy_detections(dets: list[Detection]):
+def _copy_detections(dets: List[Detection]):
     new_dets = []
     for det in dets:
         new_det = _copy_detection(det)
@@ -92,7 +94,7 @@ def _update_det_loc_by_flow(det: Detection, flow: Point):
 
 @dataclass
 class Track:
-    dets: list[Detection]
+    dets: List[Detection]
     color: tuple
     status: Status
 
@@ -107,7 +109,7 @@ def get_detections(
     width: int,
     height: int,
     frame_number: int,
-) -> list[Detection]:
+) -> List[Detection]:
     score = -1
 
     detections = np.loadtxt(det_file)
@@ -129,29 +131,12 @@ def get_detections(
     return dets
 
 
-def tl_br_from_cen_wh(center_x, center_y, bbox_w, bbox_h) -> tuple:
-    return (
-        int(round(center_x - bbox_w / 2)),
-        int(round(center_y - bbox_h / 2)),
-        int(round(center_x + bbox_w / 2)),
-        int(round(center_y + bbox_h / 2)),
-    )
-
-
-def cen_wh_from_tl_br(tl_x, tl_y, br_x, br_y) -> tuple:
-    width = int(round(br_x - tl_x))
-    height = int(round(br_y - tl_y))
-    center_x = int(round(width / 2 + tl_x))
-    center_y = int(round(height / 2 + tl_y))
-    return center_x, center_y, width, height
-
-
 def get_detections_array(
     det_file: Path,
     width: int,
     height: int,
     frame_number: int,
-) -> list[np.ndarray]:
+) -> List[np.ndarray]:
     detections = np.loadtxt(det_file)
     dets_array = []
     for det_id, det in enumerate(detections):
@@ -180,7 +165,7 @@ def get_detections_array(
     return np.array(dets_array).astype(np.int64)
 
 
-def make_array_from_dets(dets: list[Detection]):
+def make_array_from_dets(dets: List[Detection]):
     # array format: track_id, frame_id, det_id, xtl, ytl, xbr, ybr, xc, yc, w, h
     dets_array = []
     for det in dets:
@@ -225,7 +210,7 @@ def make_array_from_tracks(tracks) -> np.ndarray:
     return np.array(tracks_array).astype(np.int64)
 
 
-def make_dets_from_array(dets_array: np.ndarray) -> list[Detection]:
+def make_dets_from_array(dets_array: np.ndarray) -> List[Detection]:
     # array format: track_id, frame_id, det_id, xtl, ytl, xbr, ybr, xc, yc, w, h
     dets = []
     for det in dets_array:
@@ -240,6 +225,23 @@ def make_dets_from_array(dets_array: np.ndarray) -> list[Detection]:
         )
         dets.append(item)
     return dets
+
+
+def tl_br_from_cen_wh(center_x, center_y, bbox_w, bbox_h) -> Tuple:
+    return (
+        int(round(center_x - bbox_w / 2)),
+        int(round(center_y - bbox_h / 2)),
+        int(round(center_x + bbox_w / 2)),
+        int(round(center_y + bbox_h / 2)),
+    )
+
+
+def cen_wh_from_tl_br(tl_x, tl_y, br_x, br_y) -> Tuple:
+    width = int(round(br_x - tl_x))
+    height = int(round(br_y - tl_y))
+    center_x = int(round(width / 2 + tl_x))
+    center_y = int(round(height / 2 + tl_y))
+    return center_x, center_y, width, height
 
 
 def _get_dets_from_indices_of_array(inds, annos: np.ndarray):
@@ -275,20 +277,18 @@ def make_tracks_from_array(annos: np.ndarray):
     return tracks_anno
 
 
-def clean_detections_by_score(dets: list[Detection], score_thres=0.5):
+def clean_detections_by_score(dets: List[Detection], score_thres=0.5):
     cleaned_dets = [det for det in dets if det.score > score_thres]
     return cleaned_dets
 
 
-def _find_dets_around_det(det: np.ndarray, dets: np.ndarray, sp_thres=20):
-    candidates = dets[
-        ((abs(dets[:, 3] - det[3]) < sp_thres) & (abs(dets[:, 4] - det[4]) < sp_thres))
-        | (
-            (abs(dets[:, 5] - det[5]) < sp_thres)
-            & (abs(dets[:, 6] - det[6]) < sp_thres)
-        )
-    ].copy()
-    return candidates
+def get_cleaned_detections(
+    det_path: Path, width, height, frame_number
+) -> List[Detection]:
+    dets = get_detections(det_path, width, height, frame_number)
+    dets = clean_detections_by_score(dets)
+    dets = make_dets_from_array(clean_detections(make_array_from_dets(dets)))
+    return dets
 
 
 def clean_detections(dets: np.ndarray, ratio_thres=2.5, sp_thres=20, inters_thres=0.85):
@@ -317,15 +317,6 @@ def clean_detections(dets: np.ndarray, ratio_thres=2.5, sp_thres=20, inters_thre
                 remove_inds.append(rem_ind)
     cleaned_dets = np.delete(dets, remove_inds, axis=0)
     return cleaned_dets
-
-
-def get_cleaned_detections(
-    det_path: Path, width, height, frame_number
-) -> list[Detection]:
-    dets = get_detections(det_path, width, height, frame_number)
-    dets = clean_detections_by_score(dets)
-    dets = make_dets_from_array(clean_detections(make_array_from_dets(dets)))
-    return dets
 
 
 def match_detection(det1, dets2, sp_thres=100, min_iou=0):
@@ -358,6 +349,17 @@ def match_detection(det1, dets2, sp_thres=100, min_iou=0):
         dists = np.array(dists)
         ind = np.where(dists == min(dists))[0][0]
     return candidates[ind]
+
+
+def _find_dets_around_det(det: np.ndarray, dets: np.ndarray, sp_thres=20):
+    candidates = dets[
+        ((abs(dets[:, 3] - det[3]) < sp_thres) & (abs(dets[:, 4] - det[4]) < sp_thres))
+        | (
+            (abs(dets[:, 5] - det[5]) < sp_thres)
+            & (abs(dets[:, 6] - det[6]) < sp_thres)
+        )
+    ].copy()
+    return candidates
 
 
 def _get_indices(dets: np.ndarray, ids: np.ndarray):
@@ -412,7 +414,7 @@ def bipartite_local_matching(pred_dets, dets):
     return pred_inds, inds
 
 
-def _get_tl_and_br(det: Detection) -> tuple:
+def _get_tl_and_br(det: Detection) -> Tuple:
     return tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
 
 
@@ -462,7 +464,7 @@ def association_learning_matching(dets, dets2):
     # TODO parameter
     step = 8
     vid_name = "437_cam12"
-    image_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids/images")
+    image_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids/images")
 
     dets = make_array_from_dets(dets)
     dets2 = make_array_from_dets(dets2)
@@ -557,7 +559,7 @@ def _make_new_track(det: Detection, new_track_id) -> Track:
     return track
 
 
-def _initialize_track_frame1(dets):
+def _initialize_track(dets):
     new_track_id = 0
     tracks = {}
     ids = range(len(dets))
@@ -572,18 +574,14 @@ def initialize_tracks(
     filename_fixpart: str,
     width: int,
     height: int,
-    first_frame: int = 1,
+    first_frame: int = 0,
     format: str = "",
 ):
-    det_path = det_folder / f"{filename_fixpart}_{first_frame:{format}}.txt"
-    if format == "":
-        frame_number = first_frame - 1
-    else:
-        frame_number = first_frame
-    dets = get_detections(det_path, width, height, frame_number)
-    # dets = get_cleaned_detections(det_path, width, height, frame_number)
+    det_path = det_folder / f"{filename_fixpart}_{first_frame + 1:{format}}.txt"
+    dets = get_detections(det_path, width, height, first_frame)
+    dets = get_cleaned_detections(det_path, width, height, first_frame)
 
-    tracks, new_track_id = _initialize_track_frame1(dets)
+    tracks, new_track_id = _initialize_track(dets)
     return tracks, new_track_id
 
 
@@ -707,7 +705,7 @@ def compute_tracks(
     filename_fixpart: str,
     width: int,
     height: int,
-    start_frame: int = 1,
+    start_frame: int = 0,
     end_frame=None,
     step: int = 1,
     format: str = "",
@@ -730,7 +728,7 @@ def compute_tracks(
             current_frame = frame_number
         det_path = det_folder / f"{filename_fixpart}_{current_frame:{format}}.txt"
         dets = get_detections(det_path, width, height, frame_number)
-        # dets = get_cleaned_detections(det_path, width, height, frame_number)
+        dets = get_cleaned_detections(det_path, width, height, frame_number)
         pred_dets = _get_predicted_locations(tracks, frame_number)
 
         # track maches
@@ -748,17 +746,95 @@ def compute_tracks(
         tracks, new_track_id = _track_current_unmatched(
             dets, inds, frame_number, tracks, new_track_id
         )
+    return tracks
+
+
+def hungarian_track(
+    dets_path,
+    filename_fixpart,
+    width,
+    height,
+    start_frame,
+    end_frame,
+    step,
+    format: str = "",
+) -> np.ndarray:
+    """
+    Track objects in a video using the Hungarian algorithm.
+
+    Parameters
+    ----------
+    dets_path : str
+        Path to the directory containing detection files.
+    filename_fixpart : str
+        Fixed part of the filenames for detections.
+    width : int
+        Width of the video frames.
+    height : int
+        Height of the video frames.
+    start_frame : int
+        Starting frame number for tracking.
+    end_frame : int
+        Ending frame number for tracking.
+    step : int
+        Frame step size for processing.
+    format : str, optional
+        Format of the detection files. Default is "".
+
+    Returns
+    -------
+    np.ndarray
+        Array representing the tracks where each row corresponds to a detected object
+        in a frame, and columns contain information about the object properties:
+        tid, fn, did, x, y, x, y, cx, cy, w, h, dq, tq, st
+
+    Notes
+    -----
+    This function uses the Hungarian algorithm to associate detections across frames
+    and generate tracks.
+    """
+
+    tracks = compute_tracks(
+        dets_path,
+        filename_fixpart,
+        width,
+        height,
+        start_frame,
+        end_frame,
+        step,
+        format,
+    )
     # tracks = _reindex_tracks(_remove_short_tracks(tracks))
+    tracks = make_array_from_tracks(tracks)
     return tracks
 
 
 def save_tracks_to_mot_format(
-    save_file: Path, tracks: np.ndarray | dict[Track], make_zip: bool = True
+    save_file: Path, tracks: Union[np.ndarray, Dict[str, Track]], make_zip: bool = True
 ):
-    """MOT format is 1-based, including bbox. https://arxiv.org/abs/2003.09003
-    mot format: frame_id, track_id, xtl, ytl, w, h, score, class, visibility
-    array format: track_id, frame_number, det_id, xtl, ytl, xbr, ybr, xc, yc, w, h
     """
+    Save tracks in MOT format.
+
+    Parameters
+    ----------
+    save_file : Path
+        The zip file to save the MOT format files. e.g. /data/tmp.zip
+    tracks : Union[np.ndarray, Dict[str, Track]]
+        Either a NumPy array or a dictionary of tracks. If it's a NumPy array,
+        it should have the format: (track_id, frame_number, det_id, xtl, ytl, xbr, ybr, xc, yc, w, h).
+        If it's a dictionary, it should have track IDs as keys and Track objects as values.
+    make_zip : bool, optional
+        Whether to create a zip archive of the saved files. Default is True.
+
+    Notes
+    -----
+    MOT format is 1-based, including bbox. For more information, see: https://arxiv.org/abs/2003.09003
+    The MOT format is as follows: frame_id, track_id, xtl, ytl, w, h, score, class, visibility
+    The array format corresponds to: track_id, frame_number, det_id, xtl, ytl, xbr, ybr, xc, yc, w, h
+    NB. detections can be saved here. The detection IDs are used instead of track IDs.
+    """
+    tracks = deepcopy(tracks)
+
     track_folder = save_file.parent / "gt"
     track_folder.mkdir(parents=True, exist_ok=True)
     with open(track_folder / "labels.txt", "w") as wf:
@@ -777,11 +853,13 @@ def save_tracks_to_mot_format(
     if isinstance(tracks, np.ndarray):
         with open(track_file, "w") as file:
             for item in tracks:
+                if item[0] == -1:  # track_id=-1: detections. no track info.
+                    item[0] = item[2]  # deepcopy it not
                 file.write(
                     f"{int(item[1])+1},{int(item[0])+1},{item[3]+1},{item[4]+1},{int(item[9])},{int(item[10])},1,1,1.0\n"
                 )
     if make_zip:
-        shutil.make_archive(save_file, "zip", save_file.parent, "gt")
+        shutil.make_archive(save_file.with_suffix(""), "zip", save_file.parent, "gt")
         shutil.rmtree(track_folder)
 
 
@@ -858,7 +936,7 @@ def save_tracks_to_cvat_txt_format(track_file: Path, tracks: np.ndarray):
     )
 
 
-def save_tracks(track_file: Path, tracks: np.ndarray | dict[Track]):
+def save_tracks(track_file: Path, tracks: Union[np.ndarray, Dict[str, Track]]):
     if isinstance(tracks, dict):
         with open(track_file, "w") as file:
             for track_id, track in tracks.items():
@@ -895,22 +973,55 @@ def load_tracks(track_file):
     return tracks
 
 
-def get_iou(bbox1, bbox2) -> float:
-    # bbox1,2: (x_topleft, y_topleft, x_bottomright, y_bottomright)
-    # copied and modified from
-    # https://stackoverflow.com/questions/25349178/calculating-percentage-of-bounding-box-overlap-for-image-detector-evaluation
+def giou(bbox1, bbox2) -> float:
+    # bbox1,2: (x_topleft, y_topleft, x_bottomright, y_bottomr1ight)
 
-    # determine the coordinates of the intersection rectangle
+    def correct_bbox(bbox):
+        if bbox[0] > bbox[2]:
+            tmp = bbox[2]
+            bbox[2] = bbox[0]
+            bbox[0] = tmp
+        if bbox[1] > bbox[3]:
+            tmp = bbox[3]
+            bbox[3] = bbox[1]
+            bbox[1] = tmp
+        return bbox
+
+    bbox1 = correct_bbox(bbox1)
+    bbox2 = correct_bbox(bbox2)
+
     x_left = max(bbox1[0], bbox2[0])
     y_top = max(bbox1[1], bbox2[1])
     x_right = min(bbox1[2], bbox2[2])
     y_bottom = min(bbox1[3], bbox2[3])
+    if x_right < x_left or y_bottom < y_top:
+        return -1.0
 
+    intersection_area = (x_right - x_left) * (y_bottom - y_top)
+    area1 = (bbox1[2] - bbox1[0]) * (bbox1[3] - bbox1[1])
+    area2 = (bbox2[2] - bbox2[0]) * (bbox2[3] - bbox2[1])
+    iou = intersection_area / float(area1 + area2 - intersection_area)
+
+    convex_hull = abs(max(bbox1[2], bbox2[2]) - min(bbox1[0], bbox2[0])) * abs(
+        max(bbox1[3], bbox2[3]) - min(bbox1[1], bbox2[1])
+    )
+    assert convex_hull != 0.0, f"{bbox1}, {bbox2}"
+    giou = iou - (1 - intersection_area / float(convex_hull))
+    assert giou >= -1.0, f"{bbox1}, {bbox2}"
+    assert giou <= 1.0, f"{bbox1}, {bbox2}"
+    return giou
+
+
+def get_iou(bbox1, bbox2) -> float:
+    # bbox1,2: (x_topleft, y_topleft, x_bottomright, y_bottomright)
+
+    x_left = max(bbox1[0], bbox2[0])
+    y_top = max(bbox1[1], bbox2[1])
+    x_right = min(bbox1[2], bbox2[2])
+    y_bottom = min(bbox1[3], bbox2[3])
     if x_right < x_left or y_bottom < y_top:
         return 0.0
 
-    # The intersection of two axis-aligned bounding boxes is always an
-    # axis-aligned bounding box
     intersection_area = (x_right - x_left) * (y_bottom - y_top)
 
     area1 = (bbox1[2] - bbox1[0]) * (bbox1[3] - bbox1[1])
@@ -925,7 +1036,6 @@ def get_iou(bbox1, bbox2) -> float:
 def is_bbox_in_bbox(bbox1, bbox2, inters_thres=0.85) -> float:
     # bbox1,2: (x_topleft, y_topleft, x_bottomright, y_bottomright)
 
-    # determine the coordinates of the intersection rectangle
     x_left = max(bbox1[0], bbox2[0])
     y_top = max(bbox1[1], bbox2[1])
     x_right = min(bbox1[2], bbox2[2])
@@ -934,8 +1044,6 @@ def is_bbox_in_bbox(bbox1, bbox2, inters_thres=0.85) -> float:
     if x_right < x_left or y_bottom < y_top:
         return False
 
-    # The intersection of two axis-aligned bounding boxes is always an
-    # axis-aligned bounding box
     intersection_area = (x_right - x_left) * (y_bottom - y_top)
 
     area1 = (bbox1[2] - bbox1[0]) * (bbox1[3] - bbox1[1])
@@ -1002,7 +1110,7 @@ def get_track_inds_from_track_id(tracks: np.ndarray, track_id: int) -> np.ndarra
     return np.where(tracks[:, 0] == track_id)[0]
 
 
-def _compute_disp_candidates(det1: Detection, dets2: Detection) -> list[int]:
+def _compute_disp_candidates(det1: Detection, dets2: Detection) -> List[int]:
     disp_candidates = []
     det_ids = []
     for det2 in dets2:
@@ -1024,8 +1132,8 @@ class Disparity:
     track_id: int
     frame_number: int
     det_id: int
-    candidates: list[int]
-    det_ids: list[int]
+    candidates: List[int]
+    det_ids: List[int]
 
 
 def get_detections_with_disparity(
@@ -1033,7 +1141,7 @@ def get_detections_with_disparity(
     det_path_cam2,
     width: int,
     height: int,
-) -> list[Disparity]:
+) -> List[Disparity]:
     frame_number = int(det_path_cam1.stem.split("_")[-1]) - 1
     assert (
         frame_number == int(det_path_cam2.stem.split("_")[-1]) - 1
@@ -1050,7 +1158,7 @@ def get_detections_with_disparity(
     return detections
 
 
-def save_disparities(save_file: Path, disps: list[Disparity]):
+def save_disparities(save_file: Path, disps: List[Disparity]):
     with open(save_file, "w") as wfile:
         wfile.write("track_id,frame_number,det_id,candidates,det_ids")
         for disp in disps:
@@ -1061,7 +1169,7 @@ def save_disparities(save_file: Path, disps: list[Disparity]):
                 )
 
 
-def load_disparities(save_file) -> list[Disparity]:
+def load_disparities(save_file) -> List[Disparity]:
     disparities = []
     with open(save_file, "r") as rfile:
         rfile.readline()
@@ -1097,142 +1205,4 @@ def _assign_unique_disp(tracks, frame_number):
         if frame_number != det.frame_number:
             track.disp.current_frame_number = frame_number
     return tracks
-"""
-
-""""
-# Tests for appearance cosine similarity
-
-def bbox_enlarge(bbox, w_enlarge, h_enlarge):
-    n_bbox = deepcopy(bbox)
-    n_bbox[3] -= w_enlarge
-    n_bbox[5] += w_enlarge
-    n_bbox[4] -= h_enlarge
-    n_bbox[6] += h_enlarge
-    n_bbox[9] = n_bbox[5] - n_bbox[3]
-    n_bbox[10] = n_bbox[6] - n_bbox[4]
-    return n_bbox
-
-
-from copy import deepcopy
-from importlib import reload
-from pathlib import Path
-
-import cv2
-import matplotlib.pylab as plt
-import torch
-import torchvision
-
-from tracking import data_association as da
-from tracking import visualize
-
-frame_number1 = 200#216  # 0
-frame_number2 = 240  # 8
-for frame_number2 in [208, 216, 224, 232, 240, 248, 256]:
-    print(frame_number2)
-    track_id1 = 4  # 9
-    track_id2 = 11  # 11
-    vid_name = "384_cam12"  # "217_cam12"
-    w_enlarge, h_enlarge = 0, 0
-    main_dir = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids_vids")
-    tracks = da.load_tracks_from_mot_format(main_dir / f"mots/{vid_name}.zip")
-    im1 = cv2.imread(str(main_dir / f"images/{vid_name}_frame_{frame_number1:06d}.jpg"))
-    dets1 = tracks[tracks[:, 1] == frame_number1]
-    im2 = cv2.imread(str(main_dir / f"images/{vid_name}_frame_{frame_number2:06d}.jpg"))
-    dets2 = tracks[tracks[:, 1] == frame_number2]
-
-    # visualize.plot_detections_in_image(dets1[:,[0,3,4,5,6]], im1);plt.show(block=False)
-    # visualize.plot_detections_in_image(dets2[:,[0,3,4,5,6]], im2);plt.show(block=False)
-
-    bb1 = deepcopy(dets1[(dets1[:, 0] == track_id1) | (dets1[:, 0] == track_id2)])
-    bb2 = deepcopy(dets2[(dets2[:, 0] == track_id1) | (dets2[:, 0] == track_id2)])
-    bb1 = np.array([bbox_enlarge(bb, w_enlarge, h_enlarge) for bb in bb1])
-    bb2 = np.array([bbox_enlarge(bb, w_enlarge, h_enlarge) for bb in bb2])
-    w, h = max(max(bb1[:, -2]), max(bb2[:, -2])), max(max(bb1[:, -1]), max(bb2[:, -1]))
-
-
-    print("color values")
-    for i in [0, 1]:
-        for j in [0, 1]:
-            imc1 = im1[bb1[i, 4] : bb1[i, 6], bb1[i, 3] : bb1[i, 5]]
-            imc2 = im2[bb2[j, 4] : bb2[j, 6], bb2[j, 3] : bb2[j, 5]]
-            imc1 = cv2.resize(imc1, (w, h), interpolation=cv2.INTER_AREA)
-            imc2 = cv2.resize(imc2, (w, h), interpolation=cv2.INTER_AREA)
-            imc1 = imc1.flatten().astype(np.float32)
-            imc2 = imc2.flatten().astype(np.float32)
-            csim = imc1.dot(imc2) / (np.linalg.norm(imc1) * np.linalg.norm(imc2))
-            print(i, j, csim)
-
-
-    activation = {}
-
-
-    def get_activation(name):
-        def hook(model, input, output):
-            activation[name] = output.detach()
-
-        return hook
-
-
-    device = "cuda"
-    model = torchvision.models.resnet50(
-        weights=torchvision.models.ResNet50_Weights.IMAGENET1K_V2
-    ).to(device)
-    transform = torchvision.transforms.Compose(
-        [
-            torchvision.transforms.ToTensor(),
-            torchvision.transforms.Normalize(
-                mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-            ),
-        ]
-    )
-
-    model.eval()
-    model.requires_grad_(False)
-    activation = {}
-    model.conv1.register_forward_hook(get_activation("conv1"))
-    model.layer1.register_forward_hook(get_activation("layer1"))
-    model.layer2.register_forward_hook(get_activation("layer2"))
-    model.layer3.register_forward_hook(get_activation("layer3"))
-    model.layer4.register_forward_hook(get_activation("layer4"))
-    _ = model(transform(im1).unsqueeze(0).to(device))
-
-
-    print("embeddings")
-    layer = "layer2"  # layer2, and layer3 are best
-    for layer in ["conv1", "layer1", "layer2", "layer3", "layer4"]:
-        print(layer)
-        for i in [0, 1]:
-            for j in [0, 1]:
-                imc1 = im1[bb1[i, 4] : bb1[i, 6], bb1[i, 3] : bb1[i, 5]]
-                imc2 = im2[bb2[j, 4] : bb2[j, 6], bb2[j, 3] : bb2[j, 5]]
-                imc1 = cv2.resize(imc1, (w, h), interpolation=cv2.INTER_AREA)
-                imc2 = cv2.resize(imc2, (w, h), interpolation=cv2.INTER_AREA)
-                _ = model(transform(imc1).unsqueeze(0).to(device))
-                f1 = activation[layer].flatten().cpu().numpy()
-                # f1 = activation[layer][0, :, 0, 0].cpu().numpy();print(activation[layer].shape)
-                _ = model(transform(imc2).unsqueeze(0).to(device))
-                f2 = activation[layer].flatten().cpu().numpy()
-                csim = f1.dot(f2) / (np.linalg.norm(f1) * np.linalg.norm(f2))
-                print(i, j, csim)
-
-    print("concate embeddings")
-    layers = ["conv1", "layer1", "layer2", "layer3"]
-    for i in [0, 1]:
-        for j in [0, 1]:
-            imc1 = im1[bb1[i, 4] : bb1[i, 6], bb1[i, 3] : bb1[i, 5]]
-            imc2 = im2[bb2[j, 4] : bb2[j, 6], bb2[j, 3] : bb2[j, 5]]
-            imc1 = cv2.resize(imc1, (w, h), interpolation=cv2.INTER_AREA)
-            imc2 = cv2.resize(imc2, (w, h), interpolation=cv2.INTER_AREA)
-            _ = model(transform(imc1).unsqueeze(0).to(device))
-            f1 = np.concatenate(
-                [activation[layer].flatten().cpu().numpy() for layer in layers]
-            )
-            _ = model(transform(imc2).unsqueeze(0).to(device))
-            f2 = np.concatenate(
-                [activation[layer].flatten().cpu().numpy() for layer in layers]
-            )
-            csim = f1.dot(f2) / (np.linalg.norm(f1) * np.linalg.norm(f2))
-            print(i, j, csim)
-    print(bb1)
-    print(bb2)
 """
