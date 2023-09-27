@@ -511,123 +511,6 @@ def kill_tracks(tracks, last_dets, c_frame_number, thr=50):
             tracks[ind, 13] = 3
 
 
-"""
-kwargs = get_model_args()  # TODO ugly
-
-# 2, 184, 8, "240hz", 6, 16, 8, "240hz"  # 0, 38, 1, "30hz"
-vid_name, frame_number1, step, folder = 2, 184, 8, "240hz"
-main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
-
-image_path = main_path / "images"
-
-DEBUG = False
-if DEBUG:
-    start_frame, end_frame, format = 2432, 3112, "06d"
-    # tracks = da.load_tracks_from_mot_format(main_path / "ms_tracks.zip")
-    tracks = np.loadtxt(main_path / "ms_tracks.txt", dtype=np.int64, delimiter=",")
-    trks = deepcopy(tracks[tracks[:, 1] <= start_frame])
-    # Hack to reproduce result. In this stage track is not killed but later on, the
-    # txt file save the final one.
-    # ind = np.where((trks[:,0]==13) & (trks[:,1]==start_frame))[0][0]
-    # trks[ind, 13] = 2
-    if trks.shape[1] == 11:
-        extension = np.zeros((len(trks), 3), dtype=np.int64)
-        extension[:, 2] = 1
-        trks = np.concatenate((trks, extension), axis=1)
-else:
-    start_frame, end_frame, format = 0, 3112, "06d"
-    trks = None
-
-# tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
-
-stop_thr = step * 50
-for frame_number1 in tqdm(range(start_frame, end_frame - step + 1, step)):
-    frame_number2 = frame_number1 + step
-
-    if trks is None:
-        # dets1 = tracks[tracks[:, 1] == frame_number1]
-        # dets1[:, 2] = dets1[:, 0]  # TODO hack to missuse tracks for detections
-        # dets1[:, 0] = -1
-        dets1 = da.get_detections_array(
-            main_path / f"yolo/{vid_name}_{frame_number1 + 1}.txt",
-            1920,
-            1080,
-            frame_number1,
-        )
-    else:
-        dets1 = get_last_dets_tracklets(trks)
-        kill_tracks(trks, dets1, frame_number2, stop_thr)
-        dets1 = get_last_dets_tracklets(trks)
-
-    # dets2 = tracks[tracks[:, 1] == frame_number2]
-    # dets2[:, 2] = dets2[:, 0]  # TODO hack to missuse tracks for detections
-    # dets2[:, 0] = -1
-    dets2 = da.get_detections_array(
-        image"yolo/{vid_name}_{frame_number2 + 1}.txt",
-        1920,
-        1080,
-        frame_number2,
-    )
-
-    if DEBUG:
-        im1 = cv2.imread(
-            str(image_path / f"{vid_name}_frame_{frame_number1:06d}.jpg")
-        )
-        im2 = cv2.imread(
-            str(image_path / f"{vid_name}_frame_{frame_number2:06d}.jpg")
-        )
-        visualize.plot_detections_in_image(dets1[:, [2, 3, 4, 5, 6]], im1)
-        plt.show(block=False)
-        visualize.plot_detections_in_image(dets2[:, [2, 3, 4, 5, 6]], im2)
-        plt.show(block=False)
-
-    matches = get_matches(dets1, dets2, image_path, vid_name, **kwargs)
-    trks = handle_tracklets(dets1, dets2, matches, trks)
-
-    # save intermediate results
-    dets = get_last_dets_tracklets(trks)
-    image = cv2.imread(
-        str(image_path / f"{vid_name}_frame_{frame_number2:06d}.jpg")
-    )
-    visualize.save_image_with_dets(main_path / "ms_tracks_inter", vid_name, dets, image)
-
-
-np.savetxt(main_path / "ms_tracks.txt", trks, delimiter=",", fmt="%d")
-da.save_tracks_to_mot_format(main_path / "ms_tracks.zip", trks[:, :11])
-visualize.save_images_with_tracks(
-    main_path / "ms_tracks",
-    main_path / f"vids/{vid_name}.mp4",
-    trks[:, :11],
-    start_frame,
-    end_frame,
-    step,
-    format,
-)
-"""
-
-"""
-visualize.save_images_with_detections(main_path/"images_dets", main_path/"vids/2.mp4", main_path/"yolo", start_frame=0, end_frame=3112, step=8)
-
-# yolo detect predict model=/home/fatemeh/Downloads/fish/best_model/det_best_bgr29.pt source=/home/fatemeh/test/2.mp4 save_txt=True save_conf=True save=True
-vc = cv2.VideoCapture("/home/fatemeh/Downloads/fish/in_sample_vids/240hz/vids/2.mp4")
-frame = visualize.get_frame(0, vc)
-dets = da.get_detections_array(Path("/home/fatemeh/Downloads/fish/in_sample_vids/240hz/yolo/2_1.txt"), frame.shape[1], frame.shape[0], 0)
-visualize.plot_detections_in_image(dets[:,2:7], frame);plt.show(block=False)
-
-from ultralytics import YOLO
-model = YOLO(Path("/home/fatemeh/Downloads/fish/best_model/det_best_bgr29.pt"))
-results = model(Path("/home/fatemeh/Downloads/fish/in_sample_vids/240hz/images/2_frame_000000.jpg"))
-for result in results:
-    boxes = result.boxes  # Boxes object for bbox outputs
-    masks = result.masks  # Masks object for segmentation masks outputs
-    keypoints = result.keypoints  # Keypoints object for pose outputs
-    probs = result.probs
-res = boxes.data.cpu().numpy().astype(np.int64)
-a = np.concatenate((np.arange(len(res))[:,None], res), axis=1)
-visualize.plot_detections_in_image(a[:,:5], frame);plt.show(block=False)
-"""
-
-
 def multistage_track(
     image_path,
     det_path,
@@ -949,20 +832,18 @@ def ultralytics_track_video(
 # good video for debugging
 #   vid_name, step, folder = 2, 8, "240hz"
 #   main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
+# other videos for debugging: 2, 184, "240hz", 6, 8, "240hz"  # 0, 1, "30hz"
 # N.B. I can't fairly debug. Because killed track is automatically removed, where in
 # real case it still has status of inactive.
 # tracks = da.compute_tracks(main_path/"yolo", "2", 1920, 1080, 0, 3112, 8)
 # tracks = da._reindex_tracks(da._remove_short_tracks(tracks))
 # trks = da.make_array_from_tracks(tracks)
 # visualize.save_images_with_tracks(main_path/"hung", main_path/"vids/2.mp4", trks, 0, 3112, 8, '06d')
-# TODO check ultralytics code why bytetrack bboxes are different
-# TODO compare ms_track, hungerian, bytetrack, botsort
-# TODO script for bytetrack/botsort
+# TODO memory unit for features to be able to read from videos
 # TODO gt for track as option
+# TODO predict location (constant speed): take care of visualization/saving
+# TODO compare ms_track, hungerian, bytetrack, botsort
 # TODO save as images or video should be combined
-# TODO bug predict location (constat speed): take care of visualization/saving
-# TODO bug stage 2: matching of inactive is in the previous image not their own: take care of visualization/saving
 # TODO low quality det
-# TODO debug the issue on dets
 # TODO very short tracks: caused by mismatch.
 # TODO (maybe) In DeepMOT, for track birth, track is born if detections appear in 3 consecutive frames and have at least .3 IOU overlap.
