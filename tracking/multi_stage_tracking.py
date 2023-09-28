@@ -2,7 +2,7 @@
 # - use Cosim for each occluded group
 
 from copy import deepcopy
-from itertools import combinations
+from itertools import chain, combinations
 from pathlib import Path
 
 import cv2
@@ -18,6 +18,9 @@ from tracking import data_association as da
 from tracking import visualize
 
 np.random.seed(1000)
+
+# TODO put it in get_model_args
+layers = ["conv1", "layer1", "layer2", "layer3"]
 
 
 def merge_intersecting_items(lst):
@@ -249,16 +252,11 @@ def cos_sim(image_path, vid_name, bbs1, bbs2, **kwargs):
 
     e.g. output [44, 44, 83, 44, 15, 81, 15, 44, 82, 15, 15, 85]
     """
-    model = kwargs.get("model")
-    transform = kwargs.get("transform")
-    device = kwargs.get("device")
-    activation = kwargs.get("activation")
-
     bbs1 = np.array([bbox_enlarge(bb) for bb in bbs1])
     bbs2 = np.array([bbox_enlarge(bb) for bb in bbs2])
-    w, h = max(max(bbs1[:, -2]), max(bbs2[:, -2])), max(
-        max(bbs1[:, -1]), max(bbs2[:, -1])
-    )
+    # w, h = max(max(bbs1[:, -2]), max(bbs2[:, -2])), max(
+    #     max(bbs1[:, -1]), max(bbs2[:, -1])
+    # )
 
     frame_number2 = bbs2[0, 1]
     im2 = cv2.imread(str(image_path / f"{vid_name}_frame_{frame_number2:06d}.jpg"))
@@ -267,7 +265,6 @@ def cos_sim(image_path, vid_name, bbs1, bbs2, **kwargs):
     clip_bboxs(bbs2, im_height, im_width)
 
     # print("concate embeddings")
-    layers = ["conv1", "layer1", "layer2", "layer3"]
     output = []
     for bb1 in bbs1:
         for bb2 in bbs2:
@@ -275,23 +272,40 @@ def cos_sim(image_path, vid_name, bbs1, bbs2, **kwargs):
             im1 = cv2.imread(
                 str(image_path / f"{vid_name}_frame_{frame_number1:06d}.jpg")
             )
-
             imc1 = im1[bb1[4] : bb1[6], bb1[3] : bb1[5]]
+            f1 = calculate_deep_feature(imc1, layers, w=32, h=32, **kwargs)
             imc2 = im2[bb2[4] : bb2[6], bb2[3] : bb2[5]]
-            imc1 = cv2.resize(imc1, (w, h), interpolation=cv2.INTER_AREA)
-            imc2 = cv2.resize(imc2, (w, h), interpolation=cv2.INTER_AREA)
-            _ = model(transform(imc1).unsqueeze(0).to(device))
-            f1 = np.concatenate(
-                [activation[layer].flatten().cpu().numpy() for layer in layers]
-            )
-            _ = model(transform(imc2).unsqueeze(0).to(device))
-            f2 = np.concatenate(
-                [activation[layer].flatten().cpu().numpy() for layer in layers]
-            )
+            f2 = calculate_deep_feature(imc2, layers, w=32, h=32, **kwargs)
             csim = f1.dot(f2) / (np.linalg.norm(f1) * np.linalg.norm(f2))
             csim = int(np.round(csim * 100))  # percent
             output.extend([bb1[2], bb2[2], csim])
     return output
+
+
+def calculate_deep_feature(image, layers, w=32, h=32, **kwargs):
+    model = kwargs.get("model")
+    transform = kwargs.get("transform")
+    device = kwargs.get("device")
+    activation = kwargs.get("activation")
+
+    image = cv2.resize(image, (w, h), interpolation=cv2.INTER_AREA)
+    _ = model(transform(image).unsqueeze(0).to(device))
+    feat = np.concatenate(
+        [activation[layer].flatten().cpu().numpy() for layer in layers]
+    )
+    return feat
+
+
+def calculate_deep_features(occluded1, dets1, im1, **kwargs):
+    occluded1 = list(chain.from_iterable(occluded1))
+    features = dict()
+    if occluded1:
+        bbs1 = get_bboxes(dets1, occluded1)
+        for bb1 in bbs1:
+            imc1 = im1[bb1[4] : bb1[6], bb1[3] : bb1[5]]
+            did = bb1[2]
+            features[did] = calculate_deep_feature(imc1, layers, w=32, h=32, **kwargs)
+    return features
 
 
 def get_cosim_matches_per_group(out):
@@ -328,7 +342,7 @@ def get_occluded_matches_per_group(image_path, vid_name, bbs1, bbs2, **kwargs):
         image_path: Path
         vid_name: str | int
         bbs1, bbs2: np.ndarray
-    output: list[tuple[int, int]]
+    output: list[list[int, int]]
         The values are the detection ids.
     """
     out = cos_sim(image_path, vid_name, bbs1, bbs2, **kwargs)
@@ -377,6 +391,7 @@ def get_occluded_matches(dets1, dets2, matching_groups, image_path, vid_name, **
     return occluded_matches
 
 
+# TODO might be deleted
 def get_matches(dets1, dets2, image_path, vid_name, **kwargs):
     """
     inputs:
@@ -563,7 +578,14 @@ def multistage_track(
                 frame_number,
             )
 
+        image2 = cv2.imread(
+            str(image_path / f"{vid_name}_frame_{frame_number:06d}.jpg")
+        )
+        occluded2 = get_occluded_dets(dets2)
+        features2 = calculate_deep_features(occluded2, dets2, image2, **kwargs)
+
         if trks is None:
+            image1, dets1, memory = handle_memory_admin(image2, dets2, features2)
             trks = dets2.copy().astype(np.int64)
             trks[:, 0] = trks[:, 2]
             extension = np.repeat(
@@ -590,7 +612,9 @@ def multistage_track(
 
         # matches = get_matches(dets1, dets2, image_path, vid_name, **kwargs)
         occluded1 = get_occluded_dets(dets1)
-        occluded2 = get_occluded_dets(dets2)
+        # occluded2 = get_occluded_dets(dets2)
+        # TODO not included in the memory (det id should be track id)
+        features1 = calculate_deep_features(occluded1, dets1, image1, **kwargs)
         matching_groups = find_match_groups(dets1, dets2, occluded1, occluded2)
         n_occluded1, n_occluded2 = get_not_occluded(dets1, dets2, matching_groups)
 
@@ -607,6 +631,7 @@ def multistage_track(
         matches = n_occluded_matches + occluded_matches
 
         trks = handle_tracklets(dets1, dets2, matches, trks)
+        image1, dets1, memory = handle_memory_admin(image2, dets2, features2)
 
         # # save intermediate results
         # dets = get_last_dets_tracklets(trks)
@@ -618,6 +643,13 @@ def multistage_track(
         # )
 
     return trks
+
+
+def handle_memory_admin(image2, dets2, features2):
+    image1 = image2.copy()
+    dets1 = dets2.copy()
+    memory = features2.copy()
+    return image1, dets1, memory
 
 
 def ultralytics_detect(
