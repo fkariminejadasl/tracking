@@ -417,7 +417,7 @@ def get_matches(dets1, dets2, image_path, vid_name, **kwargs):
     return n_occluded_matches + occluded_matches
 
 
-def handle_tracklets(dets1, dets2, matches, trks=None):
+def handle_tracklets(dets1, dets2, matches, trks):
     """
     matched and unmatched detection ids are handled here.
     unmached (tracklets: inactive track but keept, dets: new track)
@@ -429,46 +429,24 @@ def handle_tracklets(dets1, dets2, matches, trks=None):
             This is a list of matched det_id, where first is for dets1, and the second is for dets2
     output:
     """
-    # TODO This if can be gone
-    if trks is None:
-        trks = np.empty(shape=(0, 14), dtype=np.int64)
-        tid = 0
-    else:
-        tid = max(trks[:, 0]) + 1
+
+    tid = max(trks[:, 0]) + 1
 
     for match in matches:
         did1, did2 = match
         det1 = dets1[dets1[:, 2] == did1][0]
         det2 = dets2[dets2[:, 2] == did2][0]
-        if det1[0] == -1:  # det from image
-            det1[0] = tid
-            det2[0] = tid
-            det1 = np.concatenate((det1, [0, 0, 1]))  # ts, dq, tq
-            det2 = np.concatenate((det2, [0, 0, 1]))
-            det12 = np.stack((det1, det2), axis=0)
-            trks = np.concatenate((trks, det12), axis=0)
-            tid += 1
-        else:  # last det of tracklet
-            det2[0] = det1[0]
-            det2 = np.concatenate((det2, [0, 0, 1]))
-            trks = np.concatenate((trks, det2[None]), axis=0)
+        det2[0] = det1[0]
+        det2 = np.concatenate((det2, [0, 0, 1]))
+        trks = np.concatenate((trks, det2[None]), axis=0)
 
     dids1 = dets1[:, 2]
     matched1 = [match[0] for match in matches]
     unmatched1 = set(dids1).difference(matched1)
-    # TODO This if can be gone
-    if dets1[0, 0] == -1:  # det from image
-        for did1 in unmatched1:
-            det1 = dets1[dets1[:, 2] == did1][0]
-            det1[0] = tid
-            tid += 1
-            det1 = np.concatenate((det1, [0, 0, 2]))  # ts, dq, tq
-            trks = np.concatenate((trks, det1[None]), axis=0)
-    else:  # last det of tracklet
-        for did1 in unmatched1:
-            det1 = dets1[dets1[:, 2] == did1][0]
-            ind = np.where((trks[:, 0] == det1[0]) & (trks[:, 1] == det1[1]))[0]
-            trks[ind, 13] = 2  # ts, dq, tq
+    for did1 in unmatched1:
+        det1 = dets1[dets1[:, 2] == did1][0]
+        ind = np.where((trks[:, 0] == det1[0]) & (trks[:, 1] == det1[1]))[0]
+        trks[ind, 13] = 2  # ts, dq, tq
 
     dids2 = dets2[:, 2]
     matched2 = [match[1] for match in matches]
