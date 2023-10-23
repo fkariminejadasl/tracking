@@ -1,9 +1,11 @@
 from pathlib import Path
 
+import cv2
 import numpy as np
 
 from tracking import data_association as da
 from tracking.multi_stage_tracking import (
+    calculate_deep_features,
     find_match_groups,
     get_cosim_matches_per_group,
     get_last_dets_tracklets,
@@ -34,6 +36,12 @@ dets2 = tracks[tracks[:, 1] == frame_number2]
 # missuse tracks for detections
 dets1[:, 2] = dets1[:, 0]
 dets2[:, 2] = dets2[:, 0]
+
+
+image1 = cv2.imread(str(image_path / f"{vid_name}_frame_{frame_number1:06d}.jpg"))
+image2 = cv2.imread(str(image_path / f"{vid_name}_frame_{frame_number2:06d}.jpg"))
+features1 = calculate_deep_features(dets1[:, 2], dets1, image1, **kwargs)
+features2 = calculate_deep_features(dets2[:, 2], dets2, image2, **kwargs)
 
 
 def test_merge_intersecting_items():
@@ -111,6 +119,7 @@ def test_stage1():
 
 
 def test_stage2():
+    # TODO fix
     matching_groups = {(6, 7): (6, 7), (13, 17): (13, 17), (21, 29): (21, 29)}
     exp_occluded_matches = [
         (6, 6),  #  93
@@ -121,7 +130,7 @@ def test_stage2():
         (29, 29),  # 86
     ]
     occluded_matches = get_occluded_matches(
-        dets1, dets2, matching_groups, image_path, vid_name, **kwargs
+        dets1, dets2, matching_groups, features1, features2, **kwargs
     )
     assert exp_occluded_matches == occluded_matches
 
@@ -135,13 +144,15 @@ def test_stage2():
         (21, 31),  # 97
         (29, 39),  # 86
     ]
+    features2_changed = {k + 10: v for k, v in features2.items()}
     occluded_matches = get_occluded_matches(
-        dets1, dets2, matching_groups, image_path, vid_name, **kwargs
+        dets1, dets2, matching_groups, features1, features2_changed, **kwargs
     )
     assert exp_occluded_matches == occluded_matches
 
 
 def test_handle_tracklets():
+    exp_did2tid = {11: 1, 12: 2, 13: 3, 16: 6, 17: 7, 18: 8, 14: 4, 10: 9, 15: 10}
     exp_trks = np.array(
         [
             [0, 184, 0, 1198, 448, 1217, 478, 1207, 463, 19, 30, 0, 0, 2],
@@ -180,7 +191,8 @@ def test_handle_tracklets():
     dets1[:, 0] = -1
     dets2[:, 0] = -1
 
-    matches = get_matches(dets1, dets2, image_path, vid_name, **kwargs)
+    features2_changed = {k + 10: v for k, v in features2.items()}
+    matches = get_matches(dets1, dets2, features1, features2_changed, **kwargs)
     matches.remove((0, 10))
     matches.remove((5, 15))
     # [(1, 11), (2, 12), (3, 13), (6, 16), (7, 17), (8, 18), (4, 14)]
@@ -192,6 +204,7 @@ def test_handle_tracklets():
     trks, did2tid = handle_tracklets(dets1, dets2, matches, trks)
 
     np.testing.assert_array_equal(trks, exp_trks)
+    assert did2tid == exp_did2tid
 
 
 def test_kill_tracks():
