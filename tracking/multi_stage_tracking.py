@@ -296,15 +296,14 @@ def calculate_deep_feature(image, layers, w=32, h=32, **kwargs):
     return feat
 
 
-def calculate_deep_features(occluded1, dets1, im1, **kwargs):
-    occluded1 = list(chain.from_iterable(occluded1))
+def calculate_deep_features(det_ids, dets, image, **kwargs):
     features = dict()
-    if occluded1:
-        bbs1 = get_bboxes(dets1, occluded1)
+    if len(det_ids) != 0:
+        bbs1 = get_bboxes(dets, det_ids)
         for bb1 in bbs1:
-            imc1 = im1[bb1[4] : bb1[6], bb1[3] : bb1[5]]
+            imc = image[bb1[4] : bb1[6], bb1[3] : bb1[5]]
             did = bb1[2]
-            features[did] = calculate_deep_feature(imc1, layers, w=32, h=32, **kwargs)
+            features[did] = calculate_deep_feature(imc, layers, w=32, h=32, **kwargs)
     return features
 
 
@@ -350,17 +349,17 @@ def get_occluded_matches_per_group(image_path, vid_name, bbs1, bbs2, **kwargs):
     return matches
 
 
-def get_bboxes(dets: np.ndarray, group):
+def get_bboxes(dets: np.ndarray, det_ids):
     """
     inputs:
         dets: np.ndarray
-        group: Tuple[int]
+        det_ids: tuple[int] | list[int]
             The values are the detection ids.
     output: np.ndarray
         list of selected detections
     """
     bbs = []
-    for id_ in group:
+    for id_ in det_ids:
         bbs.append(dets[(dets[:, 2] == id_)])
     bbs = np.concatenate(bbs, axis=0)
     return bbs
@@ -423,13 +422,14 @@ def handle_tracklets(dets1, dets2, matches, trks):
     unmached (tracklets: inactive track but keept, dets: new track)
     inputs:
         dets1, dets2: np.ndarray
-            dets1 is either detections from image or the last dets of the tracklets.
+            dets1 is the last dets of the tracklets.
             dets2 is from image.
         matches: list[tuple[int, int]]
             This is a list of matched det_id, where first is for dets1, and the second is for dets2
     output:
     """
 
+    did2tid = dict()
     tid = max(trks[:, 0]) + 1
 
     for match in matches:
@@ -439,6 +439,7 @@ def handle_tracklets(dets1, dets2, matches, trks):
         det2[0] = det1[0]
         det2 = np.concatenate((det2, [0, 0, 1]))
         trks = np.concatenate((trks, det2[None]), axis=0)
+        did2tid[did2] = did1
 
     dids1 = dets1[:, 2]
     matched1 = [match[0] for match in matches]
@@ -454,11 +455,12 @@ def handle_tracklets(dets1, dets2, matches, trks):
     for did2 in unmatched2:
         det2 = dets2[dets2[:, 2] == did2][0]
         det2[0] = tid
-        tid += 1
         det2 = np.concatenate((det2, [0, 0, 1]))
         trks = np.concatenate((trks, det2[None]), axis=0)
+        did2tid[did2] = tid
+        tid += 1
 
-    return trks
+    return trks, did2tid
 
 
 def get_last_dets_tracklets(tracks):
@@ -504,6 +506,25 @@ def kill_tracks(tracks, last_dets, c_frame_number, thr=50):
         if c_frame_number - det[1] > thr:
             ind = np.where((tracks[:, 0] == det[0]) & (tracks[:, 1] == det[1]))[0][0]
             tracks[ind, 13] = 3
+
+
+def get_features_from_memory(memory, track_ids):
+    return {track_id: memory[track_id] for track_id in track_ids}
+
+
+def update_memory(memory, features2, matches, did2tid):
+    for match in matches:
+        did1, did2 = match
+        memory[did1] = features2[did2]
+
+    dids2 = features2.keys()
+    matched2 = [match[1] for match in matches]
+    unmatched2 = set(dids2).difference(matched2)
+    for did2 in unmatched2:
+        tid = did2tid[did2]
+        memory[tid] = features2[did2]
+
+    return memory
 
 
 def multistage_track(
@@ -560,10 +581,11 @@ def multistage_track(
             str(image_path / f"{vid_name}_frame_{frame_number:06d}.jpg")
         )
         occluded2 = get_occluded_dets(dets2)
-        features2 = calculate_deep_features(occluded2, dets2, image2, **kwargs)
+        det_ids = dets2[:, 2].copy()
+        features2 = calculate_deep_features(det_ids, dets2, image2, **kwargs)
 
         if trks is None:
-            image1, dets1, memory = handle_memory_admin(image2, dets2, features2)
+            memory = deepcopy(features2)
             trks = dets2.copy().astype(np.int64)
             trks[:, 0] = trks[:, 2]
             extension = np.repeat(
@@ -575,6 +597,8 @@ def multistage_track(
             dets1 = get_last_dets_tracklets(trks)
             kill_tracks(trks, dets2, frame_number, stop_thr)
             dets1 = get_last_dets_tracklets(trks)
+            track_ids = dets1[:, 0].copy()
+            features1 = get_features_from_memory(memory, track_ids)
 
         # if DEBUG:
         #     im1 = cv2.imread(
@@ -591,8 +615,6 @@ def multistage_track(
         # matches = get_matches(dets1, dets2, image_path, vid_name, **kwargs)
         occluded1 = get_occluded_dets(dets1)
         # occluded2 = get_occluded_dets(dets2)
-        # TODO not included in the memory (det id should be track id)
-        features1 = calculate_deep_features(occluded1, dets1, image1, **kwargs)
         matching_groups = find_match_groups(dets1, dets2, occluded1, occluded2)
         n_occluded1, n_occluded2 = get_not_occluded(dets1, dets2, matching_groups)
 
@@ -608,8 +630,8 @@ def multistage_track(
 
         matches = n_occluded_matches + occluded_matches
 
-        trks = handle_tracklets(dets1, dets2, matches, trks)
-        image1, dets1, memory = handle_memory_admin(image2, dets2, features2)
+        trks, did2tid = handle_tracklets(dets1, dets2, matches, trks)
+        memory = update_memory(memory, features2, matches, did2tid)
 
         # # save intermediate results
         # dets = get_last_dets_tracklets(trks)
@@ -621,13 +643,6 @@ def multistage_track(
         # )
 
     return trks
-
-
-def handle_memory_admin(image2, dets2, features2):
-    image1 = image2.copy()
-    dets1 = dets2.copy()
-    memory = features2.copy()
-    return image1, dets1, memory
 
 
 def ultralytics_detect(
@@ -864,6 +879,7 @@ def ultralytics_track_video(
 # tracks = da._reindex_tracks(da._remove_short_tracks(tracks))
 # trks = da.make_array_from_tracks(tracks)
 # visualize.save_images_with_tracks(main_path/"hung", main_path/"vids/2.mp4", trks, 0, 3112, 8, '06d')
+# 1000 (32x32) -> 3 second for calculate_deep_features
 # TODO memory unit for features to be able to read from videos
 # TODO gt for track as option
 # TODO predict location (constant speed): take care of visualization/saving

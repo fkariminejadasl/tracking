@@ -184,12 +184,12 @@ def test_handle_tracklets():
     matches.remove((0, 10))
     matches.remove((5, 15))
     # [(1, 11), (2, 12), (3, 13), (6, 16), (7, 17), (8, 18), (4, 14)]
-    extension = np.repeat(np.array([[0,0,1]]), len(dets1), axis=0)
+    extension = np.repeat(np.array([[0, 0, 1]]), len(dets1), axis=0)
     trks = dets1.copy()
-    trks[:,0] = trks[:,2]
-    trks = np.concatenate((trks, extension), axis = 1)
+    trks[:, 0] = trks[:, 2]
+    trks = np.concatenate((trks, extension), axis=1)
     dets1 = get_last_dets_tracklets(trks)
-    trks = handle_tracklets(dets1, dets2, matches, trks)
+    trks, did2tid = handle_tracklets(dets1, dets2, matches, trks)
 
     np.testing.assert_array_equal(trks, exp_trks)
 
