@@ -3,10 +3,8 @@
 
 from copy import deepcopy
 from itertools import combinations
-from pathlib import Path
 
 import cv2
-import matplotlib.pylab as plt
 import numpy as np
 import torch
 import torchvision
@@ -15,9 +13,11 @@ from tqdm import tqdm
 from ultralytics import YOLO
 
 from tracking import data_association as da
-from tracking import visualize
 
 np.random.seed(1000)
+
+# TODO put it in get_model_args
+layers = ["conv1", "layer1", "layer2", "layer3"]
 
 
 def merge_intersecting_items(lst):
@@ -221,24 +221,13 @@ def get_n_occluded_matches(dets1, dets2, n_occluded1, n_occluded2):
     return matched_dids
 
 
-def bbox_enlarge(bbox, w_enlarge=0, h_enlarge=0):
-    n_bbox = deepcopy(bbox)
-    n_bbox[3] -= w_enlarge
-    n_bbox[5] += w_enlarge
-    n_bbox[4] -= h_enlarge
-    n_bbox[6] += h_enlarge
-    n_bbox[9] = n_bbox[5] - n_bbox[3]
-    n_bbox[10] = n_bbox[6] - n_bbox[4]
-    return n_bbox
-
-
 def clip_bboxs(bbox, im_height, im_width):
     bbox[:, 3:6:2] = np.clip(bbox[:, 3:6:2], 0, im_width - 1)
     bbox[:, 4:7:2] = np.clip(bbox[:, 4:7:2], 0, im_height - 1)
     return bbox
 
 
-def cos_sim(image_path, vid_name, bbs1, bbs2, **kwargs):
+def cos_sim(features1, features2, bbs1, bbs2):
     """
     inputs:
         image_path: Path
@@ -249,49 +238,40 @@ def cos_sim(image_path, vid_name, bbs1, bbs2, **kwargs):
 
     e.g. output [44, 44, 83, 44, 15, 81, 15, 44, 82, 15, 15, 85]
     """
+    output = []
+    for bb1 in bbs1:
+        for bb2 in bbs2:
+            f1 = features1[bb1[2]].copy()
+            f2 = features2[bb2[2]].copy()
+            csim = f1.dot(f2) / (np.linalg.norm(f1) * np.linalg.norm(f2))
+            csim = int(np.round(csim * 100))  # percent
+            output.extend([bb1[2], bb2[2], csim])
+    return output
+
+
+def calculate_deep_feature(image, layers, w=32, h=32, **kwargs):
     model = kwargs.get("model")
     transform = kwargs.get("transform")
     device = kwargs.get("device")
     activation = kwargs.get("activation")
 
-    bbs1 = np.array([bbox_enlarge(bb) for bb in bbs1])
-    bbs2 = np.array([bbox_enlarge(bb) for bb in bbs2])
-    w, h = max(max(bbs1[:, -2]), max(bbs2[:, -2])), max(
-        max(bbs1[:, -1]), max(bbs2[:, -1])
+    image = cv2.resize(image, (w, h), interpolation=cv2.INTER_AREA)
+    _ = model(transform(image).unsqueeze(0).to(device))
+    feat = np.concatenate(
+        [activation[layer].flatten().cpu().numpy() for layer in layers]
     )
+    return feat
 
-    frame_number2 = bbs2[0, 1]
-    im2 = cv2.imread(str(image_path / f"{vid_name}_frame_{frame_number2:06d}.jpg"))
-    im_height, im_width, _ = im2.shape
-    clip_bboxs(bbs1, im_height, im_width)
-    clip_bboxs(bbs2, im_height, im_width)
 
-    # print("concate embeddings")
-    layers = ["conv1", "layer1", "layer2", "layer3"]
-    output = []
-    for bb1 in bbs1:
-        for bb2 in bbs2:
-            frame_number1 = bb1[1]
-            im1 = cv2.imread(
-                str(image_path / f"{vid_name}_frame_{frame_number1:06d}.jpg")
-            )
-
-            imc1 = im1[bb1[4] : bb1[6], bb1[3] : bb1[5]]
-            imc2 = im2[bb2[4] : bb2[6], bb2[3] : bb2[5]]
-            imc1 = cv2.resize(imc1, (w, h), interpolation=cv2.INTER_AREA)
-            imc2 = cv2.resize(imc2, (w, h), interpolation=cv2.INTER_AREA)
-            _ = model(transform(imc1).unsqueeze(0).to(device))
-            f1 = np.concatenate(
-                [activation[layer].flatten().cpu().numpy() for layer in layers]
-            )
-            _ = model(transform(imc2).unsqueeze(0).to(device))
-            f2 = np.concatenate(
-                [activation[layer].flatten().cpu().numpy() for layer in layers]
-            )
-            csim = f1.dot(f2) / (np.linalg.norm(f1) * np.linalg.norm(f2))
-            csim = int(np.round(csim * 100))  # percent
-            output.extend([bb1[2], bb2[2], csim])
-    return output
+def calculate_deep_features(det_ids, dets, image, **kwargs):
+    features = dict()
+    if len(det_ids) != 0:
+        bbs1 = get_bboxes(dets, det_ids)
+        for bb1 in bbs1:
+            imc = image[bb1[4] : bb1[6], bb1[3] : bb1[5]]
+            did = bb1[2]
+            features[did] = calculate_deep_feature(imc, layers, w=32, h=32, **kwargs)
+    return features
 
 
 def get_cosim_matches_per_group(out):
@@ -322,37 +302,37 @@ def get_cosim_matches_per_group(out):
     return matches
 
 
-def get_occluded_matches_per_group(image_path, vid_name, bbs1, bbs2, **kwargs):
+def get_occluded_matches_per_group(features1, features2, bbs1, bbs2):
     """
     inputs:
         image_path: Path
         vid_name: str | int
         bbs1, bbs2: np.ndarray
-    output: list[tuple[int, int]]
+    output: list[list[int, int]]
         The values are the detection ids.
     """
-    out = cos_sim(image_path, vid_name, bbs1, bbs2, **kwargs)
+    out = cos_sim(features1, features2, bbs1, bbs2)
     matches = get_cosim_matches_per_group(out)
     return matches
 
 
-def get_bboxes(dets: np.ndarray, group):
+def get_bboxes(dets: np.ndarray, det_ids):
     """
     inputs:
         dets: np.ndarray
-        group: Tuple[int]
+        det_ids: tuple[int] | list[int]
             The values are the detection ids.
     output: np.ndarray
         list of selected detections
     """
     bbs = []
-    for id_ in group:
+    for id_ in det_ids:
         bbs.append(dets[(dets[:, 2] == id_)])
     bbs = np.concatenate(bbs, axis=0)
     return bbs
 
 
-def get_occluded_matches(dets1, dets2, matching_groups, image_path, vid_name, **kwargs):
+def get_occluded_matches(dets1, dets2, matching_groups, features1, features2):
     """
     inputs:
         dets1, dets2: np.ndarray
@@ -369,7 +349,7 @@ def get_occluded_matches(dets1, dets2, matching_groups, image_path, vid_name, **
         bbs1 = get_bboxes(dets1, group1)
         bbs2 = get_bboxes(dets2, group2)
         cosim_matches_group = get_occluded_matches_per_group(
-            image_path, vid_name, bbs1, bbs2, **kwargs
+            features1, features2, bbs1, bbs2
         )
         occluded_matches.extend(
             [tuple(cosim_match_group[:2]) for cosim_match_group in cosim_matches_group]
@@ -377,7 +357,7 @@ def get_occluded_matches(dets1, dets2, matching_groups, image_path, vid_name, **
     return occluded_matches
 
 
-def get_matches(dets1, dets2, image_path, vid_name, **kwargs):
+def get_matches(dets1, dets2, features1, features2):
     """
     inputs:
         dets1, dets2: np.ndarray
@@ -396,62 +376,44 @@ def get_matches(dets1, dets2, image_path, vid_name, **kwargs):
 
     # Stage 2: Cos similarity of concatenated embeddings
     occluded_matches = get_occluded_matches(
-        dets1, dets2, matching_groups, image_path, vid_name, **kwargs
+        dets1, dets2, matching_groups, features1, features2
     )
 
     return n_occluded_matches + occluded_matches
 
 
-def handle_tracklets(dets1, dets2, matches, trks=None):
+def handle_tracklets(dets1, dets2, matches, trks):
     """
     matched and unmatched detection ids are handled here.
     unmached (tracklets: inactive track but keept, dets: new track)
     inputs:
         dets1, dets2: np.ndarray
-            dets1 is either detections from image or the last dets of the tracklets.
+            dets1 is the last dets of the tracklets.
             dets2 is from image.
         matches: list[tuple[int, int]]
             This is a list of matched det_id, where first is for dets1, and the second is for dets2
     output:
     """
-    if trks is None:
-        trks = np.empty(shape=(0, 14), dtype=np.int64)
-        tid = 0
-    else:
-        tid = max(trks[:, 0]) + 1
+
+    did2tid = dict()
+    tid = max(trks[:, 0]) + 1
 
     for match in matches:
         did1, did2 = match
         det1 = dets1[dets1[:, 2] == did1][0]
         det2 = dets2[dets2[:, 2] == did2][0]
-        if det1[0] == -1:  # det from image
-            det1[0] = tid
-            det2[0] = tid
-            det1 = np.concatenate((det1, [0, 0, 1]))  # ts, dq, tq
-            det2 = np.concatenate((det2, [0, 0, 1]))
-            det12 = np.stack((det1, det2), axis=0)
-            trks = np.concatenate((trks, det12), axis=0)
-            tid += 1
-        else:  # last det of tracklet
-            det2[0] = det1[0]
-            det2 = np.concatenate((det2, [0, 0, 1]))
-            trks = np.concatenate((trks, det2[None]), axis=0)
+        det2[0] = det1[0]
+        det2 = np.concatenate((det2, [0, 0, 1]))
+        trks = np.concatenate((trks, det2[None]), axis=0)
+        did2tid[did2] = did1
 
     dids1 = dets1[:, 2]
     matched1 = [match[0] for match in matches]
     unmatched1 = set(dids1).difference(matched1)
-    if dets1[0, 0] == -1:  # det from image
-        for did1 in unmatched1:
-            det1 = dets1[dets1[:, 2] == did1][0]
-            det1[0] = tid
-            tid += 1
-            det1 = np.concatenate((det1, [0, 0, 2]))  # ts, dq, tq
-            trks = np.concatenate((trks, det1[None]), axis=0)
-    else:  # last det of tracklet
-        for did1 in unmatched1:
-            det1 = dets1[dets1[:, 2] == did1][0]
-            ind = np.where((trks[:, 0] == det1[0]) & (trks[:, 1] == det1[1]))[0]
-            trks[ind, 13] = 2  # ts, dq, tq
+    for did1 in unmatched1:
+        det1 = dets1[dets1[:, 2] == did1][0]
+        ind = np.where((trks[:, 0] == det1[0]) & (trks[:, 1] == det1[1]))[0]
+        trks[ind, 13] = 2  # ts, dq, tq
 
     dids2 = dets2[:, 2]
     matched2 = [match[1] for match in matches]
@@ -459,11 +421,12 @@ def handle_tracklets(dets1, dets2, matches, trks=None):
     for did2 in unmatched2:
         det2 = dets2[dets2[:, 2] == did2][0]
         det2[0] = tid
-        tid += 1
         det2 = np.concatenate((det2, [0, 0, 1]))
         trks = np.concatenate((trks, det2[None]), axis=0)
+        did2tid[did2] = tid
+        tid += 1
 
-    return trks
+    return trks, did2tid
 
 
 def get_last_dets_tracklets(tracks):
@@ -511,8 +474,27 @@ def kill_tracks(tracks, last_dets, c_frame_number, thr=50):
             tracks[ind, 13] = 3
 
 
+def get_features_from_memory(memory, track_ids):
+    return {track_id: memory[track_id] for track_id in track_ids}
+
+
+def update_memory(memory, features2, matches, did2tid):
+    for match in matches:
+        did1, did2 = match
+        memory[did1] = features2[did2]
+
+    dids2 = features2.keys()
+    matched2 = [match[1] for match in matches]
+    unmatched2 = set(dids2).difference(matched2)
+    for did2 in unmatched2:
+        tid = did2tid[did2]
+        memory[tid] = features2[did2]
+
+    return memory
+
+
 def multistage_track(
-    image_path,
+    video_file,
     det_path,
     vid_name,
     start_frame,
@@ -550,33 +532,43 @@ def multistage_track(
     # tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
 
     stop_thr = step * 50
-    for frame_number1 in tqdm(range(start_frame, end_frame - step + 1, step)):
-        frame_number2 = frame_number1 + step
+    vc = cv2.VideoCapture(str(video_file))
+    vc.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    for frame_number in tqdm(range(start_frame, end_frame + 1)):
+        _, image2 = vc.read()
+        if frame_number % step != 0:
+            continue
 
-        if trks is None:
-            if det_is_array:
-                dets1 = tracks[tracks[:, 1] == frame_number1]
-            else:
-                dets1 = da.get_detections_array(
-                    det_path / f"{vid_name}_{frame_number1 + 1}.txt",
-                    1920,
-                    1080,
-                    frame_number1,
-                )
-        else:
-            dets1 = get_last_dets_tracklets(trks)
-            kill_tracks(trks, dets1, frame_number2, stop_thr)
-            dets1 = get_last_dets_tracklets(trks)
-
+        im_height, im_width = image2.shape[:2]
         if det_is_array:
-            dets2 = tracks[tracks[:, 1] == frame_number2]
+            dets2 = tracks[tracks[:, 1] == frame_number]
         else:
             dets2 = da.get_detections_array(
-                det_path / f"{vid_name}_{frame_number2 + 1}.txt",
-                1920,
-                1080,
-                frame_number2,
+                det_path / f"{vid_name}_{frame_number + 1}.txt",
+                im_width,
+                im_height,
+                frame_number,
             )
+
+        clip_bboxs(dets2, im_height, im_width)
+        det_ids = dets2[:, 2].copy()
+        features2 = calculate_deep_features(det_ids, dets2, image2, **kwargs)
+
+        if trks is None:
+            memory = deepcopy(features2)
+            trks = dets2.copy().astype(np.int64)
+            trks[:, 0] = trks[:, 2]
+            extension = np.repeat(
+                np.array([[0, 0, 1]]), len(trks), axis=0
+            )  # ts, dq, tq
+            trks = np.concatenate((trks, extension), axis=1)
+            continue
+        else:
+            dets1 = get_last_dets_tracklets(trks)
+            kill_tracks(trks, dets2, frame_number, stop_thr)
+            dets1 = get_last_dets_tracklets(trks)
+            track_ids = dets1[:, 0].copy()
+            features1 = get_features_from_memory(memory, track_ids)
 
         # if DEBUG:
         #     im1 = cv2.imread(
@@ -590,8 +582,10 @@ def multistage_track(
         #     visualize.plot_detections_in_image(dets2[:, [2, 3, 4, 5, 6]], im2)
         #     plt.show(block=False)
 
-        matches = get_matches(dets1, dets2, image_path, vid_name, **kwargs)
-        trks = handle_tracklets(dets1, dets2, matches, trks)
+        matches = get_matches(dets1, dets2, features1, features2)
+
+        trks, did2tid = handle_tracklets(dets1, dets2, matches, trks)
+        memory = update_memory(memory, features2, matches, did2tid)
 
         # # save intermediate results
         # dets = get_last_dets_tracklets(trks)
@@ -839,7 +833,7 @@ def ultralytics_track_video(
 # tracks = da._reindex_tracks(da._remove_short_tracks(tracks))
 # trks = da.make_array_from_tracks(tracks)
 # visualize.save_images_with_tracks(main_path/"hung", main_path/"vids/2.mp4", trks, 0, 3112, 8, '06d')
-# TODO memory unit for features to be able to read from videos
+# 1000 (32x32) -> 3 second for calculate_deep_features
 # TODO gt for track as option
 # TODO predict location (constant speed): take care of visualization/saving
 # TODO compare ms_track, hungerian, bytetrack, botsort

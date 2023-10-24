@@ -112,7 +112,7 @@ if __name__ == "__main__":
 
         print(f"=====> {track_method} tracking")
         trks = multistage_track(
-            image_path,
+            video_file,
             dets_path,
             vid_name,
             start_frame,
