@@ -2,11 +2,9 @@
 # - use Cosim for each occluded group
 
 from copy import deepcopy
-from itertools import chain, combinations
-from pathlib import Path
+from itertools import combinations
 
 import cv2
-import matplotlib.pylab as plt
 import numpy as np
 import torch
 import torchvision
@@ -15,7 +13,6 @@ from tqdm import tqdm
 from ultralytics import YOLO
 
 from tracking import data_association as da
-from tracking import visualize
 
 np.random.seed(1000)
 
@@ -222,17 +219,6 @@ def get_n_occluded_matches(dets1, dets2, n_occluded1, n_occluded2):
     ]
 
     return matched_dids
-
-
-def bbox_enlarge(bbox, w_enlarge=0, h_enlarge=0):
-    n_bbox = deepcopy(bbox)
-    n_bbox[3] -= w_enlarge
-    n_bbox[5] += w_enlarge
-    n_bbox[4] -= h_enlarge
-    n_bbox[6] += h_enlarge
-    n_bbox[9] = n_bbox[5] - n_bbox[3]
-    n_bbox[10] = n_bbox[6] - n_bbox[4]
-    return n_bbox
 
 
 def clip_bboxs(bbox, im_height, im_width):
