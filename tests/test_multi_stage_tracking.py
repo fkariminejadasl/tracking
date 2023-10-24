@@ -130,7 +130,7 @@ def test_stage2():
         (29, 29),  # 86
     ]
     occluded_matches = get_occluded_matches(
-        dets1, dets2, matching_groups, features1, features2, **kwargs
+        dets1, dets2, matching_groups, features1, features2
     )
     assert exp_occluded_matches == occluded_matches
 
@@ -146,7 +146,7 @@ def test_stage2():
     ]
     features2_changed = {k + 10: v for k, v in features2.items()}
     occluded_matches = get_occluded_matches(
-        dets1, dets2, matching_groups, features1, features2_changed, **kwargs
+        dets1, dets2, matching_groups, features1, features2_changed
     )
     assert exp_occluded_matches == occluded_matches
 
@@ -192,7 +192,7 @@ def test_handle_tracklets():
     dets2[:, 0] = -1
 
     features2_changed = {k + 10: v for k, v in features2.items()}
-    matches = get_matches(dets1, dets2, features1, features2_changed, **kwargs)
+    matches = get_matches(dets1, dets2, features1, features2_changed)
     matches.remove((0, 10))
     matches.remove((5, 15))
     # [(1, 11), (2, 12), (3, 13), (6, 16), (7, 17), (8, 18), (4, 14)]

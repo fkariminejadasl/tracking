@@ -21,7 +21,6 @@ np.random.seed(1000)
 
 # TODO put it in get_model_args
 layers = ["conv1", "layer1", "layer2", "layer3"]
-im_width, im_height = 1920, 1080
 
 
 def merge_intersecting_items(lst):
@@ -242,7 +241,7 @@ def clip_bboxs(bbox, im_height, im_width):
     return bbox
 
 
-def cos_sim(features1, features2, bbs1, bbs2, **kwargs):
+def cos_sim(features1, features2, bbs1, bbs2):
     """
     inputs:
         image_path: Path
@@ -253,15 +252,6 @@ def cos_sim(features1, features2, bbs1, bbs2, **kwargs):
 
     e.g. output [44, 44, 83, 44, 15, 81, 15, 44, 82, 15, 15, 85]
     """
-    bbs1 = np.array([bbox_enlarge(bb) for bb in bbs1])
-    bbs2 = np.array([bbox_enlarge(bb) for bb in bbs2])
-    # w, h = max(max(bbs1[:, -2]), max(bbs2[:, -2])), max(
-    #     max(bbs1[:, -1]), max(bbs2[:, -1])
-    # )
-
-    clip_bboxs(bbs1, im_height, im_width)
-    clip_bboxs(bbs2, im_height, im_width)
-
     output = []
     for bb1 in bbs1:
         for bb2 in bbs2:
@@ -326,7 +316,7 @@ def get_cosim_matches_per_group(out):
     return matches
 
 
-def get_occluded_matches_per_group(features1, features2, bbs1, bbs2, **kwargs):
+def get_occluded_matches_per_group(features1, features2, bbs1, bbs2):
     """
     inputs:
         image_path: Path
@@ -335,7 +325,7 @@ def get_occluded_matches_per_group(features1, features2, bbs1, bbs2, **kwargs):
     output: list[list[int, int]]
         The values are the detection ids.
     """
-    out = cos_sim(features1, features2, bbs1, bbs2, **kwargs)
+    out = cos_sim(features1, features2, bbs1, bbs2)
     matches = get_cosim_matches_per_group(out)
     return matches
 
@@ -356,7 +346,7 @@ def get_bboxes(dets: np.ndarray, det_ids):
     return bbs
 
 
-def get_occluded_matches(dets1, dets2, matching_groups, features1, features2, **kwargs):
+def get_occluded_matches(dets1, dets2, matching_groups, features1, features2):
     """
     inputs:
         dets1, dets2: np.ndarray
@@ -373,7 +363,7 @@ def get_occluded_matches(dets1, dets2, matching_groups, features1, features2, **
         bbs1 = get_bboxes(dets1, group1)
         bbs2 = get_bboxes(dets2, group2)
         cosim_matches_group = get_occluded_matches_per_group(
-            features1, features2, bbs1, bbs2, **kwargs
+            features1, features2, bbs1, bbs2
         )
         occluded_matches.extend(
             [tuple(cosim_match_group[:2]) for cosim_match_group in cosim_matches_group]
@@ -381,7 +371,7 @@ def get_occluded_matches(dets1, dets2, matching_groups, features1, features2, **
     return occluded_matches
 
 
-def get_matches(dets1, dets2, features1, features2, **kwargs):
+def get_matches(dets1, dets2, features1, features2):
     """
     inputs:
         dets1, dets2: np.ndarray
@@ -400,7 +390,7 @@ def get_matches(dets1, dets2, features1, features2, **kwargs):
 
     # Stage 2: Cos similarity of concatenated embeddings
     occluded_matches = get_occluded_matches(
-        dets1, dets2, matching_groups, features1, features2, **kwargs
+        dets1, dets2, matching_groups, features1, features2
     )
 
     return n_occluded_matches + occluded_matches
@@ -574,6 +564,7 @@ def multistage_track(
                 frame_number,
             )
 
+        clip_bboxs(dets2, im_height, im_width)
         det_ids = dets2[:, 2].copy()
         features2 = calculate_deep_features(det_ids, dets2, image2, **kwargs)
 
@@ -605,8 +596,7 @@ def multistage_track(
         #     visualize.plot_detections_in_image(dets2[:, [2, 3, 4, 5, 6]], im2)
         #     plt.show(block=False)
 
-        # TODO clip_bbox in here.
-        matches = get_matches(dets1, dets2, features1, features2, **kwargs)
+        matches = get_matches(dets1, dets2, features1, features2)
 
         trks, did2tid = handle_tracklets(dets1, dets2, matches, trks)
         memory = update_memory(memory, features2, matches, did2tid)
@@ -858,7 +848,6 @@ def ultralytics_track_video(
 # trks = da.make_array_from_tracks(tracks)
 # visualize.save_images_with_tracks(main_path/"hung", main_path/"vids/2.mp4", trks, 0, 3112, 8, '06d')
 # 1000 (32x32) -> 3 second for calculate_deep_features
-# TODO clip_bbox in multistage_track
 # TODO gt for track as option
 # TODO predict location (constant speed): take care of visualization/saving
 # TODO compare ms_track, hungerian, bytetrack, botsort
