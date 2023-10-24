@@ -567,6 +567,7 @@ def multistage_track(
             dets1 = get_last_dets_tracklets(trks)
             kill_tracks(trks, dets2, frame_number, stop_thr)
             dets1 = get_last_dets_tracklets(trks)
+            # TODO: predict_location: disp + dets
             track_ids = dets1[:, 0].copy()
             features1 = get_features_from_memory(memory, track_ids)
 
@@ -583,7 +584,11 @@ def multistage_track(
         #     plt.show(block=False)
 
         matches = get_matches(dets1, dets2, features1, features2)
+        # TODO: calculate_displacements: disp[tid]
+        # TODO: discard_bad_matches: large dispalcements
 
+        # TODO: track rebirth: only if tracked for few frames. Get different status.
+        # Either in handle_tracklets or other function. This is to tackle duplicate issues.
         trks, did2tid = handle_tracklets(dets1, dets2, matches, trks)
         memory = update_memory(memory, features2, matches, did2tid)
 
