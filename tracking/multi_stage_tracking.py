@@ -18,6 +18,7 @@ np.random.seed(1000)
 
 # TODO put it in get_model_args
 layers = ["conv1", "layer1", "layer2", "layer3"]
+disp_thres = 10
 
 
 def merge_intersecting_items(lst):
@@ -374,6 +375,7 @@ def get_matches(dets1, dets2, features1, features2):
     # Stage 1: Hungarian matching on non occluded detections
     n_occluded_matches = get_n_occluded_matches(dets1, dets2, n_occluded1, n_occluded2)
 
+    # TODO check frame 232, group (3,8,10). 8 matched to the wrong one
     # Stage 2: Cos similarity of concatenated embeddings
     occluded_matches = get_occluded_matches(
         dets1, dets2, matching_groups, features1, features2
@@ -481,16 +483,54 @@ def get_features_from_memory(memory, track_ids):
 def update_memory(memory, features2, matches, did2tid):
     for match in matches:
         did1, did2 = match
-        memory[did1] = features2[did2]
+        memory[did1] = deepcopy(features2[did2])
 
     dids2 = features2.keys()
     matched2 = [match[1] for match in matches]
     unmatched2 = set(dids2).difference(matched2)
     for did2 in unmatched2:
         tid = did2tid[did2]
-        memory[tid] = features2[did2]
+        memory[tid] = deepcopy(features2[did2])
 
     return memory
+
+
+def discard_bad_matches(matches, disps, disp_thres=10):
+    """ "
+    inputs
+        matches: list[tuple[int,int]]
+            list of matched (track_id, det_id)
+        disps: dic[int]
+            disps[trarck_id] = [displacements_x, displacement_y]
+    outputs
+        same as inputs
+    """
+    disps = {
+        tid: disp for tid, disp in disps.items() if np.linalg.norm(disp) < disp_thres
+    }
+    tids = [match[0] for match in matches]
+    remove_tids = set(tids).difference(disps.keys())
+    matches = [item for item in matches if item[0] not in remove_tids]
+    return matches, disps
+
+
+def calculate_displacements(dets1, dets2, matches, disps={}):
+    """ "
+    inputs
+        dets1: np.ndarray
+            last element of tracklet. det ids and track ids are the same.
+        dets2: np.ndarray
+        matches: list[tuple[int,int]]
+            list of matched (track_id, det_id)
+    outputs
+        dict[trarck_id] = [displacements_x, displacement_y]
+    """
+    for match in matches:
+        did1, did2 = match
+        det1 = dets1[dets1[:, 2] == did1][0]
+        det2 = dets2[dets2[:, 2] == did2][0]
+        disps[did1] = [det2[7] - det1[7], det2[8] - det1[8]]
+    return disps
 
 
 def multistage_track(
@@ -555,6 +595,7 @@ def multistage_track(
         features2 = calculate_deep_features(det_ids, dets2, image2, **kwargs)
 
         if trks is None:
+            disps = {}
             memory = deepcopy(features2)
             trks = dets2.copy().astype(np.int64)
             trks[:, 0] = trks[:, 2]
@@ -571,21 +612,19 @@ def multistage_track(
             track_ids = dets1[:, 0].copy()
             features1 = get_features_from_memory(memory, track_ids)
 
-        # if DEBUG:
-        #     im1 = cv2.imread(
-        #         str(image_path / f"/{vid_name}_frame_{frame_number1:06d}.jpg")
-        #     )
-        #     im2 = cv2.imread(
-        #         str(image_path / f"{vid_name}_frame_{frame_number2:06d}.jpg")
-        #     )
-        #     visualize.plot_detections_in_image(dets1[:, [2, 3, 4, 5, 6]], im1)
-        #     plt.show(block=False)
-        #     visualize.plot_detections_in_image(dets2[:, [2, 3, 4, 5, 6]], im2)
-        #     plt.show(block=False)
+        # from pathlib import Path
+        # from tracking import visualize
+        # vid_name, step, folder = 2, 8, "240hz"
+        # main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
+        # image_path = main_path / "images"
+        # im1 = cv2.imread(str(image_path / f"{vid_name}_frame_{frame_number - step:06d}.jpg"))
+        # im2 = cv2.imread(str(image_path / f"{vid_name}_frame_{frame_number:06d}.jpg"))
+        # visualize.plot_detections_in_image(dets1[:, [2, 3, 4, 5, 6]], im1)
+        # visualize.plot_detections_in_image(dets2[:, [2, 3, 4, 5, 6]], im2)
 
         matches = get_matches(dets1, dets2, features1, features2)
-        # TODO: calculate_displacements: disp[tid]
-        # TODO: discard_bad_matches: large dispalcements
+        disps = calculate_displacements(dets1, dets2, matches, disps)
+        matches, disps = discard_bad_matches(matches, disps, disp_thres)
 
         # TODO: track rebirth: only if tracked for few frames. Get different status.
         # Either in handle_tracklets or other function. This is to tackle duplicate issues.
@@ -772,7 +811,7 @@ def ultralytics_track_video(
     return trks
 
 
-# vid_name, frame_number1, step, folder = 2, 184, 8, "240hz"
+# vid_name, step, folder = 2, 8, "240hz"
 # main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
 # start_frame, end_frame, format = 0, 25, "06d"
 # track_method = "botsort"
