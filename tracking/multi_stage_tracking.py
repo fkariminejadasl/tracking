@@ -505,6 +505,7 @@ def discard_bad_matches(matches, disps, disp_thres=10):
     outputs
         same as inputs
     """
+    # TODO bug: if disps is empty the remove_tids removes all matches
     disps = {
         tid: disp for tid, disp in disps.items() if np.linalg.norm(disp) < disp_thres
     }
@@ -514,8 +515,10 @@ def discard_bad_matches(matches, disps, disp_thres=10):
     return matches, disps
 
 
-def calculate_displacements(dets1, dets2, matches, disps={}):
+def calculate_displacements(dets1, dets2, matches, step, disps):
     """ "
+    NB. displacemnents are always between consecutive frames (consecutive by step)
+
     inputs
         dets1: np.ndarray
             last element of tracklet. det ids and track ids are the same.
@@ -525,12 +528,47 @@ def calculate_displacements(dets1, dets2, matches, disps={}):
     outputs
         dict[trarck_id] = [displacements_x, displacement_y]
     """
+    round_func = lambda x: np.int64(round(x))
     for match in matches:
         did1, did2 = match
         det1 = dets1[dets1[:, 2] == did1][0]
         det2 = dets2[dets2[:, 2] == did2][0]
-        disps[did1] = [det2[7] - det1[7], det2[8] - det1[8]]
+        dtime = round((det2[1] - det1[1]) / step)  # dframe / step
+        disps[did1] = [
+            round_func((det2[7] - det1[7]) / dtime),
+            round_func((det2[8] - det1[8]) / dtime),
+        ]
+    tids = dets1[:, 0].copy()
+    matched_tids = [match[0] for match in matches]
+    # TODO inactive from beginning
+    inactive_tids = list(set(tids).difference(matched_tids))
+    removed_tids = set(disps.keys()).difference(matched_tids + inactive_tids)
+    [disps.pop(removed_tid, None) for removed_tid in removed_tids]
     return disps
+
+
+def predict_locations(dets1, disps, current_frame, step):
+    """
+    disps already contains inactive disps as well, which are calculated in calculate_displacements.
+    disps doesn't contain killed tracks.
+    """
+    if not disps:
+        return dets1
+
+    track_ids = dets1[:, 0].copy()
+    for track_id in track_ids:
+        ind = np.where(dets1[:, 0] == track_id)[0][0]
+        frame_number = dets1[ind, 1]
+        dtime = (current_frame - frame_number) / step
+        # it should be resolved by track_birth: for inactive but not tracked
+        disp_x, disp_y = disps.get(track_id, [0, 0])
+        dets1[ind, [3, 5, 7]] += int(round(disp_x * dtime))
+        dets1[ind, [4, 6, 8]] += int(round(disp_y * dtime))
+    return dets1
+
+
+def track_birth():
+    pass
 
 
 def multistage_track(
@@ -608,7 +646,8 @@ def multistage_track(
             dets1 = get_last_dets_tracklets(trks)
             kill_tracks(trks, dets2, frame_number, stop_thr)
             dets1 = get_last_dets_tracklets(trks)
-            # TODO: predict_location: disp + dets
+            dets1 = predict_locations(dets1, disps, frame_number, step)
+            clip_bboxs(dets1, im_height, im_width)
             track_ids = dets1[:, 0].copy()
             features1 = get_features_from_memory(memory, track_ids)
 
@@ -623,8 +662,8 @@ def multistage_track(
         # visualize.plot_detections_in_image(dets2[:, [2, 3, 4, 5, 6]], im2)
 
         matches = get_matches(dets1, dets2, features1, features2)
-        disps = calculate_displacements(dets1, dets2, matches, disps)
-        matches, disps = discard_bad_matches(matches, disps, disp_thres)
+        disps = calculate_displacements(dets1, dets2, matches, step, disps)
+        # matches, disps = discard_bad_matches(matches, disps, disp_thres)
 
         # TODO: track rebirth: only if tracked for few frames. Get different status.
         # Either in handle_tracklets or other function. This is to tackle duplicate issues.
