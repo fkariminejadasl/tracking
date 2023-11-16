@@ -1012,8 +1012,22 @@ def giou(bbox1, bbox2) -> float:
     return giou
 
 
+def is_valid_bbox(bbox):
+    # bbox1,2: (x_topleft, y_topleft, x_bottomright, y_bottomright)
+
+    if (bbox[0] == bbox[2]) | (bbox[1] == bbox[3]):
+        return False
+    else:
+        return True
+
+
 def get_iou(bbox1, bbox2) -> float:
     # bbox1,2: (x_topleft, y_topleft, x_bottomright, y_bottomright)
+
+    # If bbox is not a bbox.
+    # TODO: maybe remove
+    if (not is_valid_bbox(bbox1)) | (not is_valid_bbox(bbox2)):
+        return 0.0
 
     x_left = max(bbox1[0], bbox2[0])
     y_top = max(bbox1[1], bbox2[1])
