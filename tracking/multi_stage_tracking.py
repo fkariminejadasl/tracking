@@ -1,6 +1,6 @@
 # - use Hungarian for each not occluded
 # - use Cosim for each occluded group
-
+from collections import Counter
 from copy import deepcopy
 from itertools import combinations
 
@@ -400,6 +400,7 @@ def handle_tracklets(dets1, dets2, matches, trks):
     did2tid = dict()
     tid = max(trks[:, 0]) + 1
 
+    # for matches
     for match in matches:
         did1, did2 = match
         det1 = dets1[dets1[:, 2] == did1][0]
@@ -409,6 +410,20 @@ def handle_tracklets(dets1, dets2, matches, trks):
         trks = np.concatenate((trks, det2[None]), axis=0)
         did2tid[did2] = did1
 
+    # Remove bad tracks: track is born in previous frame but then it is not
+    # matched here. So it will be removed.
+    # N.B. In DeepMOT, for track birth, track is born if detections appear in 3
+    # consecutive frames and have at least .3 IOU overlap.
+    counter = Counter(trks[:, 0])
+    freqs = np.array(list(counter.values()))
+    vals = np.array(list(counter.keys()))
+    bad_tids = vals[np.where(freqs == 1)[0]]
+    if bad_tids.size != 0:
+        for bad_tid in bad_tids:
+            ind = np.where(trks[:, 0] == bad_tid)[0][0]
+            trks = np.delete(trks, ind, axis=0)
+
+    # for inactive tracks
     dids1 = dets1[:, 2]
     matched1 = [match[0] for match in matches]
     unmatched1 = set(dids1).difference(matched1)
@@ -417,6 +432,7 @@ def handle_tracklets(dets1, dets2, matches, trks):
         ind = np.where((trks[:, 0] == det1[0]) & (trks[:, 1] == det1[1]))[0]
         trks[ind, 13] = 2  # ts, dq, tq
 
+    # for new track
     dids2 = dets2[:, 2]
     matched2 = [match[1] for match in matches]
     unmatched2 = set(dids2).difference(matched2)
@@ -567,10 +583,6 @@ def predict_locations(dets1, disps, current_frame, step):
     return dets1
 
 
-def track_birth():
-    pass
-
-
 def multistage_track(
     video_file,
     det_path,
@@ -651,19 +663,19 @@ def multistage_track(
             track_ids = dets1[:, 0].copy()
             features1 = get_features_from_memory(memory, track_ids)
 
-        # from pathlib import Path
-        # from tracking import visualize
-        # vid_name, step, folder = 2, 8, "240hz"
-        # main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
-        # image_path = main_path / "images"
-        # im1 = cv2.imread(str(image_path / f"{vid_name}_frame_{frame_number - step:06d}.jpg"))
-        # im2 = cv2.imread(str(image_path / f"{vid_name}_frame_{frame_number:06d}.jpg"))
-        # visualize.plot_detections_in_image(dets1[:, [2, 3, 4, 5, 6]], im1)
-        # visualize.plot_detections_in_image(dets2[:, [2, 3, 4, 5, 6]], im2)
+            # from pathlib import Path
+            # from tracking import visualize
+            # vid_name, step, folder = 2, 8, "240hz"
+            # main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
+            # image_path = main_path / "images"
+            # im2 = cv2.imread(str(image_path / f"{vid_name}_frame_{frame_number:06d}.jpg"))
+            # visualize.plot_detections_in_image(dets2[:, [2, 3, 4, 5, 6]], im2)
+            # im1 = cv2.imread(str(image_path / f"{vid_name}_frame_{frame_number - step:06d}.jpg"))
+            # visualize.plot_detections_in_image(dets1[:, [2, 3, 4, 5, 6]], im1)
 
         matches = get_matches(dets1, dets2, features1, features2)
         disps = calculate_displacements(dets1, dets2, matches, step, disps)
-        # matches, disps = discard_bad_matches(matches, disps, disp_thres)
+        matches, disps = discard_bad_matches(matches, disps, disp_thres)
 
         # TODO: track rebirth: only if tracked for few frames. Get different status.
         # Either in handle_tracklets or other function. This is to tackle duplicate issues.
@@ -860,47 +872,6 @@ def ultralytics_track_video(
 # config_file = Path(f"/home/fatemeh/Downloads/fish/configs/{track_method}.yaml")
 # image_path = main_path / image_folder
 
-# trks = ultralytics_detect(
-#     image_path,
-#     vid_name,
-#     start_frame,
-#     end_frame,
-#     step,
-#     det_checkpoint,
-# )
-# da.save_tracks_to_mot_format(main_path / "test.zip", trks[:, :11])
-# dets = da.load_tracks_from_mot_format(main_path / "test.zip")
-# dets[:, 2] = dets[:, 0]
-# dets[:, 0] = -1
-# trks = multistage_track(
-#     main_path,
-#     image_folder,
-#     vid_name,
-#     start_frame,
-#     end_frame,
-#     step,
-# )
-# # trks = ultralytics_track(
-# #     image_path,
-# #     vid_name,
-# #     start_frame,
-# #     end_frame,
-# #     step,
-# #     det_checkpoint,
-# #     config_file="botsort.yaml",
-# # )
-# np.savetxt(main_path / f"{save_name}.txt", trks, delimiter=",", fmt="%d")
-# da.save_tracks_to_mot_format(main_path / f"{save_name}.zip", trks[:, :11])
-# visualize.save_images_with_tracks(
-#     main_path / save_name,
-#     main_path / f"vids/{vid_name}.mp4",
-#     trks,
-#     start_frame,
-#     end_frame,
-#     step,
-#     format,
-# )
-
 # 1. s1: hungarian dist&iou on high quality dets no overlap (I have no_ovelap version)
 # 2. s2: hungarian agg cossim on coverlap -> low quality ass (either low value or multiple detection)
 # 3. s3: hungarian dist&iou on low quality dets
@@ -918,9 +889,7 @@ def ultralytics_track_video(
 # visualize.save_images_with_tracks(main_path/"hung", main_path/"vids/2.mp4", trks, 0, 3112, 8, '06d')
 # 1000 (32x32) -> 3 second for calculate_deep_features
 # TODO gt for track as option
-# TODO predict location (constant speed): take care of visualization/saving
 # TODO compare ms_track, hungerian, bytetrack, botsort
 # TODO save as images or video should be combined
 # TODO low quality det
 # TODO very short tracks: caused by mismatch.
-# TODO (maybe) In DeepMOT, for track birth, track is born if detections appear in 3 consecutive frames and have at least .3 IOU overlap.
