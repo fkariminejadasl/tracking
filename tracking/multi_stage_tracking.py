@@ -524,7 +524,7 @@ def discard_bad_matches(matches, disps, disp_thrs=10):
     disps = {
         tid: disp
         for tid, disp in disps.items()
-        if (disp[0] <= disp_thrs) & (disp[1] <= disp_thrs)
+        if (abs(disp[0]) <= disp_thrs) & (abs(disp[1]) <= disp_thrs)
     }
     tids = [match[0] for match in matches]
     remove_tids = set(tids).difference(disps.keys())
@@ -664,7 +664,7 @@ def multistage_track(
             track_ids = dets1[:, 0].copy()
             features1 = get_features_from_memory(memory, track_ids)
 
-        if False:  # frame_number >= 528:
+        if False:  # frame_number >= 1912:
             from pathlib import Path
 
             from tracking import visualize
