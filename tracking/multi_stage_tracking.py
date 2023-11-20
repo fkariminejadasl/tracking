@@ -532,19 +532,22 @@ def discard_bad_matches(matches, disps, disp_thrs=10):
     return matches, disps
 
 
-def calculate_displacements(dets1, dets2, matches, step, disps):
+def calculate_displacements(trks, dets2, matches, step, disps):
     """ "
     NB. displacemnents are always between consecutive frames (consecutive by step)
 
     inputs
-        dets1: np.ndarray
-            last element of tracklet. det ids and track ids are the same.
+        trks: np.ndarray
+            tracks
         dets2: np.ndarray
         matches: list[tuple[int,int]]
             list of matched (track_id, det_id)
     outputs
         dict[trarck_id] = [displacements_x, displacement_y]
     """
+    # Use orginal dets1 instead of predicted dets1
+    dets1 = get_last_dets_tracklets(trks)
+
     round_func = lambda x: np.int64(round(x))
     for match in matches:
         did1, did2 = match
@@ -658,12 +661,10 @@ def multistage_track(
         else:
             kill_tracks(trks, frame_number, stop_thrs)
             dets1 = get_last_dets_tracklets(trks)
-            dets1 = predict_locations(dets1, disps, frame_number, step)
-            clip_bboxs(dets1, im_height, im_width)
             track_ids = dets1[:, 0].copy()
             features1 = get_features_from_memory(memory, track_ids)
 
-        if False:#frame_number >= 528:
+        if False:  # frame_number >= 528:
             from pathlib import Path
 
             from tracking import visualize
@@ -680,8 +681,10 @@ def multistage_track(
             )
             visualize.plot_detections_in_image(dets1[:, [2, 3, 4, 5, 6]], im1)
 
+        dets1 = predict_locations(dets1, disps, frame_number, step)
+        clip_bboxs(dets1, im_height, im_width)
         matches = get_matches(dets1, dets2, features1, features2)
-        disps = calculate_displacements(dets1, dets2, matches, step, disps)
+        disps = calculate_displacements(trks, dets2, matches, step, disps)
         matches, disps = discard_bad_matches(matches, disps, disp_thrs)
 
         # TODO: track rebirth: only if tracked for few frames. Get different status.
