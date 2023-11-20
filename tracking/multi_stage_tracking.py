@@ -18,7 +18,7 @@ np.random.seed(1000)
 
 # TODO put it in get_model_args
 layers = ["conv1", "layer1", "layer2", "layer3"]
-disp_thres = 10
+disp_thrs = 15
 
 
 def merge_intersecting_items(lst):
@@ -197,8 +197,8 @@ def hungarian_global_matching(dets1, dets2):
     for i, det1 in enumerate(dets1):
         for j, det2 in enumerate(dets2):
             iou_loss = 1 - da.get_iou(det1[3:7], det2[3:7])
-            loc_loss = np.linalg.norm([det2[7] - det1[7], det2[8] - det1[8]])
-            dist[i, j] = iou_loss + loc_loss
+            # loc_loss = np.linalg.norm([det2[7] - det1[7], det2[8] - det1[8]])
+            dist[i, j] = iou_loss  # + loc_loss
     row_ind, col_ind = linear_sum_assignment(dist)
     return row_ind, col_ind
 
@@ -473,21 +473,20 @@ def get_last_dets_tracklets(tracks):
     return np.array(dets).astype(np.int64)
 
 
-def kill_tracks(tracks, last_dets, c_frame_number, thr=50):
+def kill_tracks(tracks, c_frame_number, thrs):
     """
-    If the track is inactive for more than thr, it will get stop status.
+    If the track is inactive for more than thrs, it will get stop status.
     The track status in tracks is changed here.
 
     input:
-        last_dets: np.ndarray
-            The last detections of a tracklet
         c_frame_number: int
             The current frame number
-        thr: int
+        thrs: int
             Threshould for maximum number of inactive frames. It is step * factor. I caculated 50.
     """
+    last_dets = get_last_dets_tracklets(tracks)
     for det in last_dets:
-        if c_frame_number - det[1] > thr:
+        if c_frame_number - det[1] > thrs:
             ind = np.where((tracks[:, 0] == det[0]) & (tracks[:, 1] == det[1]))[0][0]
             tracks[ind, 13] = 3
 
@@ -511,7 +510,7 @@ def update_memory(memory, features2, matches, did2tid):
     return memory
 
 
-def discard_bad_matches(matches, disps, disp_thres=10):
+def discard_bad_matches(matches, disps, disp_thrs=10):
     """ "
     inputs
         matches: list[tuple[int,int]]
@@ -523,7 +522,9 @@ def discard_bad_matches(matches, disps, disp_thres=10):
     """
     # TODO bug: if disps is empty the remove_tids removes all matches
     disps = {
-        tid: disp for tid, disp in disps.items() if np.linalg.norm(disp) < disp_thres
+        tid: disp
+        for tid, disp in disps.items()
+        if (disp[0] <= disp_thrs) & (disp[1] <= disp_thrs)
     }
     tids = [match[0] for match in matches]
     remove_tids = set(tids).difference(disps.keys())
@@ -621,7 +622,7 @@ def multistage_track(
 
     # tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
 
-    stop_thr = step * 50
+    stop_thrs = step * 50
     vc = cv2.VideoCapture(str(video_file))
     vc.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
     for frame_number in tqdm(range(start_frame, end_frame + 1)):
@@ -655,27 +656,33 @@ def multistage_track(
             trks = np.concatenate((trks, extension), axis=1)
             continue
         else:
-            dets1 = get_last_dets_tracklets(trks)
-            kill_tracks(trks, dets2, frame_number, stop_thr)
+            kill_tracks(trks, frame_number, stop_thrs)
             dets1 = get_last_dets_tracklets(trks)
             dets1 = predict_locations(dets1, disps, frame_number, step)
             clip_bboxs(dets1, im_height, im_width)
             track_ids = dets1[:, 0].copy()
             features1 = get_features_from_memory(memory, track_ids)
 
-            # from pathlib import Path
-            # from tracking import visualize
-            # vid_name, step, folder = 2, 8, "240hz"
-            # main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
-            # image_path = main_path / "images"
-            # im2 = cv2.imread(str(image_path / f"{vid_name}_frame_{frame_number:06d}.jpg"))
-            # visualize.plot_detections_in_image(dets2[:, [2, 3, 4, 5, 6]], im2)
-            # im1 = cv2.imread(str(image_path / f"{vid_name}_frame_{frame_number - step:06d}.jpg"))
-            # visualize.plot_detections_in_image(dets1[:, [2, 3, 4, 5, 6]], im1)
+        if False:#frame_number >= 528:
+            from pathlib import Path
+
+            from tracking import visualize
+
+            vid_name, step, folder = 2, 8, "240hz"
+            main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
+            image_path = main_path / "images"
+            im2 = cv2.imread(
+                str(image_path / f"{vid_name}_frame_{frame_number:06d}.jpg")
+            )
+            visualize.plot_detections_in_image(dets2[:, [2, 3, 4, 5, 6]], im2)
+            im1 = cv2.imread(
+                str(image_path / f"{vid_name}_frame_{frame_number - step:06d}.jpg")
+            )
+            visualize.plot_detections_in_image(dets1[:, [2, 3, 4, 5, 6]], im1)
 
         matches = get_matches(dets1, dets2, features1, features2)
         disps = calculate_displacements(dets1, dets2, matches, step, disps)
-        matches, disps = discard_bad_matches(matches, disps, disp_thres)
+        matches, disps = discard_bad_matches(matches, disps, disp_thrs)
 
         # TODO: track rebirth: only if tracked for few frames. Get different status.
         # Either in handle_tracklets or other function. This is to tackle duplicate issues.
