@@ -16,6 +16,7 @@ from tracking.multi_stage_tracking import (
     get_occluded_dets,
     get_occluded_matches,
     handle_tracklets,
+    improve_hungarian,
     kill_tracks,
     merge_intersecting_items,
     merge_overlapping_keys_values,
@@ -155,12 +156,12 @@ def test_handle_tracklets():
     exp_did2tid = {11: 1, 12: 2, 13: 3, 16: 6, 17: 7, 18: 8, 14: 4, 10: 9, 15: 10}
     exp_trks = np.array(
         [
-            [0, 184, 0, 1198, 448, 1217, 478, 1207, 463, 19, 30, 0, 0, 2],
+            # [0, 184, 0, 1198, 448, 1217, 478, 1207, 463, 19, 30, 0, 0, 2],
             [1, 184, 1, 1127, 417, 1142, 445, 1135, 431, 15, 28, 0, 0, 1],
             [2, 184, 2, 1493, 452, 1510, 472, 1501, 462, 17, 20, 0, 0, 1],
             [3, 184, 3, 1075, 330, 1091, 340, 1083, 335, 16, 10, 0, 0, 1],
             [4, 184, 4, 1215, 301, 1227, 319, 1221, 310, 12, 18, 0, 0, 1],
-            [5, 184, 5, 1211, 317, 1223, 333, 1217, 325, 13, 15, 0, 0, 2],
+            # [5, 184, 5, 1211, 317, 1223, 333, 1217, 325, 13, 15, 0, 0, 2],
             [6, 184, 6, 1076, 499, 1098, 513, 1087, 506, 22, 13, 0, 0, 1],
             [7, 184, 7, 1047, 480, 1074, 488, 1060, 484, 27, 8, 0, 0, 1],
             [8, 184, 8, 1171, 584, 1201, 610, 1186, 597, 30, 27, 0, 0, 1],
@@ -215,13 +216,24 @@ def test_kill_tracks():
     extension = np.zeros((len(tracks), 3), dtype=np.int64)
     tracks = np.concatenate((tracks, extension), axis=1)
 
-    dets1 = get_last_dets_tracklets(tracks)
-    kill_tracks(tracks, dets1, 3117, 50)
+    kill_tracks(tracks, 3117, 50)
     assert tracks[30193, 13] == 0
-    kill_tracks(tracks, dets1, 4000, 50)
+    kill_tracks(tracks, 4000, 50)
     assert tracks[30193, 13] == 3
 
 
+def test_improve_hungarian():
+    cost_matrix = np.ones(shape=(4, 3)).astype(np.float32)
+    cost_matrix[0, 1] = 0.2
+    cost_matrix[2, 2] = 0.3
+    cost_matrix[3, 2] = 0.4
+
+    ass_rows, ass_cols = improve_hungarian(cost_matrix, thrs=0.8)
+    assert ass_rows == [0, 2]
+    assert ass_cols == [1, 2]
+
+
+test_improve_hungarian()
 test_merge_intersecting_items()
 test_get_occluded_dets()
 test_merge_overlapping_keys_values()

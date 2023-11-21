@@ -186,6 +186,21 @@ def get_model_args():
     return kwargs
 
 
+def improve_hungarian(cm, thrs=0.8):
+    mask = cm < thrs
+    rm_cols = np.where(np.all(mask == False, axis=0))[0]
+    rm_rows = np.where(np.all(mask == False, axis=1))[0]
+    old_rows = set(np.arange(cm.shape[0])).difference(rm_rows)
+    old_cols = set(np.arange(cm.shape[1])).difference(rm_cols)
+    new2old_row = {i: item for i, item in enumerate(old_rows)}
+    new2old_col = {i: item for i, item in enumerate(old_cols)}
+    new_cm = np.delete(np.delete(cm, rm_rows, axis=0), rm_cols, axis=1)
+    rows, cols = linear_sum_assignment(new_cm)
+    ass_rows = [new2old_row[item] for item in rows]
+    ass_cols = [new2old_col[item] for item in cols]
+    return ass_rows, ass_cols
+
+
 def hungarian_global_matching(dets1, dets2):
     """
     inputs:
