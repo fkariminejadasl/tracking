@@ -186,16 +186,24 @@ def get_model_args():
     return kwargs
 
 
-def improve_hungarian(cm, thrs=0.8):
-    mask = cm < thrs
+def improve_hungarian(cost, thrs):
+    """
+    inputs:
+        cost: np.ndarray
+            cost or loss matrix
+    return:
+        associated rows and columns: tuple[list[int], list[int]]
+            The values are the indices of original cost matrix.
+    """
+    mask = cost < thrs
     rm_cols = np.where(np.all(mask == False, axis=0))[0]
     rm_rows = np.where(np.all(mask == False, axis=1))[0]
-    old_rows = set(np.arange(cm.shape[0])).difference(rm_rows)
-    old_cols = set(np.arange(cm.shape[1])).difference(rm_cols)
+    old_rows = set(np.arange(cost.shape[0])).difference(rm_rows)
+    old_cols = set(np.arange(cost.shape[1])).difference(rm_cols)
     new2old_row = {i: item for i, item in enumerate(old_rows)}
     new2old_col = {i: item for i, item in enumerate(old_cols)}
-    new_cm = np.delete(np.delete(cm, rm_rows, axis=0), rm_cols, axis=1)
-    rows, cols = linear_sum_assignment(new_cm)
+    new_cost = np.delete(np.delete(cost, rm_rows, axis=0), rm_cols, axis=1)
+    rows, cols = linear_sum_assignment(new_cost)
     ass_rows = [new2old_row[item] for item in rows]
     ass_cols = [new2old_col[item] for item in cols]
     return ass_rows, ass_cols
@@ -215,6 +223,7 @@ def hungarian_global_matching(dets1, dets2):
             # loc_loss = np.linalg.norm([det2[7] - det1[7], det2[8] - det1[8]])
             dist[i, j] = iou_loss  # + loc_loss
     row_ind, col_ind = linear_sum_assignment(dist)
+    # row_ind, col_ind = improve_hungarian(dist, thrs=0.8)
     return row_ind, col_ind
 
 
@@ -390,7 +399,6 @@ def get_matches(dets1, dets2, features1, features2):
     # Stage 1: Hungarian matching on non occluded detections
     n_occluded_matches = get_n_occluded_matches(dets1, dets2, n_occluded1, n_occluded2)
 
-    # TODO check frame 232, group (3,8,10). 8 matched to the wrong one
     # Stage 2: Cos similarity of concatenated embeddings
     occluded_matches = get_occluded_matches(
         dets1, dets2, matching_groups, features1, features2
@@ -426,7 +434,8 @@ def handle_tracklets(dets1, dets2, matches, trks):
         did2tid[did2] = did1
 
     # Remove bad tracks: track is born in previous frame but then it is not
-    # matched here. So it will be removed.
+    # matched here. So it will be removed. N.B. previous step for matches should
+    # be done before. Otherwise, the track length (frequency) is not 2.
     # N.B. In DeepMOT, for track birth, track is born if detections appear in 3
     # consecutive frames and have at least .3 IOU overlap.
     counter = Counter(trks[:, 0])
@@ -525,7 +534,7 @@ def update_memory(memory, features2, matches, did2tid):
     return memory
 
 
-def discard_bad_matches(matches, disps, disp_thrs=10):
+def discard_bad_matches(matches, disps, disp_thrs):
     """ "
     inputs
         matches: list[tuple[int,int]]
@@ -575,7 +584,7 @@ def calculate_displacements(trks, dets2, matches, step, disps):
         ]
     tids = dets1[:, 0].copy()
     matched_tids = [match[0] for match in matches]
-    # TODO inactive from beginning
+    # inactive from beginning are removed in handle_tracklets.
     inactive_tids = list(set(tids).difference(matched_tids))
     removed_tids = set(disps.keys()).difference(matched_tids + inactive_tids)
     [disps.pop(removed_tid, None) for removed_tid in removed_tids]
