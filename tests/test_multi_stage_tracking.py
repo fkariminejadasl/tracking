@@ -202,7 +202,7 @@ def test_handle_tracklets():
     trks[:, 0] = trks[:, 2]
     trks = np.concatenate((trks, extension), axis=1)
     dets1 = get_last_dets_tracklets(trks)
-    trks, did2tid = handle_tracklets(dets1, dets2, matches, trks)
+    trks, did2tid, _ = handle_tracklets(dets1, dets2, matches, trks)
 
     np.testing.assert_array_equal(trks, exp_trks)
     assert did2tid == exp_did2tid

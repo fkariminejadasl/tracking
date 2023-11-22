@@ -204,6 +204,10 @@ def improve_hungarian(cost, thrs):
     new2old_col = {i: item for i, item in enumerate(old_cols)}
     new_cost = np.delete(np.delete(cost, rm_rows, axis=0), rm_cols, axis=1)
     rows, cols = linear_sum_assignment(new_cost)
+    # TODO maybe add this one
+    # row_cols = np.array([(row,col) for row, col in zip(rows, cols) if cost[row,col]<thrs])
+    # rows = list(row_cols[:, 0])
+    # cols = list(row_cols[:, 1])
     ass_rows = [new2old_row[item] for item in rows]
     ass_cols = [new2old_col[item] for item in cols]
     return ass_rows, ass_cols
@@ -441,11 +445,10 @@ def handle_tracklets(dets1, dets2, matches, trks):
     counter = Counter(trks[:, 0])
     freqs = np.array(list(counter.values()))
     vals = np.array(list(counter.keys()))
-    bad_tids = vals[np.where(freqs == 1)[0]]
-    if bad_tids.size != 0:
-        for bad_tid in bad_tids:
-            ind = np.where(trks[:, 0] == bad_tid)[0][0]
-            trks = np.delete(trks, ind, axis=0)
+    bad_tids = list(vals[np.where(freqs == 1)[0]])
+    for bad_tid in bad_tids:
+        ind = np.where(trks[:, 0] == bad_tid)[0][0]
+        trks = np.delete(trks, ind, axis=0)
 
     # for inactive tracks
     dids1 = dets1[:, 2]
@@ -468,7 +471,7 @@ def handle_tracklets(dets1, dets2, matches, trks):
         did2tid[did2] = tid
         tid += 1
 
-    return trks, did2tid
+    return trks, did2tid, bad_tids
 
 
 def get_last_dets_tracklets(tracks):
@@ -519,10 +522,17 @@ def get_features_from_memory(memory, track_ids):
     return {track_id: memory[track_id] for track_id in track_ids}
 
 
-def update_memory(memory, features2, matches, did2tid):
+def update_memory(memory, features2, matches, did2tid, bad_tids):
+    """
+    did2tid: dict(int)
+        map detection id to track id
+    bad_tids: list
+        removed track ids
+    """
+    _ = [memory.pop(tid) for tid in bad_tids]
     for match in matches:
-        did1, did2 = match
-        memory[did1] = deepcopy(features2[did2])
+        tid1, did2 = match
+        memory[tid1] = deepcopy(features2[did2])
 
     dids2 = features2.keys()
     matched2 = [match[1] for match in matches]
@@ -587,7 +597,7 @@ def calculate_displacements(trks, dets2, matches, step, disps):
     # inactive from beginning are removed in handle_tracklets.
     inactive_tids = list(set(tids).difference(matched_tids))
     removed_tids = set(disps.keys()).difference(matched_tids + inactive_tids)
-    [disps.pop(removed_tid, None) for removed_tid in removed_tids]
+    _ = [disps.pop(removed_tid, None) for removed_tid in removed_tids]
     return disps
 
 
@@ -713,8 +723,8 @@ def multistage_track(
 
         # TODO: track rebirth: only if tracked for few frames. Get different status.
         # Either in handle_tracklets or other function. This is to tackle duplicate issues.
-        trks, did2tid = handle_tracklets(dets1, dets2, matches, trks)
-        memory = update_memory(memory, features2, matches, did2tid)
+        trks, did2tid, bad_tids = handle_tracklets(dets1, dets2, matches, trks)
+        memory = update_memory(memory, features2, matches, did2tid, bad_tids)
 
         # # save intermediate results
         # dets = get_last_dets_tracklets(trks)
