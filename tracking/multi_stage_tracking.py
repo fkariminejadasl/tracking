@@ -2,7 +2,7 @@
 # - use Cosim for each occluded group
 from collections import Counter
 from copy import deepcopy
-from itertools import combinations
+from itertools import chain, combinations
 
 import cv2
 import numpy as np
@@ -226,8 +226,8 @@ def hungarian_global_matching(dets1, dets2):
             iou_loss = 1 - da.get_iou(det1[3:7], det2[3:7])
             # loc_loss = np.linalg.norm([det2[7] - det1[7], det2[8] - det1[8]])
             dist[i, j] = iou_loss  # + loc_loss
-    row_ind, col_ind = linear_sum_assignment(dist)
-    # row_ind, col_ind = improve_hungarian(dist, thrs=0.8)
+    # row_ind, col_ind = linear_sum_assignment(dist)
+    row_ind, col_ind = improve_hungarian(dist, thrs=0.8)
     return row_ind, col_ind
 
 
@@ -411,7 +411,7 @@ def get_matches(dets1, dets2, features1, features2):
     return n_occluded_matches + occluded_matches
 
 
-def handle_tracklets(dets1, dets2, matches, trks):
+def handle_tracklets(dets1, dets2, matches, trks, u_tids=[], u_dids=[]):
     """
     matched and unmatched detection ids are handled here.
     unmached (tracklets: inactive track but keept, dets: new track)
@@ -421,6 +421,10 @@ def handle_tracklets(dets1, dets2, matches, trks):
             dets2 is from image.
         matches: list[tuple[int, int]]
             This is a list of matched det_id, where first is for dets1, and the second is for dets2
+        trks: np.ndary
+            tracks
+        u_tids, u_dis: list[int]
+            list of undetermined track/detection ids
     output:
     """
 
@@ -453,7 +457,7 @@ def handle_tracklets(dets1, dets2, matches, trks):
     # for inactive tracks
     dids1 = dets1[:, 2]
     matched1 = [match[0] for match in matches]
-    unmatched1 = set(dids1).difference(matched1)
+    unmatched1 = set(dids1).difference(matched1 + u_tids)
     for did1 in unmatched1:
         det1 = dets1[dets1[:, 2] == did1][0]
         ind = np.where((trks[:, 0] == det1[0]) & (trks[:, 1] == det1[1]))[0]
@@ -462,7 +466,7 @@ def handle_tracklets(dets1, dets2, matches, trks):
     # for new track
     dids2 = dets2[:, 2]
     matched2 = [match[1] for match in matches]
-    unmatched2 = set(dids2).difference(matched2)
+    unmatched2 = set(dids2).difference(matched2 + u_dids)
     for did2 in unmatched2:
         det2 = dets2[dets2[:, 2] == did2][0]
         det2[0] = tid
@@ -522,12 +526,14 @@ def get_features_from_memory(memory, track_ids):
     return {track_id: memory[track_id] for track_id in track_ids}
 
 
-def update_memory(memory, features2, matches, did2tid, bad_tids):
+def update_memory(memory, features2, matches, did2tid, bad_tids, u_dids=[]):
     """
     did2tid: dict(int)
         map detection id to track id
     bad_tids: list
         removed track ids
+    u_dids: list[int]
+        list of undetermined detection ids
     """
     _ = [memory.pop(tid) for tid in bad_tids]
     for match in matches:
@@ -536,7 +542,7 @@ def update_memory(memory, features2, matches, did2tid, bad_tids):
 
     dids2 = features2.keys()
     matched2 = [match[1] for match in matches]
-    unmatched2 = set(dids2).difference(matched2)
+    unmatched2 = set(dids2).difference(matched2 + u_dids)
     for did2 in unmatched2:
         tid = did2tid[did2]
         memory[tid] = deepcopy(features2[did2])
@@ -659,7 +665,7 @@ def multistage_track(
 
     # tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
 
-    stop_thrs = step * 50
+    stop_thrs = step * 30
     vc = cv2.VideoCapture(str(video_file))
     vc.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
     for frame_number in tqdm(range(start_frame, end_frame + 1)):
@@ -723,8 +729,12 @@ def multistage_track(
 
         # TODO: track rebirth: only if tracked for few frames. Get different status.
         # Either in handle_tracklets or other function. This is to tackle duplicate issues.
-        trks, did2tid, bad_tids = handle_tracklets(dets1, dets2, matches, trks)
-        memory = update_memory(memory, features2, matches, did2tid, bad_tids)
+        u_tids = list(chain(*get_occluded_dets(dets1)))
+        u_dids = list(chain(*get_occluded_dets(dets2)))
+        trks, did2tid, bad_tids = handle_tracklets(
+            dets1, dets2, matches, trks, u_tids, u_dids
+        )
+        memory = update_memory(memory, features2, matches, did2tid, bad_tids, u_dids)
 
         # # save intermediate results
         # dets = get_last_dets_tracklets(trks)
