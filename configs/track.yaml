@@ -1,14 +1,14 @@
 # None: means leave it empty
-det_checkpoint: /home/fatemeh/Downloads/fish/best_model/det_best_bgr29.pt
-main_path: /home/fatemeh/Downloads/fish/in_sample_vids/240hz
-video_file: /home/fatemeh/Downloads/fish/in_sample_vids/240hz/vids/2.mp4
-image_folder: images # images_e1
-save_name: exp3 # The name of the file used to save tracks and video
-dets_path: /home/fatemeh/Downloads/fish/in_sample_vids/240hz/yolo # /home/fatemeh/Downloads/fish/in_sample_vids/240hz/ms_8_dets.zip # Path or zipfile where the detections are
-start_frame: 8 # starting frame. Frames counts from zero.
-end_frame: # The end frame. The counting of frames is zero-based. Value: int|None
+det_checkpoint: /content/det_best_bgr29.pt # Value: Path
+main_path: /content # Value: Path
+video_file: /content/2.mp4 # Value: Path
+save_name: exp1 # Value: str . The name of the file used to save tracks and/or images with tracks
+dets_path: # Value: Path | zipfile | None . e.g /content/yolo e.g /content/ms_8_dets.zip 
+start_frame: 0 # Value: int . The counting of frames is zero-based.
+end_frame: # Value: int|None . The counting of frames is zero-based. 
 step: 8 # only track with this step size
+track_method: ms # Value: botsort | bytetrack | ms 
+save_images: no # Value: yes|no or true|false . Save images with tracks. 
 format: 06d # detection files are saved with this format. e.g. name_0000123.txt the format is '06d'. e.g. name_123.txt the format is ''
-track_config_file: # /home/fatemeh/Downloads/fish/configs/botsort.yaml
-track_method: ms # values: botsort | bytetrack | ms | hungarian
-save_images: yes # save either images or images with tracks. Options: yes|no or true|false
+track_config_file: # config file only for botsort and bytetrack if they are change. e.g /contect/botsort.yaml, /content/bytetrack.yaml
+image_folder: # Value: str | None . e.g. images

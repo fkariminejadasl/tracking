@@ -50,7 +50,7 @@ def get_occluded_dets(dets):
     output e.g. [[10, 15, 17], [21, 29]]
     """
 
-    # if 8, 9, 11, where 9, 11 intersect, 8, 11 but not 8, 9. This return two groups.
+    # if 8, 9, 11, where 9 and 11 intersect and 8 and 11 intersect but not 8, 9. This return two groups.
     # if 11 was a smaller number then one group of three is return. I'm not sure if I change
     # this part. -> now is changed by merge_intersecting_items
     occluded = {}
@@ -402,6 +402,7 @@ def get_matches(dets1, dets2, features1, features2):
 
     # Stage 1: Hungarian matching on non occluded detections
     n_occluded_matches = get_n_occluded_matches(dets1, dets2, n_occluded1, n_occluded2)
+    # return n_occluded_matches
 
     # Stage 2: Cos similarity of concatenated embeddings
     occluded_matches = get_occluded_matches(
@@ -729,8 +730,8 @@ def multistage_track(
 
         # TODO: track rebirth: only if tracked for few frames. Get different status.
         # Either in handle_tracklets or other function. This is to tackle duplicate issues.
-        u_tids = list(chain(*get_occluded_dets(dets1)))
-        u_dids = list(chain(*get_occluded_dets(dets2)))
+        u_tids = list(set(chain(*get_occluded_dets(dets1))))
+        u_dids = list(set(chain(*get_occluded_dets(dets2))))
         trks, did2tid, bad_tids = handle_tracklets(
             dets1, dets2, matches, trks, u_tids, u_dids
         )
