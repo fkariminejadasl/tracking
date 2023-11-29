@@ -44,7 +44,7 @@ def identify_nms_dids(dets, thrs_iou, thrs_inside):
         det2 = dets[dets[:, 2] == did2][0]
         is_occluded = large_occlusion(det1, det2, thrs_iou, thrs_inside)
         if is_occluded:
-            if det1[11] < det2[11]:
+            if det1[11] < det2[11]:  # dq (det quality)
                 rm_dids.append(det1[2])
             else:
                 rm_dids.append(det2[2])
@@ -52,13 +52,24 @@ def identify_nms_dids(dets, thrs_iou, thrs_inside):
 
 
 def non_max_sup(dets, thrs_iou, thrs_inside):
+    """
+    Identify large occluded detections and remove the one with lowest detection quality (dq)
+    """
     r_dids = identify_nms_dids(dets, thrs_iou, thrs_inside)
     rows_to_keep = ~np.isin(dets[:, 2], r_dids)
     dets = dets[rows_to_keep]
     return dets
 
 
-def merge_intersecting_items(lst):
+def merge_intersecting_lists(lst):
+    """
+    input: list[list[int]]
+    output: list[list[int]]
+
+     e.g. merge_intersecting_lists([[1,2], [3,2], [3,4], [5,6], [7], [6,8]]) returns
+    [[1, 2, 3, 4], [5, 6, 8], [7]]
+    """
+
     def merge_sort(sublist):
         sublist.sort()
         return sublist
@@ -89,7 +100,7 @@ def get_occluded_dets(dets):
 
     # if 8, 9, 11, where 9 and 11 intersect and 8 and 11 intersect but not 8, 9. This return two groups.
     # if 11 was a smaller number then one group of three is return. I'm not sure if I change
-    # this part. -> now is changed by merge_intersecting_items
+    # this part. -> now is changed by merge_intersecting_lists
     occluded = {}
     ids = dets[:, 2]
     for did1, did2 in combinations(ids, 2):
@@ -98,16 +109,14 @@ def get_occluded_dets(dets):
         if da.get_iou(det1[3:7], det2[3:7]) > 0:
             occluded.setdefault(did1, [did1]).append(did2)
     occluded = list(occluded.values())
-    return merge_intersecting_items(occluded)
+    return merge_intersecting_lists(occluded)
 
 
-def merge_overlapping_keys_values(input):
+def merge_overlapping_keys(input):
     """
-    merge overlapping keys
-
     input, output: dic[tuple[int, ...], tuple[int, ...]]
 
-    input output e.g. {(6, 7): (6, 7), (15, 17): (15, 17)}
+    input output e.g. {(6, 7): (1,), (6,): (2, 3), (7, 8): (5,)} -> {(6, 7, 8): (1, 2, 3, 5)}
     """
     merged = {}
     while input:
@@ -126,6 +135,22 @@ def merge_overlapping_keys_values(input):
         if not is_merged:
             merged[key1] = value1
     return merged
+
+
+def merge_overlapping_keys_and_values(input):
+    """
+    input, output: dic[tuple[int, ...], tuple[int, ...]]
+
+    input output e.g. {(6,7):(1,), (6,):(2,3), (4,):(4,), (9,8):(5,1)} -> {(6, 7, 8, 9): (1, 2, 3, 5), (4,):(4,)}
+    """
+
+    # merge keys
+    output = merge_overlapping_keys(input)
+    output = {val: key for key, val in output.items()}
+    # merge values
+    output = merge_overlapping_keys(output)
+    output = {val: key for key, val in output.items()}
+    return output
 
 
 def find_match_groups(dets1, dets2, occluded1, occluded2):
@@ -162,7 +187,7 @@ def find_match_groups(dets1, dets2, occluded1, occluded2):
                     values.append(did1)
         group1 = tuple(sorted(set(values)))
         matching_groups[group1] = group2
-    matching_groups = merge_overlapping_keys_values(matching_groups)
+    matching_groups = merge_overlapping_keys_and_values(matching_groups)
     return matching_groups
 
 
@@ -774,8 +799,7 @@ def multistage_track(
 
         # TODO: track rebirth: only if tracked for few frames. Get different status.
         # Either in handle_tracklets or other function. This is to tackle duplicate issues.
-        u_tids = list(set(chain(*get_occluded_dets(dets1))))
-        u_dids = list(set(chain(*get_occluded_dets(dets2))))
+        u_dids = []  # list(set(chain(*get_occluded_dets(dets2))))
         trks, did2tid, bad_tids = handle_tracklets(dets1, dets2, matches, trks, u_dids)
         memory = update_memory(memory, features2, matches, did2tid, bad_tids, u_dids)
 

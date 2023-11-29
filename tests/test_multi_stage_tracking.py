@@ -4,27 +4,11 @@ import cv2
 import numpy as np
 
 from tracking import data_association as da
-from tracking.multi_stage_tracking import (
-    calculate_deep_features,
-    find_match_groups,
-    get_cosim_matches_per_group,
-    get_last_dets_tracklets,
-    get_matches,
-    get_model_args,
-    get_n_occluded_matches,
-    get_not_occluded,
-    get_occluded_dets,
-    get_occluded_matches,
-    handle_tracklets,
-    improve_hungarian,
-    kill_tracks,
-    merge_intersecting_items,
-    merge_overlapping_keys_values,
-)
+from tracking import multi_stage_tracking as ms
 
 np.random.seed(1000)
 
-kwargs = get_model_args()
+kwargs = ms.get_model_args()
 vid_name, frame_number1, step, folder = 6, 16, 8, "240hz"
 main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
 image_path = main_path / "images"
@@ -41,14 +25,14 @@ dets2[:, 2] = dets2[:, 0]
 
 image1 = cv2.imread(str(image_path / f"{vid_name}_frame_{frame_number1:06d}.jpg"))
 image2 = cv2.imread(str(image_path / f"{vid_name}_frame_{frame_number2:06d}.jpg"))
-features1 = calculate_deep_features(dets1[:, 2], dets1, image1, **kwargs)
-features2 = calculate_deep_features(dets2[:, 2], dets2, image2, **kwargs)
+features1 = ms.calculate_deep_features(dets1[:, 2], dets1, image1, **kwargs)
+features2 = ms.calculate_deep_features(dets2[:, 2], dets2, image2, **kwargs)
 
 
-def test_merge_intersecting_items():
+def test_merge_intersecting_lists():
     occluded = [[8, 10], [7, 9], [6, 8, 10]]
     expected = [[6, 8, 10], [7, 9]]
-    new = merge_intersecting_items(occluded)
+    new = ms.merge_intersecting_lists(occluded)
     assert new == expected
 
 
@@ -64,11 +48,11 @@ def test_get_occluded_dets():
     bboxes = np.array(bboxes).astype(np.int64)
     other_columns = np.repeat(np.arange(len(bboxes))[None], 3, axis=0).T
     dets = np.concatenate((other_columns, bboxes), axis=1)
-    groups = get_occluded_dets(dets)
+    groups = ms.get_occluded_dets(dets)
     assert groups == [[0, 1, 3, 4], [2, 5]]
 
 
-def test_merge_overlapping_keys_values():
+def test_merge_overlapping_keys():
     input = {
         (4, 6): (0, 8, 6),
         (3,): (1, 3),
@@ -78,7 +62,14 @@ def test_merge_overlapping_keys_values():
         (2, 3): (1, 2, 3),
     }
     expected = {(1, 4, 6): (0, 6, 8), (2, 3): (1, 2, 3), (9, 10): (11, 12, 13)}
-    result = merge_overlapping_keys_values(input)
+    result = ms.merge_overlapping_keys(input)
+    assert result == expected
+
+
+def test_merge_overlapping_keys_and_values():
+    input = {(6, 7): (1,), (6,): (2, 3), (4,): (4,), (9, 8): (5, 1)}
+    expected = {(6, 7, 8, 9): (1, 2, 3, 5), (4,): (4,)}
+    result = ms.merge_overlapping_keys_and_values(input)
     assert result == expected
 
 
@@ -90,10 +81,10 @@ def test_find_match_groups():
     # {0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 14, 15, 16, 18, 19, 20, 22, 23, 24, 25, 26, 27, 28, 30, 31}
     exp_matching_groups = {(6, 7): (6, 7), (13, 17): (13, 17), (21, 29): (21, 29)}
 
-    occluded1 = get_occluded_dets(dets1)
-    occluded2 = get_occluded_dets(dets2)
-    matching_groups = find_match_groups(dets1, dets2, occluded1, occluded2)
-    n_occluded1, n_occluded2 = get_not_occluded(dets1, dets2, matching_groups)
+    occluded1 = ms.get_occluded_dets(dets1)
+    occluded2 = ms.get_occluded_dets(dets2)
+    matching_groups = ms.find_match_groups(dets1, dets2, occluded1, occluded2)
+    n_occluded1, n_occluded2 = ms.get_not_occluded(dets1, dets2, matching_groups)
 
     assert occluded1 == exp_occluded1
     assert not n_occluded1.difference(exp_n_occluded) == True
@@ -104,7 +95,7 @@ def test_find_match_groups():
 
 def test_get_cosim_matches_per_group():
     out = [44, 44, 83, 44, 13, 81, 13, 44, 82, 13, 13, 85]
-    matches = get_cosim_matches_per_group(out)
+    matches = ms.get_cosim_matches_per_group(out)
     exp_matched = [[13, 13, 85], [44, 44, 83]]
     assert exp_matched == matches
 
@@ -115,7 +106,7 @@ def test_stage1():
     flatten = [v for vv in occluded1 + occluded2 for v in vv]
     n_occluded = set(range(31)).difference(flatten)
     expected = list(zip(n_occluded, n_occluded))
-    matched_dids = get_n_occluded_matches(dets1, dets2, n_occluded, n_occluded)
+    matched_dids = ms.get_n_occluded_matches(dets1, dets2, n_occluded, n_occluded)
     assert expected == matched_dids
 
 
@@ -130,7 +121,7 @@ def test_stage2():
         (21, 21),  # 97
         (29, 29),  # 86
     ]
-    occluded_matches = get_occluded_matches(
+    occluded_matches = ms.get_occluded_matches(
         dets1, dets2, matching_groups, features1, features2
     )
     assert exp_occluded_matches == occluded_matches
@@ -146,7 +137,7 @@ def test_stage2():
         (29, 39),  # 86
     ]
     features2_changed = {k + 10: v for k, v in features2.items()}
-    occluded_matches = get_occluded_matches(
+    occluded_matches = ms.get_occluded_matches(
         dets1, dets2, matching_groups, features1, features2_changed
     )
     assert exp_occluded_matches == occluded_matches
@@ -194,7 +185,7 @@ def test_handle_tracklets():
     dets2 = np.concatenate((dets2, extension), axis=1)
 
     features2_changed = {k + 10: v for k, v in features2.items()}
-    matches = get_matches(dets1, dets2, features1, features2_changed)
+    matches = ms.get_matches(dets1, dets2, features1, features2_changed)
     matches.remove((0, 10))
     matches.remove((5, 15))
     # [(1, 11), (2, 12), (3, 13), (6, 16), (7, 17), (8, 18), (4, 14)]
@@ -202,8 +193,8 @@ def test_handle_tracklets():
     trks = dets1.copy()
     trks[:, 0] = trks[:, 2]
     trks = np.concatenate((trks, extension), axis=1)
-    dets1 = get_last_dets_tracklets(trks)
-    trks, did2tid, _ = handle_tracklets(dets1, dets2, matches, trks)
+    dets1 = ms.get_last_dets_tracklets(trks)
+    trks, did2tid, _ = ms.handle_tracklets(dets1, dets2, matches, trks)
 
     np.testing.assert_array_equal(trks, exp_trks)
     assert did2tid == exp_did2tid
@@ -217,9 +208,9 @@ def test_kill_tracks():
     extension = np.zeros((len(tracks), 3), dtype=np.int64)
     tracks = np.concatenate((tracks, extension), axis=1)
 
-    kill_tracks(tracks, 3117, 50)
+    ms.kill_tracks(tracks, 3117, 50)
     assert tracks[30193, 13] == 0
-    kill_tracks(tracks, 4000, 50)
+    ms.kill_tracks(tracks, 4000, 50)
     assert tracks[30193, 13] == 3
 
 
@@ -229,15 +220,16 @@ def test_improve_hungarian():
     cost_matrix[2, 2] = 0.3
     cost_matrix[3, 2] = 0.4
 
-    ass_rows, ass_cols = improve_hungarian(cost_matrix, thrs=0.8)
+    ass_rows, ass_cols = ms.improve_hungarian(cost_matrix, thrs=0.8)
     assert ass_rows == [0, 2]
     assert ass_cols == [1, 2]
 
 
 test_improve_hungarian()
-test_merge_intersecting_items()
+test_merge_intersecting_lists()
 test_get_occluded_dets()
-test_merge_overlapping_keys_values()
+test_merge_overlapping_keys()
+test_merge_overlapping_keys_and_values()
 test_find_match_groups()
 test_get_cosim_matches_per_group()
 test_stage1()
