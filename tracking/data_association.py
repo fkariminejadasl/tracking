@@ -144,6 +144,7 @@ def get_detections_array(
         center_y = int(round(det[2] * height))
         bbox_width = int(round(det[3] * width))
         bbox_height = int(round(det[4] * height))
+        det_score = int(round(det[5] * 100))
         x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(
             center_x, center_y, bbox_width, bbox_height
         )
@@ -160,6 +161,7 @@ def get_detections_array(
             center_y,
             bbox_width,
             bbox_height,
+            det_score,
         ]
         dets_array.append(item)
     return np.array(dets_array).astype(np.int64)
@@ -855,8 +857,12 @@ def save_tracks_to_mot_format(
             for item in tracks:
                 if item[0] == -1:  # track_id=-1: detections. no track info.
                     item[0] = item[2]  # deepcopy it not
+                if tracks.shape[1] == 12:
+                    det_quality = int(item[11])
+                else:
+                    det_quality = 1
                 file.write(
-                    f"{int(item[1])+1},{int(item[0])+1},{item[3]+1},{item[4]+1},{int(item[9])},{int(item[10])},1,1,1.0\n"
+                    f"{int(item[1])+1},{int(item[0])+1},{item[3]+1},{item[4]+1},{int(item[9])},{int(item[10])},{det_quality},1,1.0\n"
                 )
     if make_zip:
         shutil.make_archive(save_file.with_suffix(""), "zip", save_file.parent, "gt")
@@ -905,11 +911,16 @@ def load_tracks_from_mot_format(zip_file: Path) -> np.ndarray:
                 center_y,
                 width,
                 height,
+                int(items[6]),  # detection quality
             ]
             tracks.append(track)
     if zip_file.suffix == ".zip":
         shutil.rmtree(zip_file.parent / zip_file.stem)
-    return np.round(np.array(tracks)).astype(np.int64)
+    tracks = np.round(np.array(tracks)).astype(np.int64)
+    det_qualities = tracks[:, -1]
+    if set(det_qualities) == {1}:
+        return tracks[:, :11]
+    return tracks
 
 
 def load_tracks_from_cvat_txt_format(track_file: Path) -> np.ndarray:
@@ -1022,7 +1033,11 @@ def is_valid_bbox(bbox):
 
 
 def get_iou(bbox1, bbox2) -> float:
-    # bbox1,2: (x_topleft, y_topleft, x_bottomright, y_bottomright)
+    """
+    inputs:
+        bbox1,2: tuple|list|np.ndarray
+            (x_topleft, y_topleft, x_bottomright, y_bottomright)
+    """
 
     # If bbox is not a bbox.
     # TODO: maybe remove

@@ -438,7 +438,8 @@ def handle_tracklets(dets1, dets2, matches, trks, u_tids=[], u_dids=[]):
         det1 = dets1[dets1[:, 2] == did1][0]
         det2 = dets2[dets2[:, 2] == did2][0]
         det2[0] = det1[0]
-        det2 = np.concatenate((det2, [0, 0, 1]))
+        det2 = np.concatenate((det2, [0, 1]))
+        # last columns: dq, tq, ts (det quality, track quality, track score)
         trks = np.concatenate((trks, det2[None]), axis=0)
         did2tid[did2] = did1
 
@@ -462,7 +463,7 @@ def handle_tracklets(dets1, dets2, matches, trks, u_tids=[], u_dids=[]):
     for did1 in unmatched1:
         det1 = dets1[dets1[:, 2] == did1][0]
         ind = np.where((trks[:, 0] == det1[0]) & (trks[:, 1] == det1[1]))[0]
-        trks[ind, 13] = 2  # ts, dq, tq
+        trks[ind, 13] = 2  # dq, tq, ts
 
     # for new track
     dids2 = dets2[:, 2]
@@ -471,7 +472,8 @@ def handle_tracklets(dets1, dets2, matches, trks, u_tids=[], u_dids=[]):
     for did2 in unmatched2:
         det2 = dets2[dets2[:, 2] == did2][0]
         det2[0] = tid
-        det2 = np.concatenate((det2, [0, 0, 1]))
+        det2 = np.concatenate((det2, [0, 1]))
+        # last columns: dq, tq, ts (det quality, track quality, track score)
         trks = np.concatenate((trks, det2[None]), axis=0)
         did2tid[did2] = tid
         tid += 1
@@ -487,7 +489,7 @@ def get_last_dets_tracklets(tracks):
 
     input:
         tracks: np.ndarray
-            with tid, fn, did, x, y, x, y, cx, cy, w, h, dq, tq, st
+            with tid, fn, did, x, y, x, y, cx, cy, w, h, dq, tq, ts
     output:
         np.ndarray
             same as input.
@@ -643,6 +645,11 @@ def multistage_track(
         tracks = da.load_tracks_from_mot_format(det_path)
         tracks[:, 2] = tracks[:, 0]  # dets or tracks used as dets
         tracks[:, 0] = -1
+        if tracks.shape[1] == 11:
+            # detection score is 100, since mot format comes from manual annotations
+            tracks = np.concatenate(
+                (tracks, 100 * np.ones(len(tracks), dtype=np.int64)[:, None]), axis=1
+            )
 
     kwargs = get_model_args()  # TODO ugly
     # DEBUG = False
@@ -694,9 +701,8 @@ def multistage_track(
             memory = deepcopy(features2)
             trks = dets2.copy().astype(np.int64)
             trks[:, 0] = trks[:, 2]
-            extension = np.repeat(
-                np.array([[0, 0, 1]]), len(trks), axis=0
-            )  # ts, dq, tq
+            extension = np.repeat(np.array([[0, 1]]), len(trks), axis=0)
+            # last columns: dq, tq, ts (det quality, track quality, track score)
             trks = np.concatenate((trks, extension), axis=1)
             continue
         else:
@@ -705,7 +711,7 @@ def multistage_track(
             track_ids = dets1[:, 0].copy()
             features1 = get_features_from_memory(memory, track_ids)
 
-        if False:  # frame_number >= 1912:
+        if False:  # frame_number >= 0:
             from pathlib import Path
 
             from tracking import visualize
@@ -749,73 +755,38 @@ def multistage_track(
     return trks
 
 
-def ultralytics_detect(
-    image_path,
-    vid_name,
+def ultralytics_detect_video(
+    video_file,
     start_frame,
     end_frame,
     step,
     det_checkpoint,
 ):
-    """ "
-    input:
-
+    """
     output:
         track: np.ndarray
-            with tid=-1, fn, did, x, y, x, y, cx, cy, w, h, dq, tq, st
+            with tid=-1, fn, did, x, y, x, y, cx, cy, w, h, dq, tq, ts
+    N.B. I use the track format here. The last two colums (track quality and track status are not here.)
     """
     model = YOLO(det_checkpoint)
 
-    trks = np.empty((0, 7), dtype=np.int64)
-    for frame_number in tqdm(range(start_frame, end_frame + 1, step)):
-        image = cv2.imread(str(image_path / f"{vid_name}_frame_{frame_number:06d}.jpg"))
+    trks = np.empty((0, 8), dtype=np.int64)
+    vc = cv2.VideoCapture(video_file.as_posix())
+    vc.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    for frame_number in tqdm(range(start_frame, end_frame + 1)):
+        _, image = vc.read()
+        # image = cv2.imread(str(image_path / f"{vid_name}_frame_{frame_number:06d}.jpg"))
+        if frame_number % step != 0:
+            continue
+
         results = model(image, verbose=False)
 
+        confs = np.round(100 * np.array(results[0].boxes.conf.cpu())[:, None])
         xyxy = results[0].boxes.xyxy.cpu()
         track_ids = -np.ones(len(xyxy))[:, None]
-        ones = frame_number * np.ones(len(xyxy))[:, None]
+        fns = frame_number * np.ones(len(xyxy))[:, None]
         det_ids = np.arange(len(xyxy))[:, None]
-        dets = np.concatenate((track_ids, ones, det_ids, xyxy), axis=1).astype(np.int64)
-        trks = np.concatenate((trks, dets), axis=0)
-
-        # visualize.save_image_with_dets(
-        #     main_path / f"{track_method}_tracks_inter", vid_name, dets, image
-        # )
-        # visualize.plot_detections_in_image(dets[:, [0,3,4,5,6]], image)
-    cen_whs = np.array([list(da.cen_wh_from_tl_br(*item[3:])) for item in trks])
-    trks = np.concatenate((trks, cen_whs), axis=1).astype(np.int64)
-    return trks
-
-
-def ultralytics_track(
-    image_path,
-    vid_name,
-    start_frame,
-    end_frame,
-    step,
-    det_checkpoint,
-    config_file="botsort.yaml",
-):
-    """ "
-    input:
-        config_file: Path|None
-            if None, botsort.yaml file is used. The options are botsort and bytetrack.
-
-    output:
-        tracks: np.ndarray
-            with tid, fn, did, x, y, x, y, cx, cy, w, h, dq, tq, st
-    """
-    model = YOLO(det_checkpoint)
-
-    trks = np.empty((0, 7), dtype=np.int64)
-    for frame_number in tqdm(range(start_frame, end_frame + 1, step)):
-        image = cv2.imread(str(image_path / f"{vid_name}_frame_{frame_number:06d}.jpg"))
-        results = model.track(image, persist=True, tracker=config_file, verbose=False)
-
-        xyxy = results[0].boxes.xyxy
-        track_ids = results[0].boxes.id[:, None]
-        ones = frame_number * np.ones(len(xyxy))[:, None]
-        dets = np.concatenate((track_ids, ones, track_ids, xyxy), axis=1).astype(
+        dets = np.concatenate((track_ids, fns, det_ids, xyxy, confs), axis=1).astype(
             np.int64
         )
         trks = np.concatenate((trks, dets), axis=0)
@@ -824,50 +795,8 @@ def ultralytics_track(
         #     main_path / f"{track_method}_tracks_inter", vid_name, dets, image
         # )
         # visualize.plot_detections_in_image(dets[:, [0,3,4,5,6]], image)
-    cen_whs = np.array([list(da.cen_wh_from_tl_br(*item[3:])) for item in trks])
-    trks = np.concatenate((trks, cen_whs), axis=1).astype(np.int64)
-    return trks
-
-
-def ultralytics_detect_video(
-    video_file,
-    start_frame,
-    end_frame,
-    step,
-    det_checkpoint,
-):
-    """ "
-    input:
-
-    output:
-        track: np.ndarray
-            with tid=-1, fn, did, x, y, x, y, cx, cy, w, h, dq, tq, st
-    """
-    model = YOLO(det_checkpoint)
-
-    trks = np.empty((0, 7), dtype=np.int64)
-    vc = cv2.VideoCapture(video_file.as_posix())
-    vc.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-    for frame_number in tqdm(range(start_frame, end_frame + 1)):
-        _, image = vc.read()
-        if frame_number % step == 0:
-            results = model(image, verbose=False)
-
-            xyxy = results[0].boxes.xyxy.cpu()
-            track_ids = -np.ones(len(xyxy))[:, None]
-            ones = frame_number * np.ones(len(xyxy))[:, None]
-            det_ids = np.arange(len(xyxy))[:, None]
-            dets = np.concatenate((track_ids, ones, det_ids, xyxy), axis=1).astype(
-                np.int64
-            )
-            trks = np.concatenate((trks, dets), axis=0)
-
-            # visualize.save_image_with_dets(
-            #     main_path / f"{track_method}_tracks_inter", vid_name, dets, image
-            # )
-            # visualize.plot_detections_in_image(dets[:, [0,3,4,5,6]], image)
-    cen_whs = np.array([list(da.cen_wh_from_tl_br(*item[3:])) for item in trks])
-    trks = np.concatenate((trks, cen_whs), axis=1).astype(np.int64)
+    cen_whs = np.array([list(da.cen_wh_from_tl_br(*item[3:7])) for item in trks])
+    trks = np.concatenate((trks[:, :7], cen_whs, trks[:, 7:8]), axis=1).astype(np.int64)
     return trks
 
 
@@ -886,7 +815,7 @@ def ultralytics_track_video(
 
     output:
         track: np.ndarray
-            with tid, fn, did, x, y, x, y, cx, cy, w, h, dq, tq, st
+            with tid, fn, did, x, y, x, y, cx, cy, w, h, dq, tq, ts
     """
     model = YOLO(det_checkpoint)
 
@@ -895,23 +824,22 @@ def ultralytics_track_video(
     vc.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
     for frame_number in tqdm(range(start_frame, end_frame + 1)):
         _, image = vc.read()
-        if frame_number % step == 0:
-            results = model.track(
-                image, persist=True, tracker=config_file, verbose=False
-            )
+        if frame_number % step != 0:
+            continue
+        results = model.track(image, persist=True, tracker=config_file, verbose=False)
 
-            xyxy = results[0].boxes.xyxy
-            track_ids = results[0].boxes.id[:, None]
-            ones = frame_number * np.ones(len(xyxy))[:, None]
-            dets = np.concatenate((track_ids, ones, track_ids, xyxy), axis=1).astype(
-                np.int64
-            )
-            trks = np.concatenate((trks, dets), axis=0)
+        xyxy = results[0].boxes.xyxy
+        track_ids = results[0].boxes.id[:, None]
+        fns = frame_number * np.ones(len(xyxy))[:, None]
+        dets = np.concatenate((track_ids, fns, track_ids, xyxy), axis=1).astype(
+            np.int64
+        )
+        trks = np.concatenate((trks, dets), axis=0)
 
-            # visualize.save_image_with_dets(
-            #     main_path / f"{track_method}_tracks_inter", vid_name, dets, image
-            # )
-            # visualize.plot_detections_in_image(dets[:, [0,3,4,5,6]], image)
+        # visualize.save_image_with_dets(
+        #     main_path / f"{track_method}_tracks_inter", vid_name, dets, image
+        # )
+        # visualize.plot_detections_in_image(dets[:, [0,3,4,5,6]], image)
     cen_whs = np.array([list(da.cen_wh_from_tl_br(*item[3:])) for item in trks])
     trks = np.concatenate((trks, cen_whs), axis=1).astype(np.int64)
     return trks

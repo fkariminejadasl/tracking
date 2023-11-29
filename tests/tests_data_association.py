@@ -191,7 +191,7 @@ def test_make_array_from_dets_reverse():
         data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height, 1
     )
     actual = make_array_from_dets(dets)
-    np.testing.assert_equal(actual, dets_array)
+    np.testing.assert_equal(actual, dets_array[:, :11])
 
     actual = make_dets_from_array(dets_array)
     assert actual[10].x == dets[10].x

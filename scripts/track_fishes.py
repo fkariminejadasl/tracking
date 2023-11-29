@@ -8,9 +8,7 @@ import yaml
 from tracking.data_association import hungarian_track, save_tracks_to_mot_format
 from tracking.multi_stage_tracking import (
     multistage_track,
-    ultralytics_detect,
     ultralytics_detect_video,
-    ultralytics_track,
     ultralytics_track_video,
 )
 from tracking.visualize import (
@@ -68,22 +66,10 @@ if __name__ == "__main__":
         else Path(f"{track_method}.yaml")
     )
 
-    # TODO this is super ugly. If image_folder is not empty and contain no image,
-    # it will donwload own bus.jpg.
-    if image_folder is not None:
-        image_path = main_path / image_folder
-        image_path.mkdir(parents=True, exist_ok=True)
-        is_empty = not any(image_path.iterdir())
-        if is_empty and save_images:
-            print("=====> Save Images")
-            save_images_of_video(
-                main_path / f"{image_folder}",
-                video_file,
-                start_frame,
-                end_frame,
-                step,
-                format,
-            )
+    # TODO maybe for images: if video_file is list of images
+    # If image list is empty, it will donwload own bus.jpg.
+    if video_file.is_dir():
+        is_empty = not any(video_file.iterdir())
 
     if track_method == "ms":
         # TODO is_valid for other path. Put them in the beginning
@@ -99,24 +85,7 @@ if __name__ == "__main__":
                 step,
                 det_checkpoint,
             )
-            # if is_empty:
-            #     dets = ultralytics_detect_video(
-            #         video_file,
-            #         start_frame,
-            #         end_frame,
-            #         step,
-            #         det_checkpoint,
-            #     )
-            # else:
-            #     dets = ultralytics_detect(
-            #         image_path,
-            #         vid_name,
-            #         start_frame,
-            #         end_frame,
-            #         step,
-            #         det_checkpoint,
-            #     )
-            save_tracks_to_mot_format(dets_path, dets[:, :11])
+            save_tracks_to_mot_format(dets_path, dets)
 
         print(f"=====> {track_method} tracking")
         trks = multistage_track(
@@ -139,26 +108,6 @@ if __name__ == "__main__":
             det_checkpoint,
             config_file=track_config_file,
         )
-        # if is_empty:
-        #     print("====> read from video")
-        #     trks = ultralytics_track_video(
-        #         video_file,
-        #         start_frame,
-        #         end_frame,
-        #         step,
-        #         det_checkpoint,
-        #         config_file=track_config_file,
-        #     )
-        # else:
-        #     trks = ultralytics_track(
-        #         image_path,
-        #         vid_name,
-        #         start_frame,
-        #         end_frame,
-        #         step,
-        #         det_checkpoint,
-        #         config_file=track_config_file,
-        #     )
 
     if track_method == "hungarian":
         print(f"=====> {track_method} tracking")
@@ -186,7 +135,3 @@ if __name__ == "__main__":
             step,
             format,
         )
-
-    # # cleanup
-    # if is_empty and not save_images:
-    #     image_path.rmdir()
