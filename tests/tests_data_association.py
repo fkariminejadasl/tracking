@@ -17,6 +17,7 @@ from tracking.data_association import (
     get_iou,
     hungarian_global_matching,
     is_bbox_in_bbox,
+    is_inside_bbox,
     load_disparities,
     load_tracks_from_cvat_txt_format,
     load_tracks_from_mot_format,
@@ -72,6 +73,13 @@ def test_is_bbox_in_bbox():
     assert is_bbox_in_bbox(adets[5, 3:7], adets[1, 3:7]) == True
     assert is_bbox_in_bbox(adets[1, 3:7], adets[5, 3:7]) == False
     assert is_bbox_in_bbox(adets[1, 3:7], adets[8, 3:7]) == False
+
+
+def test_is_inside_bbox():
+    bbox1 = (2, 2, 6, 6)
+    bbox2 = (1, 1, 5, 5)
+    assert is_inside_bbox(bbox1, bbox2, threshold=1) == True
+    assert is_inside_bbox(bbox1, bbox2, threshold=0) == False
 
 
 def test_load_tracks_from_cvat_txt_format():

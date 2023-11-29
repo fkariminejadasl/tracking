@@ -19,6 +19,43 @@ np.random.seed(1000)
 # TODO put it in get_model_args
 layers = ["conv1", "layer1", "layer2", "layer3"]
 disp_thrs = 15
+thrs_iou = 0.3  # .28
+thrs_inside = 3  # pixel
+
+
+def large_occlusion(det1, det2, thrs_iou, thrs_inside):
+    """
+    Identify large occlusions
+    """
+    is_inside2 = da.is_inside_bbox(det1[3:7], det2[3:7], thrs_inside)
+    is_inside1 = da.is_inside_bbox(det2[3:7], det1[3:7], thrs_inside)
+    overlap = da.get_iou(det1[3:7], det2[3:7]) > thrs_iou
+    return is_inside1 or is_inside2 or overlap
+
+
+def identify_nms_dids(dets, thrs_iou, thrs_inside):
+    """
+    Identify NMS (non maximum suppression) detection ids
+    """
+    dids = dets[:, 2]
+    rm_dids = []
+    for did1, did2 in combinations(dids, 2):
+        det1 = dets[dets[:, 2] == did1][0]
+        det2 = dets[dets[:, 2] == did2][0]
+        is_occluded = large_occlusion(det1, det2, thrs_iou, thrs_inside)
+        if is_occluded:
+            if det1[11] < det2[11]:
+                rm_dids.append(det1[2])
+            else:
+                rm_dids.append(det2[2])
+    return list(set(rm_dids))
+
+
+def non_max_sup(dets, thrs_iou, thrs_inside):
+    r_dids = identify_nms_dids(dets, thrs_iou, thrs_inside)
+    rows_to_keep = ~np.isin(dets[:, 2], r_dids)
+    dets = dets[rows_to_keep]
+    return dets
 
 
 def merge_intersecting_items(lst):
@@ -412,7 +449,7 @@ def get_matches(dets1, dets2, features1, features2):
     return n_occluded_matches + occluded_matches
 
 
-def handle_tracklets(dets1, dets2, matches, trks, u_tids=[], u_dids=[]):
+def handle_tracklets(dets1, dets2, matches, trks, u_dids=[]):
     """
     matched and unmatched detection ids are handled here.
     unmached (tracklets: inactive track but keept, dets: new track)
@@ -459,7 +496,7 @@ def handle_tracklets(dets1, dets2, matches, trks, u_tids=[], u_dids=[]):
     # for inactive tracks
     dids1 = dets1[:, 2]
     matched1 = [match[0] for match in matches]
-    unmatched1 = set(dids1).difference(matched1 + u_tids)
+    unmatched1 = set(dids1).difference(matched1)
     for did1 in unmatched1:
         det1 = dets1[dets1[:, 2] == did1][0]
         ind = np.where((trks[:, 0] == det1[0]) & (trks[:, 1] == det1[1]))[0]
@@ -693,6 +730,7 @@ def multistage_track(
             )
 
         clip_bboxs(dets2, im_height, im_width)
+        dets2 = non_max_sup(dets2, thrs_iou, thrs_inside)
         det_ids = dets2[:, 2].copy()
         features2 = calculate_deep_features(det_ids, dets2, image2, **kwargs)
 
@@ -711,7 +749,7 @@ def multistage_track(
             track_ids = dets1[:, 0].copy()
             features1 = get_features_from_memory(memory, track_ids)
 
-        if False:  # frame_number >= 0:
+        if False:  # frame_number >= 224:
             from pathlib import Path
 
             from tracking import visualize
@@ -738,9 +776,7 @@ def multistage_track(
         # Either in handle_tracklets or other function. This is to tackle duplicate issues.
         u_tids = list(set(chain(*get_occluded_dets(dets1))))
         u_dids = list(set(chain(*get_occluded_dets(dets2))))
-        trks, did2tid, bad_tids = handle_tracklets(
-            dets1, dets2, matches, trks, u_tids, u_dids
-        )
+        trks, did2tid, bad_tids = handle_tracklets(dets1, dets2, matches, trks, u_dids)
         memory = update_memory(memory, features2, matches, did2tid, bad_tids, u_dids)
 
         # # save intermediate results

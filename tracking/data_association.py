@@ -1062,8 +1062,44 @@ def get_iou(bbox1, bbox2) -> float:
     return iou
 
 
+def is_inside_bbox(bbox1, bbox2, threshold=0):
+    """
+    Check if bbox1 is inside bbox2 or within an accepted threshold.
+
+    Parameters:
+    - bbox1: Tuple | List | np.ndarray
+        (x1, y1, x2, y2) representing the coordinates of the first bounding box.
+    - bbox2: Tuple | List | np.ndarray
+        (x1, y1, x2, y2) representing the coordinates of the second bounding box.
+    - threshold: Accepted threshold for containment.
+
+    Returns:
+    - True if bbox1 is inside bbox2 or within the accepted threshold, False otherwise.
+    """
+
+    x1_1, y1_1, x2_1, y2_1 = bbox1
+    x1_2, y1_2, x2_2, y2_2 = bbox2
+
+    # Check if bbox1 is inside bbox2
+    is_inside = (x1_2 <= x1_1 <= x2_1 <= x2_2) and (y1_2 <= y1_1 <= y2_1 <= y2_2)
+
+    # Check if bbox1 is within the accepted threshold in bbox2
+    is_within_threshold = (
+        x1_1 >= x1_2 - threshold
+        and y1_1 >= y1_2 - threshold
+        and x2_1 <= x2_2 + threshold
+        and y2_1 <= y2_2 + threshold
+    )
+
+    return is_inside or is_within_threshold
+
+
 def is_bbox_in_bbox(bbox1, bbox2, inters_thres=0.85) -> float:
-    # bbox1,2: (x_topleft, y_topleft, x_bottomright, y_bottomright)
+    """
+    inputs:
+        bbox1,2: tuple|list|np.ndarray
+            (x_topleft, y_topleft, x_bottomright, y_bottomright)
+    """
 
     x_left = max(bbox1[0], bbox2[0])
     y_top = max(bbox1[1], bbox2[1])
