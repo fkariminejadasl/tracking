@@ -66,7 +66,7 @@ def merge_intersecting_lists(lst):
     input: list[list[int]]
     output: list[list[int]]
 
-     e.g. merge_intersecting_lists([[1,2], [3,2], [3,4], [5,6], [7], [6,8]]) returns
+    e.g. merge_intersecting_lists([[1,2], [3,2], [3,4], [5,6], [7], [6,8]]) returns
     [[1, 2, 3, 4], [5, 6, 8], [7]]
     """
 
@@ -162,7 +162,7 @@ def find_match_groups(dets1, dets2, occluded1, occluded2):
     output: dic[tuple[int, ...], tuple[int, ...]]
         The values are the detection ids.
 
-    output e.g. {(6, 7): (6, 7), (15, 17): (15, 17)
+    output e.g. {(6, 7): (6, 7), (15, 17): (15, 17)}
     """
     matching_groups = {}
     for group1 in occluded1:
@@ -176,6 +176,10 @@ def find_match_groups(dets1, dets2, occluded1, occluded2):
                     values.append(did2)
         group2 = tuple(sorted(set(values)))
         matching_groups[group1] = group2
+    
+    # TODO This is a hack. The good solution should come in get_occluded_dets (close to occlusion)
+    occluded2 = merge_intersecting_lists([list(val) for val in matching_groups.values()] + occluded2) 
+
     for group2 in occluded2:
         group2 = tuple(sorted(set(group2)))
         values = []
