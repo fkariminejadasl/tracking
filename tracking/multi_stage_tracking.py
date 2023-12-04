@@ -448,6 +448,37 @@ def get_occluded_matches(dets1, dets2, matching_groups, features1, features2):
     return occluded_matches
 
 
+def remove_values_from_dict(original_dict, remove_values):
+    """
+    Remove specified values from the values of a dictionary.
+
+    Parameters
+    ----------
+    original_dict : dict[tuple[int], tuple[int]]
+        The original dictionary with tuples as keys and tuples as values.
+    remove_values : list[int]
+        A list of values to be removed from the values of the dictionary.
+
+    Returns
+    -------
+    dict
+        A new dictionary with the same keys as `original_dict` but with modified values.
+        The modified values exclude the specified `remove_values`.
+
+    Examples
+    --------
+    >>> original = {(6, 7): (5, 3), (15, 17, 18): (2, 7, 1)}
+    >>> remove_values = [3, 1, 2]
+    >>> remove_values_from_dict(original, remove_values)
+    {(6, 7): (5,), (15, 17, 18): (7,)}
+    """
+    final_dict = {}
+    for key, values in original_dict.items():
+        modified_values = tuple(value for value in values if value not in remove_values)
+        final_dict[key] = modified_values
+    return final_dict
+
+
 def get_matches(dets1, dets2, features1, features2):
     """
     inputs:
@@ -461,6 +492,11 @@ def get_matches(dets1, dets2, features1, features2):
     occluded2 = get_occluded_dets(dets2)
     matching_groups = find_match_groups(dets1, dets2, occluded1, occluded2)
     n_occluded1, n_occluded2 = get_not_occluded(dets1, dets2, matching_groups)
+
+    # discard the remove ids: In this way, removed det ids will not ended up in not occluded.
+    # Since Hungarian matching based on iou will not be always correct.
+    r_dids2 = identify_nms_dids(dets2, thrs_iou, thrs_inside)
+    matching_groups = remove_values_from_dict(matching_groups, r_dids2)
 
     # Stage 1: Hungarian matching on non occluded detections
     n_occluded_matches = get_n_occluded_matches(dets1, dets2, n_occluded1, n_occluded2)
@@ -755,6 +791,7 @@ def multistage_track(
             )
 
         clip_bboxs(dets2, im_height, im_width)
+        dets2_orig = dets2.copy()
         dets2 = non_max_sup(dets2, thrs_iou, thrs_inside)
         det_ids = dets2[:, 2].copy()
         features2 = calculate_deep_features(det_ids, dets2, image2, **kwargs)
@@ -793,7 +830,7 @@ def multistage_track(
 
         dets1 = predict_locations(dets1, disps, frame_number, step)
         clip_bboxs(dets1, im_height, im_width)
-        matches = get_matches(dets1, dets2, features1, features2)
+        matches = get_matches(dets1, dets2_orig, features1, features2)
         disps = calculate_displacements(trks, dets2, matches, step, disps)
         matches, disps = discard_bad_matches(matches, disps, disp_thrs)
 

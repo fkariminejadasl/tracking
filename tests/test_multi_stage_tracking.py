@@ -225,6 +225,14 @@ def test_improve_hungarian():
     assert ass_cols == [1, 2]
 
 
+def test_remove_values_from_dict():
+    original_dic = {(6, 7): (5, 3), (15, 17, 18): (2, 7, 1)}
+    remove_values = [3, 1, 2]
+    expected = {(6, 7): (5,), (15, 17, 18): (7,)}
+    final_dic = ms.remove_values_from_dict(original_dic, remove_values)
+    assert expected == final_dic
+
+
 test_improve_hungarian()
 test_merge_intersecting_lists()
 test_get_occluded_dets()
@@ -236,4 +244,5 @@ test_stage1()
 test_stage2()
 test_handle_tracklets()
 test_kill_tracks()
+test_remove_values_from_dict()
 print("passed")
