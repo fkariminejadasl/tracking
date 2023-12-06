@@ -13,7 +13,6 @@ from tracking.multi_stage_tracking import (
 )
 from tracking.visualize import (
     get_video_parameters,
-    save_images_of_video,
     save_images_with_tracks,
 )
 

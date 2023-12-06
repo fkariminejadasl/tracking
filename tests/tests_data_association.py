@@ -9,6 +9,7 @@ path = (Path(__file__).parents[1]).as_posix()
 sys.path.insert(0, path)
 
 from tracking.data_association import (
+    are_boxes_close,
     bipartite_local_matching,
     clean_detections,
     get_detections,
@@ -64,6 +65,33 @@ def test_get_iou():
     det1 = (0, 0, 4, 2)
     det2 = (4, 2, 5, 6)
     np.testing.assert_equal(get_iou(det1, det2), 0.0)
+
+
+def test_are_boxes_close():
+    kwargs = dict(iou_thrs=0, dist_thrs=2)
+    bbox1 = (2, 2, 6, 6)
+    bbox2 = (7, 5, 10, 6)
+    result = are_boxes_close(bbox1, bbox2, **kwargs)
+    assert result == True
+    bbox1 = (2, 2, 6, 6)
+    bbox2 = (7, 7, 10, 10)
+    result = are_boxes_close(bbox1, bbox2, **kwargs)
+    assert result == True
+    result = are_boxes_close(bbox2, bbox1, **kwargs)
+    assert result == True
+    bbox2 = (2, 7, 6, 10)
+    result = are_boxes_close(bbox1, bbox2, **kwargs)
+    assert result == True
+    result = are_boxes_close(bbox2, bbox1, **kwargs)
+    assert result == True
+    bbox2 = (7, 2, 10, 6)
+    result = are_boxes_close(bbox1, bbox2, **kwargs)
+    assert result == True
+    result = are_boxes_close(bbox2, bbox1, **kwargs)
+    assert result == True
+    kwargs = dict(iou_thrs=0, dist_thrs=0)
+    result = are_boxes_close(bbox2, bbox1, **kwargs)
+    assert result == False
 
 
 def test_is_bbox_in_bbox():

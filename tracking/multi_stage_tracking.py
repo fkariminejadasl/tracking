@@ -21,6 +21,9 @@ layers = ["conv1", "layer1", "layer2", "layer3"]
 disp_thrs = 15
 thrs_iou = 0.3  # .28
 thrs_inside = 3  # pixel
+# for close bboxes
+close_iou_thrs = 0
+close_dist_thrs = 3
 
 
 def large_occlusion(det1, det2, thrs_iou, thrs_inside):
@@ -88,8 +91,10 @@ def merge_intersecting_lists(lst):
     return result
 
 
-def get_occluded_dets(dets):
+def get_occluded_dets2(dets):
     """
+    Get only occluded
+
     input:
         dets np.ndarray
     output: list[list[int]]
@@ -107,6 +112,38 @@ def get_occluded_dets(dets):
         det1 = dets[dets[:, 2] == did1][0]
         det2 = dets[dets[:, 2] == did2][0]
         if da.get_iou(det1[3:7], det2[3:7]) > 0:
+            occluded.setdefault(did1, [did1]).append(did2)
+    occluded = list(occluded.values())
+    return merge_intersecting_lists(occluded)
+
+
+def get_occluded_dets(
+    dets, close_iou_thrs=close_iou_thrs, close_dist_thrs=close_dist_thrs
+):
+    """
+    Get occluded and nearly occluded. 
+    If close_iou_thrs=0 and close_dist_thrs=0, it is the same as get_occluded_dets2
+
+    input:
+        dets np.ndarray
+    output: list[list[int]]
+        The values are the detection ids.
+
+    output e.g. [[10, 15, 17], [21, 29]]
+    """
+
+    # if 8, 9, 11, where 9 and 11 intersect and 8 and 11 intersect but not 8, 9. This return two groups.
+    # if 11 was a smaller number then one group of three is return. I'm not sure if I change
+    # this part. -> now is changed by merge_intersecting_lists
+    occluded = {}
+    ids = dets[:, 2]
+    for did1, did2 in combinations(ids, 2):
+        det1 = dets[dets[:, 2] == did1][0]
+        det2 = dets[dets[:, 2] == did2][0]
+        is_close = da.are_boxes_close(
+            det1[3:7], det2[3:7], iou_thrs=close_iou_thrs, dist_thrs=close_dist_thrs
+        )
+        if is_close:
             occluded.setdefault(did1, [did1]).append(did2)
     occluded = list(occluded.values())
     return merge_intersecting_lists(occluded)
@@ -176,9 +213,14 @@ def find_match_groups(dets1, dets2, occluded1, occluded2):
                     values.append(did2)
         group2 = tuple(sorted(set(values)))
         matching_groups[group1] = group2
-    
-    # TODO This is a hack. The good solution should come in get_occluded_dets (close to occlusion)
-    occluded2 = merge_intersecting_lists([list(val) for val in matching_groups.values()] + occluded2) 
+
+    # Solution to the following problem:
+    # in_sample_vids/240hz/vids/2.mp4, pre_frame = 1952, cur_frame = 1960, matches: 4<->4, 0<->1
+    # occluded1=[4,17], occluded2=[], matching group (4,17):(3,4) because 4 in pre_frame intersects 3,4 in cur_frrame.
+    # So 0 doesn't appear in occluded part and goes to stage1.
+    occluded2 = merge_intersecting_lists(
+        [list(val) for val in matching_groups.values()] + occluded2
+    )
 
     for group2 in occluded2:
         group2 = tuple(sorted(set(group2)))
@@ -483,7 +525,7 @@ def remove_values_from_dict(original_dict, remove_values):
     return final_dict
 
 
-def get_matches(dets1, dets2, features1, features2):
+def get_matches(dets1, dets2, features1, features2, **kwargs):
     """
     inputs:
         dets1, dets2: np.ndarray
@@ -492,8 +534,10 @@ def get_matches(dets1, dets2, features1, features2):
     output: list[tuple[int, int]]
         The values are the detection ids
     """
-    occluded1 = get_occluded_dets(dets1)
-    occluded2 = get_occluded_dets(dets2)
+    occluded1 = get_occluded_dets(dets1, **kwargs)
+    occluded2 = get_occluded_dets(dets2, **kwargs)
+    # occluded1 = get_occluded_dets2(dets1)
+    # occluded2 = get_occluded_dets2(dets2)
     matching_groups = find_match_groups(dets1, dets2, occluded1, occluded2)
     n_occluded1, n_occluded2 = get_not_occluded(dets1, dets2, matching_groups)
 
@@ -620,11 +664,14 @@ def kill_tracks(tracks, c_frame_number, thrs):
         thrs: int
             Threshould for maximum number of inactive frames. It is step * factor. I caculated 50.
     """
+    killed_tids = []
     last_dets = get_last_dets_tracklets(tracks)
     for det in last_dets:
         if c_frame_number - det[1] > thrs:
             ind = np.where((tracks[:, 0] == det[0]) & (tracks[:, 1] == det[1]))[0][0]
             tracks[ind, 13] = 3
+            killed_tids.append(tracks[ind, 0])
+    return killed_tids
 
 
 def get_features_from_memory(memory, track_ids):
@@ -640,6 +687,7 @@ def update_memory(memory, features2, matches, did2tid, bad_tids, u_dids=[]):
     u_dids: list[int]
         list of undetermined detection ids
     """
+    # TODO killed tracks should be removed
     _ = [memory.pop(tid) for tid in bad_tids]
     for match in matches:
         tid1, did2 = match
@@ -810,12 +858,12 @@ def multistage_track(
             trks = np.concatenate((trks, extension), axis=1)
             continue
         else:
-            kill_tracks(trks, frame_number, stop_thrs)
+            killed_tids = kill_tracks(trks, frame_number, stop_thrs)
             dets1 = get_last_dets_tracklets(trks)
             track_ids = dets1[:, 0].copy()
             features1 = get_features_from_memory(memory, track_ids)
 
-        if False:  # frame_number >= 224:
+        if False: #frame_number >= 1960:
             from pathlib import Path
 
             from tracking import visualize
@@ -823,18 +871,20 @@ def multistage_track(
             vid_name, step, folder = 2, 8, "240hz"
             main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
             image_path = main_path / "images"
-            im2 = cv2.imread(
-                str(image_path / f"{vid_name}_frame_{frame_number:06d}.jpg")
-            )
-            visualize.plot_detections_in_image(dets2[:, [2, 3, 4, 5, 6]], im2)
             im1 = cv2.imread(
                 str(image_path / f"{vid_name}_frame_{frame_number - step:06d}.jpg")
             )
             visualize.plot_detections_in_image(dets1[:, [2, 3, 4, 5, 6]], im1)
+            im2 = cv2.imread(
+                str(image_path / f"{vid_name}_frame_{frame_number:06d}.jpg")
+            )
+            visualize.plot_detections_in_image(dets2[:, [2, 3, 4, 5, 6]], im2)
 
         dets1 = predict_locations(dets1, disps, frame_number, step)
         clip_bboxs(dets1, im_height, im_width)
-        matches = get_matches(dets1, dets2_orig, features1, features2)
+        matches = get_matches(
+            dets1, dets2_orig, features1, features2, close_dist_thrs=close_dist_thrs
+        )
         disps = calculate_displacements(trks, dets2, matches, step, disps)
         matches, disps = discard_bad_matches(matches, disps, disp_thrs)
 
@@ -842,7 +892,9 @@ def multistage_track(
         # Either in handle_tracklets or other function. This is to tackle duplicate issues.
         u_dids = []  # list(set(chain(*get_occluded_dets(dets2))))
         trks, did2tid, bad_tids = handle_tracklets(dets1, dets2, matches, trks, u_dids)
-        memory = update_memory(memory, features2, matches, did2tid, bad_tids, u_dids)
+        memory = update_memory(
+            memory, features2, matches, did2tid, bad_tids + killed_tids, u_dids
+        )
 
         # # save intermediate results
         # dets = get_last_dets_tracklets(trks)

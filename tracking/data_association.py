@@ -1024,7 +1024,11 @@ def giou(bbox1, bbox2) -> float:
 
 
 def is_valid_bbox(bbox):
-    # bbox1,2: (x_topleft, y_topleft, x_bottomright, y_bottomright)
+    """
+    inputs:
+        bbox1,2: tuple|list|np.ndarray
+            (x_topleft, y_topleft, x_bottomright, y_bottomright)
+    """
 
     if (bbox[0] == bbox[2]) | (bbox[1] == bbox[3]):
         return False
@@ -1034,6 +1038,8 @@ def is_valid_bbox(bbox):
 
 def get_iou(bbox1, bbox2) -> float:
     """
+    Calculate IOU (Intersection over Union)
+
     inputs:
         bbox1,2: tuple|list|np.ndarray
             (x_topleft, y_topleft, x_bottomright, y_bottomright)
@@ -1044,22 +1050,40 @@ def get_iou(bbox1, bbox2) -> float:
     if (not is_valid_bbox(bbox1)) | (not is_valid_bbox(bbox2)):
         return 0.0
 
-    x_left = max(bbox1[0], bbox2[0])
-    y_top = max(bbox1[1], bbox2[1])
-    x_right = min(bbox1[2], bbox2[2])
-    y_bottom = min(bbox1[3], bbox2[3])
-    if x_right < x_left or y_bottom < y_top:
-        return 0.0
+    x1_1, y1_1, x2_1, y2_1 = bbox1
+    x1_2, y1_2, x2_2, y2_2 = bbox2
 
-    intersection_area = (x_right - x_left) * (y_bottom - y_top)
-
-    area1 = (bbox1[2] - bbox1[0]) * (bbox1[3] - bbox1[1])
-    area2 = (bbox2[2] - bbox2[0]) * (bbox2[3] - bbox2[1])
-
-    iou = intersection_area / float(area1 + area2 - intersection_area)
-    assert iou >= 0.0
-    assert iou <= 1.0
+    # Calculate IOU (Intersection over Union)
+    intersect_area = max(0, min(x2_1, x2_2) - max(x1_1, x1_2)) * max(
+        0, min(y2_1, y2_2) - max(y1_1, y1_2)
+    )
+    area1 = (x2_1 - x1_1) * (y2_1 - y1_1)
+    area2 = (x2_2 - x1_2) * (y2_2 - y1_2)
+    iou = intersect_area / (area1 + area2 - intersect_area)
     return iou
+
+
+def are_boxes_close(bbox1, bbox2, iou_thrs=0.5, dist_thrs=5):
+    """
+    Check if two bounding boxes are close to each other within a threshold.
+
+    Parameters:
+    - bbox1: Tuple (x1, y1, x2, y2) representing the coordinates of the first bounding box.
+    - bbox2: Tuple (x1, y1, x2, y2) representing the coordinates of the second bounding box.
+    - iou_thrs: Accepted Intersection over Union (IOU) threshold for intersection.
+    - dist_thrs: Accepted distance threshold for closeness.
+
+    Returns:
+    - True if the bounding boxes intersect or are close to each other, False otherwise.
+    """
+
+    x1_1, y1_1, x2_1, y2_1 = bbox1
+    x1_2, y1_2, x2_2, y2_2 = bbox2
+
+    iou1 = get_iou((x1_1, y1_1, x2_1 + dist_thrs, y2_1 + dist_thrs), bbox2)
+    iou2 = get_iou(bbox1, (x1_2, y1_2, x2_2 + dist_thrs, y2_2 + dist_thrs))
+
+    return iou1 > iou_thrs or iou2 > iou_thrs
 
 
 def is_inside_bbox(bbox1, bbox2, threshold=0):

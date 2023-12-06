@@ -48,7 +48,7 @@ def test_get_occluded_dets():
     bboxes = np.array(bboxes).astype(np.int64)
     other_columns = np.repeat(np.arange(len(bboxes))[None], 3, axis=0).T
     dets = np.concatenate((other_columns, bboxes), axis=1)
-    groups = ms.get_occluded_dets(dets)
+    groups = ms.get_occluded_dets(dets, close_iou_thrs=0, close_dist_thrs=0)
     assert groups == [[0, 1, 3, 4], [2, 5]]
 
 
@@ -81,8 +81,8 @@ def test_find_match_groups():
     # {0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 14, 15, 16, 18, 19, 20, 22, 23, 24, 25, 26, 27, 28, 30, 31}
     exp_matching_groups = {(6, 7): (6, 7), (13, 17): (13, 17), (21, 29): (21, 29)}
 
-    occluded1 = ms.get_occluded_dets(dets1)
-    occluded2 = ms.get_occluded_dets(dets2)
+    occluded1 = ms.get_occluded_dets(dets1, close_iou_thrs=0, close_dist_thrs=0)
+    occluded2 = ms.get_occluded_dets(dets2, close_iou_thrs=0, close_dist_thrs=0)
     matching_groups = ms.find_match_groups(dets1, dets2, occluded1, occluded2)
     n_occluded1, n_occluded2 = ms.get_not_occluded(dets1, dets2, matching_groups)
 
@@ -185,7 +185,9 @@ def test_handle_tracklets():
     dets2 = np.concatenate((dets2, extension), axis=1)
 
     features2_changed = {k + 10: v for k, v in features2.items()}
-    matches = ms.get_matches(dets1, dets2, features1, features2_changed)
+    matches = ms.get_matches(
+        dets1, dets2, features1, features2_changed, close_dist_thrs=0
+    )
     matches.remove((0, 10))
     matches.remove((5, 15))
     # [(1, 11), (2, 12), (3, 13), (6, 16), (7, 17), (8, 18), (4, 14)]
@@ -208,9 +210,9 @@ def test_kill_tracks():
     extension = np.zeros((len(tracks), 3), dtype=np.int64)
     tracks = np.concatenate((tracks, extension), axis=1)
 
-    ms.kill_tracks(tracks, 3117, 50)
+    _ = ms.kill_tracks(tracks, 3117, 50)
     assert tracks[30193, 13] == 0
-    ms.kill_tracks(tracks, 4000, 50)
+    _ = ms.kill_tracks(tracks, 4000, 50)
     assert tracks[30193, 13] == 3
 
 
