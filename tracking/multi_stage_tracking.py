@@ -869,7 +869,7 @@ def multistage_track(
             track_ids = dets1[:, 0].copy()
             features1 = get_features_from_memory(memory, track_ids)
 
-        if frame_number >= 1968:
+        if False: # frame_number >= 1968:
             from pathlib import Path
 
             from tracking import visualize
