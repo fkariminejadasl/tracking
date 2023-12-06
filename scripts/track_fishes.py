@@ -11,10 +11,7 @@ from tracking.multi_stage_tracking import (
     ultralytics_detect_video,
     ultralytics_track_video,
 )
-from tracking.visualize import (
-    get_video_parameters,
-    save_images_with_tracks,
-)
+from tracking.visualize import get_video_parameters, save_images_with_tracks
 
 
 def process_config(config_path):

@@ -21,6 +21,8 @@ layers = ["conv1", "layer1", "layer2", "layer3"]
 disp_thrs = 15
 thrs_iou = 0.3  # .28
 thrs_inside = 3  # pixel
+# improve Hungarian threshold
+hug_thrs = 0.8
 # for close bboxes
 close_iou_thrs = 0
 close_dist_thrs = 3
@@ -121,7 +123,7 @@ def get_occluded_dets(
     dets, close_iou_thrs=close_iou_thrs, close_dist_thrs=close_dist_thrs
 ):
     """
-    Get occluded and nearly occluded. 
+    Get occluded and nearly occluded.
     If close_iou_thrs=0 and close_dist_thrs=0, it is the same as get_occluded_dets2
 
     input:
@@ -335,7 +337,7 @@ def hungarian_global_matching(dets1, dets2):
             # loc_loss = np.linalg.norm([det2[7] - det1[7], det2[8] - det1[8]])
             dist[i, j] = iou_loss  # + loc_loss
     # row_ind, col_ind = linear_sum_assignment(dist)
-    row_ind, col_ind = improve_hungarian(dist, thrs=0.8)
+    row_ind, col_ind = improve_hungarian(dist, thrs=hug_thrs)
     return row_ind, col_ind
 
 
@@ -411,7 +413,7 @@ def calculate_deep_features(det_ids, dets, image, **kwargs):
     return features
 
 
-def get_cosim_matches_per_group(out):
+def get_cosim_matches_per_group(out, dets1, dets2):
     """
     input:
         out: list[int]
@@ -429,11 +431,14 @@ def get_cosim_matches_per_group(out):
     for i, id1 in enumerate(ids1):
         for j, id2 in enumerate(ids2):
             cosim = out[(out[:, 0] == id1) & (out[:, 1] == id2)][:, 2]
-            dist[i, j] = 1 - cosim / 100
+            cosim_loss = 1 - cosim / 100
+            det1 = dets1[dets1[:, 2] == id1][0]
+            det2 = dets2[dets2[:, 2] == id2][0]
+            iou_loss = 1 - da.get_iou(det1[3:7], det2[3:7])
+            dist[i, j] = 0.9 * cosim_loss + 0.1 * iou_loss
     row_inds, col_inds = linear_sum_assignment(dist)
     for row_ind, col_ind in zip(row_inds, col_inds):
-        cosim = int(round((1 - dist[row_ind, col_ind]) * 100))
-        matches.append([ids1[row_ind], ids2[col_ind], cosim])
+        matches.append([ids1[row_ind], ids2[col_ind]])
     # TODO something here to distiguish low quality ass and multi dets
     # tricky for multiple dets, low quality. I cover mis det in unmatched
     return matches
@@ -445,11 +450,12 @@ def get_occluded_matches_per_group(features1, features2, bbs1, bbs2):
         image_path: Path
         vid_name: str | int
         bbs1, bbs2: np.ndarray
+            detections
     output: list[list[int, int]]
         The values are the detection ids.
     """
     out = cos_sim(features1, features2, bbs1, bbs2)
-    matches = get_cosim_matches_per_group(out)
+    matches = get_cosim_matches_per_group(out, bbs1, bbs2)
     return matches
 
 
@@ -863,7 +869,7 @@ def multistage_track(
             track_ids = dets1[:, 0].copy()
             features1 = get_features_from_memory(memory, track_ids)
 
-        if False: #frame_number >= 1960:
+        if frame_number >= 1968:
             from pathlib import Path
 
             from tracking import visualize
