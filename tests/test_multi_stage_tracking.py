@@ -94,9 +94,11 @@ def test_find_match_groups():
 
 
 def test_get_cosim_matches_per_group():
+    dummy_dets1 = np.array([[-1, 0, 13, 0, 0, 1, 1], [-1, 0, 44, 0, 0, 1, 1]])
+    dummy_dets2 = np.array([[-1, 0, 13, 10, 10, 11, 11], [-1, 0, 44, 10, 10, 11, 11]])
     out = [44, 44, 83, 44, 13, 81, 13, 44, 82, 13, 13, 85]
-    matches = ms.get_cosim_matches_per_group(out)
-    exp_matched = [[13, 13, 85], [44, 44, 83]]
+    matches = ms.get_cosim_matches_per_group(out, dummy_dets1, dummy_dets2)
+    exp_matched = [[13, 13], [44, 44]]
     assert exp_matched == matches
 
 
