@@ -38,7 +38,6 @@ if __name__ == "__main__":
     step = inputs.step
     format = inputs.format
     track_method = inputs.track_method
-    image_folder = inputs.image_folder
     det_checkpoint = Path(inputs.det_checkpoint)
     main_path = Path(inputs.main_path)
     track_config_file = inputs.track_config_file
