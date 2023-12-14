@@ -1,5 +1,8 @@
+import csv
 import enum
 import shutil
+import xml.etree.ElementTree as ET
+from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
@@ -921,6 +924,138 @@ def load_tracks_from_mot_format(zip_file: Path) -> np.ndarray:
     if set(det_qualities) == {1}:
         return tracks[:, :11]
     return tracks
+
+
+def mot_to_cvat_xml(mot_file_path, video_name, width, height, keyframe_frequency=10):
+    """
+    Convert a MOT format file to CVAT XML for videos.
+
+    Args:
+    - mot_file_path (str): path to the input MOT format file.
+    - video_name (str): name of the video.
+    - width (int): width of the frames in the video.
+    - height (int): height of the frames in the video.
+    - keyframe_frequency (int, optional): frequency for keyframes. Default is 10.
+
+    Returns:
+    - str: path to the converted CVAT XML file.
+    """
+
+    # Read the MOT file and process detections
+    detections = defaultdict(list)
+    with open(mot_file_path, "r") as file:
+        reader = csv.reader(file, delimiter=",")
+        for row in reader:
+            frame, track_id, x, y, w, h, _, _, _ = row
+            frame = int(frame) - 1
+            track_id = int(track_id) - 1
+            detections[track_id].append(
+                (frame, float(x), float(y), float(x) + float(w), float(y) + float(h))
+            )
+
+    # Create XML
+    root = ET.Element("annotations")
+    version = ET.SubElement(root, "version").text = "1.1"
+
+    meta = ET.SubElement(root, "meta")
+    task = ET.SubElement(meta, "task")
+    ET.SubElement(task, "id").text = "unknown"
+    ET.SubElement(task, "name").text = video_name
+    ET.SubElement(task, "size").text = str(
+        max(
+            [int(frame) for detection in detections.values() for frame, *_ in detection]
+        )
+    )
+    ET.SubElement(task, "mode").text = "interpolation"
+    ET.SubElement(task, "overlap").text = "0"
+    ET.SubElement(task, "bugtracker").text = ""
+    ET.SubElement(task, "flipped").text = "False"
+    ET.SubElement(task, "labels").append(ET.Element("label", name="fish"))
+    ET.SubElement(task, "segments").append(
+        ET.Element(
+            "segment",
+            id="0",
+            start="0",
+            stop=str(
+                max(
+                    [
+                        int(frame)
+                        for detection in detections.values()
+                        for frame, *_ in detection
+                    ]
+                )
+            ),
+        )
+    )
+    ET.SubElement(task, "original_size").append(ET.Element("width", text=str(width)))
+    ET.SubElement(task, "original_size").append(ET.Element("height", text=str(height)))
+
+    for track_id, boxes in detections.items():
+        track = ET.SubElement(root, "track", id=str(track_id), label="fish")
+        for frame, xtl, ytl, xbr, ybr in boxes:
+            ET.SubElement(
+                track,
+                "box",
+                frame=str(frame),
+                xtl=str(xtl),
+                ytl=str(ytl),
+                xbr=str(xbr),
+                ybr=str(ybr),
+                outside="0",
+                occluded="0",
+                keyframe="1"
+                if frame % keyframe_frequency == 0
+                or frame == boxes[0][0]
+                or frame == boxes[-1][0]
+                else "0",
+            )
+
+    tree = ET.ElementTree(root)
+    output_file_path = mot_file_path.rsplit(".", 1)[0] + "_converted.xml"
+    tree.write(output_file_path)
+
+    return output_file_path
+
+
+def cvat_xml_to_mot(cvat_xml_path, mot_file_path):
+    """
+    Convert a CVAT XML format file to MOT format.
+
+    Args:
+    - cvat_xml_path (str): path to the input CVAT XML file.
+    - mot_file_path (str): path to the output MOT format file.
+
+    Returns:
+    - str: path to the converted MOT format file.
+    """
+
+    # Parse the XML file
+    tree = ET.parse(cvat_xml_path)
+    root = tree.getroot()
+
+    # Extract track and box information
+    mot_data = []
+    for track in root.findall("track"):
+        track_id = int(track.get("id")) + 1
+        for box in track.findall("box"):
+            frame = int(box.get("frame")) + 1
+            xtl = float(box.get("xtl"))
+            ytl = float(box.get("ytl"))
+            xbr = float(box.get("xbr"))
+            ybr = float(box.get("ybr"))
+
+            # Convert to MOT format (x, y, w, h)
+            w = xbr - xtl
+            h = ybr - ytl
+            mot_data.append([frame, track_id, xtl, ytl, w, h, 1, 1, 1.0])
+
+    # Write to MOT format file
+    with open(mot_file_path, "w", newline="") as file:
+        writer = csv.writer(file)
+        for row in mot_data:
+            writer.writerow(row)
+
+    return mot_file_path
 
 
 def load_tracks_from_cvat_txt_format(track_file: Path) -> np.ndarray:
