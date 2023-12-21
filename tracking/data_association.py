@@ -1058,6 +1058,77 @@ def cvat_xml_to_mot(cvat_xml_path, mot_file_path):
     return mot_file_path
 
 
+def xml_to_mots(xml_path, save_path):
+    save_path = Path(save_path)
+    save_path.mkdir(parents=True, exist_ok=True)
+
+    tree = ET.parse(xml_path)
+    root = tree.getroot()
+
+    # since one of the tasks didn't have width and all videos have the same width I just get one of them.
+    width = int(root.find(".//task/original_size/width").text) // 2
+
+    task_id_to_name = {}
+    for task_element in root.findall(".//task"):
+        task_id = task_element.find("id").text
+        task_name = task_element.find("name").text
+        task_id_to_name[task_id] = task_name.split("_")[0]
+
+    task_id_to_min_frame = {}
+    for task_id in task_id_to_name.keys():
+        frame_numbers = [
+            int(box.get("frame"))
+            for box in root.findall(f".//track[@task_id='{task_id}']/box")
+        ]
+        if frame_numbers:
+            task_id_to_min_frame[task_id] = min(frame_numbers)
+
+    task_id_to_min_track_id = {}
+    for task_id in task_id_to_name.keys():
+        track_ids = [
+            int(box.get("id"))
+            for box in root.findall(f".//track[@task_id='{task_id}']")
+        ]
+        if track_ids:
+            task_id_to_min_track_id[task_id] = min(track_ids)
+
+    for task_id, name in tqdm(task_id_to_name.items()):
+        print(task_id, name)
+        tracks1 = []
+        tracks2 = []
+        task_tracks = root.findall(f".//track[@task_id='{task_id}']")
+        for task_track in task_tracks:
+            track_id = int(task_track.get("id")) - task_id_to_min_track_id.get(
+                task_id, 0
+            )
+            boxes = task_track.findall("box")
+            for box in boxes:
+                frame_number = int(box.get("frame")) - task_id_to_min_frame.get(
+                    task_id, 0
+                )
+                xtl = float(box.get("xtl"))
+                ytl = float(box.get("ytl"))
+                xbr = float(box.get("xbr"))
+                ybr = float(box.get("ybr"))
+                w = xbr - xtl
+                h = ybr - ytl
+                if xtl > width:
+                    xtl -= width
+                    xbr -= width
+                    tracks2.append([frame_number, track_id, xtl, ytl, w, h])
+                else:
+                    tracks1.append([frame_number, track_id, xtl, ytl, w, h])
+        _write_file(save_path / f"{name}_1.txt", tracks1)
+        _write_file(save_path / f"{name}_2.txt", tracks2)
+
+
+def _write_file(save_file, tracks):
+    with open(save_file, "w") as wfile:
+        for t in tracks:
+            item = f"{t[0]+1},{t[1]+1},{t[2]:.2f},{t[3]:.2f},{t[4]:.2f},{t[5]:.2f},1,1,1.0\n"
+            wfile.write(item)
+
+
 def load_tracks_from_cvat_txt_format(track_file: Path) -> np.ndarray:
     """
     array format: track_id, frame_number, det_id, xtl, ytl, xbr, ybr, xc, yc, w, h
