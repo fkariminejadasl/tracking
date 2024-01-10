@@ -386,6 +386,8 @@ def save_images_with_detections(
 def _create_output_video(
     output_video_file, vc, out_width=None, out_height=None, out_fps=None
 ):
+    output_video_file.parent.mkdir(parents=True, exist_ok=True)
+
     height, width, total_no_frames, fps = get_video_parameters(vc)
     if not out_width:
         out_width = width
@@ -399,7 +401,7 @@ def _create_output_video(
         output_video_file.as_posix(), fourcc, out_fps, (out_width, out_height)
     )
 
-    return out, height, width, total_no_frames
+    return out, out_height, out_width, total_no_frames
 
 
 def _write_frame_in_video(frame, out, frame_number, top_left, out_width, out_height):
@@ -435,7 +437,7 @@ def show_cropped_video(
     step=1,
     fps=None,
 ):
-    out, height, width, total_no_frames = _create_output_video(
+    out, out_height, out_width, total_no_frames = _create_output_video(
         output_video_file, vc, out_width, out_height, out_fps=fps
     )
     start_frame, end_frame = get_start_end_frames(
@@ -472,12 +474,8 @@ def plot_detections_in_video(
         vc = cv2.VideoCapture(video_file.as_posix())
 
     height, width, _, _ = get_video_parameters(vc)
-    if out_width is None:
-        out_width = width
-    if out_height is None:
-        out_height = height
 
-    out, height, width, total_no_frames = _create_output_video(
+    out, out_height, out_width, total_no_frames = _create_output_video(
         output_video_file, vc, out_width, out_height
     )
     start_frame, end_frame = get_start_end_frames(
@@ -558,18 +556,19 @@ def plot_frameid_y_for_stereo(tracks1, track1_ids, tracks2, track2_ids):
 def plot_tracks_array_in_video(
     output_video_file,
     tracks: np.ndarray,
-    vc,
+    video_file,
     top_left=Point(0, 0),
-    out_width=900,
-    out_height=500,
+    out_width=None,
+    out_height=None,
     start_frame=None,
     end_frame=None,
     step=1,
     fps: int = None,
     show_det_id=False,
-    black=True,
+    black=False,
 ):
-    out, height, width, total_no_frames = _create_output_video(
+    vc = cv2.VideoCapture(video_file.as_posix())
+    out, out_height, out_width, total_no_frames = _create_output_video(
         output_video_file, vc, out_width, out_height, fps
     )
 
@@ -612,6 +611,7 @@ def plot_tracks_array_in_video(
             )
 
     out.release()
+    vc.release()
 
 
 # TODO integrated in save_images_with_tracks
@@ -629,7 +629,7 @@ def plot_tracks_in_video(
     show_det_id=False,
     black=True,
 ):
-    out, height, width, total_no_frames = _create_output_video(
+    out, out_height, out_width, total_no_frames = _create_output_video(
         output_video_file, vc, out_width, out_height, fps
     )
 
@@ -689,7 +689,7 @@ def plot_matches_in_video(
     font_scale = 1
     out_width = bottom_right1.x - top_left1.x + bottom_right2.x - top_left2.x
     out_height = bottom_right1.y - top_left1.y
-    out, height, width, total_no_frames = _create_output_video(
+    out, out_height, out_width, total_no_frames = _create_output_video(
         output_video_file, vc1, out_width, out_height, fps
     )
     start_frame, end_frame = get_start_end_frames(

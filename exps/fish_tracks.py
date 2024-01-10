@@ -32,14 +32,26 @@ for vid_file in vid_files:
 # short videos: 1080 x 1920 resolution, 240HZ, 260 frames
 # long videos : 1080 x 1920 resolution, 240HZ, 3117 frames (129_1, 161, 183, 231, 261_1, 349, 406_2), 318 frames(129_2, 349_1, 406_1)
 
+
+def sort_key(filename):
+    parts = filename.stem.split("_")  # Splitting the filename at the underscore
+    return tuple(map(int, parts))
+
+
 n_frames = 0
 n_tracks = 0
 n_bboxes = 0
-m = Path("/home/fatemeh/Downloads/fish/mot_data/mots")
-for p in tqdm(m.glob("*txt")):
+paths = Path("/home/fatemeh/Downloads/fish/mot_data/mots").glob("*txt")
+paths = sorted(paths, key=sort_key)
+for p in paths:
     tracks = np.loadtxt(p, delimiter=",", dtype=np.int64)
     n_frames += len(np.unique(tracks[:, 0]))
     n_tracks += len(np.unique(tracks[:, 1]))
     n_bboxes += tracks.shape[0]
+    name_val = f"{p.stem}"
+    frame_val = f"{len(np.unique(tracks[:, 0])):,}".rjust(5)
+    track_val = f"{len(np.unique(tracks[:, 1])):,}".rjust(2)
+    boxes_val = f"{tracks.shape[0]:,}".rjust(6)
+    print(f"{p.stem:5d}: {frame_val} frames, {track_val} tracks, {boxes_val} boxes")
 
 print(f"{n_frames:,} frames, {n_tracks:,} tracks, {n_bboxes:,} boxes")

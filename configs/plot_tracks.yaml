@@ -1,0 +1,5 @@
+
+# single file or a path to a files. Filenames for tracks and videos should be the same.
+track_path: "/home/fatemeh/Downloads/fish/mot_data/mots" # Value: Path . mot format (.txt or .zip). 
+video_path: "/home/fatemeh/Downloads/fish/mot_data/vids" # Value: Path . video file extension .mp4.
+save_path: "/home/fatemeh/Downloads/fish/mot_data/vids_tracks" # Value: Pat
