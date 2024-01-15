@@ -10,7 +10,7 @@ from tracking.data_association import (hungarian_track,
 from tracking.multi_stage_tracking import (multistage_track,
                                            ultralytics_detect_video,
                                            ultralytics_track_video)
-from tracking.visualize import get_video_parameters, save_images_with_tracks
+from tracking.visualize import get_video_parameters
 
 
 def process_config(config_path):
@@ -42,7 +42,6 @@ if __name__ == "__main__":
     track_config_file = inputs.track_config_file
     video_file = Path(inputs.video_file)
     dets_path = inputs.dets_path
-    save_images = inputs.save_images
     save_name = inputs.save_name
 
     height, width, total_no_frames, _ = get_video_parameters(video_file)
@@ -117,15 +116,4 @@ if __name__ == "__main__":
         )
 
     save_tracks_to_mot_format(main_path / save_name, trks[:, :11])
-    if save_images:
-        print("=====> Save Tracks in Images")
-        np.savetxt(main_path / f"{save_name}.txt", trks, delimiter=",", fmt="%d")
-        save_images_with_tracks(
-            main_path / save_name,
-            video_file,
-            trks,
-            start_frame,
-            end_frame,
-            step,
-            format,
-        )
+    np.savetxt(main_path / f"{save_name}.txt", trks, delimiter=",", fmt="%d")

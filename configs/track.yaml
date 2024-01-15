@@ -8,6 +8,5 @@ start_frame: 0 # Value: int . The counting of frames is zero-based.
 end_frame: # Value: int|None . The counting of frames is zero-based. 
 step: 8 # only track with this step size
 track_method: ms # Value: botsort | bytetrack | ms 
-save_images: no # Value: yes|no or true|false . Save images with tracks. 
 format: 06d # detection files are saved with this format. e.g. name_0000123.txt the format is '06d'. e.g. name_123.txt the format is ''
 track_config_file: # config file only for botsort and bytetrack if they are change. e.g /contect/botsort.yaml, /content/bytetrack.yaml

@@ -1,5 +1,6 @@
 
 # single file or a path to a files. Filenames for tracks and videos should be the same.
-track_path: "/home/fatemeh/Downloads/fish/mot_data/mots" # Value: Path . mot format (.txt or .zip). 
-video_path: "/home/fatemeh/Downloads/fish/mot_data/vids" # Value: Path . video file extension .mp4.
-save_path: "/home/fatemeh/Downloads/fish/mot_data/vids_tracks" # Value: Pat
+track_path: "/home/fatemeh/Downloads/fish/mot_data/mots/8_1.txt" # Value: Path . mot format (.txt or .zip). 
+video_path: "/home/fatemeh/Downloads/fish/mot_data/vids/8_1.mp4" # Value: Path . video file extension .mp4.
+save_path: "/home/fatemeh/Downloads/fish/mot_data/images_tracks" # Value: Path # vids_tracks
+save_images: yes # Value: yes|no or true|false . Save images with tracks. 
