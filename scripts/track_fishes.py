@@ -1,4 +1,6 @@
 import argparse
+import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -21,7 +23,7 @@ def process_config(config_path):
             print(error)
 
 
-if __name__ == "__main__":
+def parse_args():
     parser = argparse.ArgumentParser(description="Process a config file.")
     parser.add_argument("config_file", type=Path, help="Path to the config file")
 
@@ -31,89 +33,101 @@ if __name__ == "__main__":
     for key, value in inputs.items():
         print(f"{key}: {value}")
     inputs = SimpleNamespace(**inputs)
+    return inputs
 
+
+def main(inputs):
     start_frame = inputs.start_frame
-    end_frame = inputs.end_frame
     step = inputs.step
-    format = inputs.format
     track_method = inputs.track_method
     det_checkpoint = Path(inputs.det_checkpoint)
-    main_path = Path(inputs.main_path)
+    save_path = Path(inputs.save_path)
     track_config_file = inputs.track_config_file
-    video_file = Path(inputs.video_file)
-    dets_path = inputs.dets_path
-    save_name = inputs.save_name
+    video_path = Path(inputs.video_path)
+    exp_name = inputs.save_name
 
-    height, width, total_no_frames, _ = get_video_parameters(video_file)
-    if end_frame is None:
-        end_frame = total_no_frames - 1
-    is_valid = False
-    if dets_path:
-        dets_path = Path(dets_path)
-        is_valid = dets_path.exists()
-    save_name = f"{track_method}_{save_name}"
-    vid_name = video_file.stem
     track_config_file = (
         Path(inputs.track_config_file)
         if inputs.track_config_file
         else Path(f"{track_method}.yaml")
     )
 
-    # TODO maybe for images: if video_file is list of images
-    # If image list is empty, it will donwload own bus.jpg.
-    if video_file.is_dir():
-        is_empty = not any(video_file.iterdir())
+    # N.B. in yolov8, if image list is empty, it will donwload own bus.jpg.
+    if video_path.is_dir():
+        video_files = list(video_path.glob("*"))
+    elif video_path.is_file():
+        video_files = [video_path]
+    else:
+        sys.exit(f"Error: The path '{video_path}' is neither a file nor a directory.")
 
-    if track_method == "ms":
-        # TODO is_valid for other path. Put them in the beginning
-        if isinstance(dets_path, Path) and dets_path.is_dir():
-            is_valid = any(dets_path.iterdir())
-        if not dets_path or not is_valid:
-            dets_path = main_path / f"{save_name}_dets.zip"
-            print("=====> Detection")
-            dets = ultralytics_detect_video(
+    for video_file in video_files:
+        stime = time.time()
+
+        height, width, total_no_frames, _ = get_video_parameters(video_file)
+        if inputs.end_frame is None:
+            end_frame = total_no_frames - 1
+        vid_name = video_file.stem
+
+        save_name = f"{vid_name}_{track_method}_{exp_name}"
+
+        if track_method == "ms":
+            if inputs.dets_path:  #
+                dets_path = Path(inputs.dets_path) / f"{vid_name}_dets.zip"
+            if (not inputs.dets_path) or (not dets_path.is_file()):  # None
+                dets_path = save_path / f"{vid_name}_dets.zip"
+                print("=====> Detection")
+                dets = ultralytics_detect_video(
+                    video_file,
+                    start_frame,
+                    end_frame,
+                    step,
+                    det_checkpoint,
+                )
+                save_tracks_to_mot_format(dets_path, dets)
+
+            print(f"=====> {track_method} tracking")
+            trks = multistage_track(
+                video_file,
+                dets_path,
+                vid_name,
+                start_frame,
+                end_frame,
+                step,
+            )
+
+        if track_method == "botsort" or track_method == "bytetrack":
+            print(f"=====> {track_method} tracking")
+            trks = ultralytics_track_video(
                 video_file,
                 start_frame,
                 end_frame,
                 step,
                 det_checkpoint,
+                config_file=track_config_file,
             )
-            save_tracks_to_mot_format(dets_path, dets)
 
-        print(f"=====> {track_method} tracking")
-        trks = multistage_track(
-            video_file,
-            dets_path,
-            vid_name,
-            start_frame,
-            end_frame,
-            step,
-        )
+        if track_method == "hungarian":
+            print(f"=====> {track_method} tracking")
+            # TODO broken: only works with detection files (txt) not zip file
+            trks = hungarian_track(
+                dets_path,
+                vid_name,
+                width,
+                height,
+                start_frame,
+                end_frame,
+                step,
+            )
 
-    if track_method == "botsort" or track_method == "bytetrack":
-        print(f"=====> {track_method} tracking")
-        print("====> read from video")
-        trks = ultralytics_track_video(
-            video_file,
-            start_frame,
-            end_frame,
-            step,
-            det_checkpoint,
-            config_file=track_config_file,
-        )
+        save_tracks_to_mot_format(save_path / save_name, trks[:, :11])
+        np.savetxt(save_path / f"{save_name}.txt", trks, delimiter=",", fmt="%d")
+        with open(save_path / f"{track_method}_{exp_name}_meta.csv", "a") as rfile:
+            elapse_time = time.time() - stime
+            rfile.write(
+                f"{vid_name},{track_method},{total_no_frames},{elapse_time:.1f}\n"
+            )
 
-    if track_method == "hungarian":
-        print(f"=====> {track_method} tracking")
-        # TODO only works with detection files
-        trks = hungarian_track(
-            dets_path,
-            vid_name,
-            width,
-            height,
-            start_frame,
-            end_frame,
-            step,
-        )
 
-    save_tracks_to_mot_format(main_path / save_name, trks[:, :11])
-    np.savetxt(main_path / f"{save_name}.txt", trks, delimiter=",", fmt="%d")
+if __name__ == "__main__":
+    inputs = parse_args()
+    main(inputs)

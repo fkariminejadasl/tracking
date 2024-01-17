@@ -1,12 +1,16 @@
 # None: means leave it empty
+# det_checkpoint: /home/fatemeh/Downloads/fish/best_model/det_best_bgr29.pt # Value: Path
+# save_path: /home/fatemeh/Downloads/fish/mot_data/tmp/ms_exp1 # Value: Path
+# video_path: /home/fatemeh/Downloads/fish/mot_data/tmp/vids/ # Value: Path. Single file or a path to multiple files. The video file extension .mp4.
+# dets_path: /home/fatemeh/Downloads/fish/mot_data/test/ # Value: Path | None . Path to the location of detection zip file e.g /content/dets/{vid_name_dets.zip} 
+# save_name: exp1 # Value: str . The name of the file used to save tracks and/or images with tracks
 det_checkpoint: /content/det_best_bgr29.pt # Value: Path
-main_path: /content # Value: Path
-video_file: /content/2.mp4 # Value: Path
+save_path: /content # Value: Path
+video_path: /content/2.mp4  # Value: Path. Single file or a path to multiple files. The video file extension .mp4.
+dets_path: # Value: Path | None . Path to the location of detection zip file e.g /content/dets/{vid_name_dets.zip} 
 save_name: exp1 # Value: str . The name of the file used to save tracks and/or images with tracks
-dets_path: # Value: Path | zipfile | None . e.g /content/yolo e.g /content/ms_8_dets.zip 
 start_frame: 0 # Value: int . The counting of frames is zero-based.
 end_frame: # Value: int|None . The counting of frames is zero-based. 
-step: 8 # only track with this step size
+step: 1 # only track with this step size
 track_method: ms # Value: botsort | bytetrack | ms 
-format: 06d # detection files are saved with this format. e.g. name_0000123.txt the format is '06d'. e.g. name_123.txt the format is ''
 track_config_file: # config file only for botsort and bytetrack if they are change. e.g /contect/botsort.yaml, /content/bytetrack.yaml
