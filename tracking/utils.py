@@ -74,31 +74,26 @@ def mot_to_challenge(mot_file):
     pass
 
 
-def transform_to_mot(input_file: str, output_file: str):
+def track_file_to_mot(input_file, output_file):
     """
-    Transform each line of a text file according to specific rules.
-
-    The transformation rules are as follows:
-    1. Swap the first and second columns and add 1 to their values.
-    2. Ignore the third column.
-    3. Take the fourth and fifth columns, add 1 to their values.
-    4. Ignore columns six through nine.
-    5. Use columns ten through twelve as they are.
-    6. Ignore any remaining columns.
-    7. Append '1, 1.0' to the end of each line.
+    Convert track text file to mot text file.
+    N.B mot is zero-based. track_file is one based.
 
     Parameters
     ----------
-    input_file : str
-        The path to the input text file.
-    output_file : str
-        The path where the transformed output text file will be saved.
+    input_file : Path
+        The path to the input text file with each row:
+        track_id, frame, det_id, bb_left, bb_top, bb_right, bb_bottom, bb_cen_x, bb_cen_y,
+            bb_width, bb_height, conf, det_stat, track_stat
+    output_file : Path
+        mot text file with each row:
+        frame, track_id, bb_left, bb_top, bb_width, bb_height, conf, class, visibility
 
     Examples
     --------
     >>> input_path = 'path/to/input.txt'
     >>> output_path = 'path/to/output.txt'
-    >>> transform_to_mot(input_path, output_path)
+    >>> track_file_to_mot(input_path, output_path)
     """
 
     with open(input_file, "r") as infile, open(output_file, "w") as outfile:
@@ -107,15 +102,82 @@ def transform_to_mot(input_file: str, output_file: str):
 
             # Applying the specified transformations
             transformed = [
-                str(int(parts[1]) + 1),  # Swap and increment first column
-                str(int(parts[0]) + 1),  # Swap and increment second column
-                str(int(parts[3]) + 1),  # Increment fourth column
-                str(int(parts[4]) + 1),  # Increment fifth column
-                parts[9],  # Use tenth column
-                parts[10],  # Use eleventh column
-                parts[11],  # Use twelfth column
+                str(int(parts[1]) + 1),
+                str(int(parts[0]) + 1),
+                str(int(parts[3]) + 1),
+                str(int(parts[4]) + 1),
+                parts[9],
+                parts[10],
+                parts[11],
                 "1",
-                "1.0",  # Append '1, 1.0'
+                "1.0",
+            ]
+
+            modified_line = ",".join(transformed) + "\n"
+            outfile.write(modified_line)
+
+
+def tl_wh_to_br_cen(tl_x, tl_y, bb_w, bb_h):
+    return (
+        int(round(tl_x + bb_w)),
+        int(round(tl_y + bb_h)),
+        int(round(tl_x + bb_w / 2)),
+        int(round(tl_y + bb_h / 2)),
+    )
+
+
+def mot_to_track_file(input_file, output_file):
+    """
+    Convert mot text file to track text file.
+    N.B mot is zero-based. track_file is one based.
+
+    Parameters
+    ----------
+    input_file : Path
+        mot text file with each row:
+        frame, track_id, bb_left, bb_top, bb_width, bb_height, conf, class, visibility
+    output_file : Path
+        The path to the input text file with each row:
+        track_id, frame, det_id, bb_left, bb_top, bb_right, bb_bottom, bb_cen_x, bb_cen_y,
+            bb_width, bb_height, conf, det_stat, track_stat
+
+    Examples
+    --------
+    >>> input_path = 'path/to/input.txt'
+    >>> output_path = 'path/to/output.txt'
+    >>> mot_to_track_file(input_path, output_path)
+    """
+
+    with open(input_file, "r") as infile, open(output_file, "w") as outfile:
+        for line in infile:
+            parts = line.strip().split(",")
+
+            frame_number = int(parts[0]) - 1
+            track_id = int(parts[1]) - 1
+            bb_left = float(parts[2]) - 1
+            bb_top = float(parts[3]) - 1
+            bb_width = float(parts[4])
+            bb_height = float(parts[5])
+            bb_right, bb_bottom, bb_cx, bb_cy = tl_wh_to_br_cen(
+                bb_left, bb_top, bb_width, bb_height
+            )
+
+            # Applying the specified transformations
+            transformed = [
+                str(track_id),
+                str(frame_number),
+                str(track_id),  # det_id get the track_id
+                str(int(bb_left)),
+                str(int(bb_top)),
+                str(int(bb_right)),
+                str(int(bb_bottom)),
+                str(int(bb_cx)),
+                str(int(bb_cy)),
+                str(int(bb_width)),
+                str(int(bb_height)),
+                parts[6],  # Use tenth column
+                str(0),  # Use eleventh column
+                str(1),  # Use twelfth column
             ]
 
             modified_line = ",".join(transformed) + "\n"
@@ -161,7 +223,7 @@ def mot_to_challenge(mot_file, output_file):
             outfile.write(modified_line)
 
 
-def motMetricsEnhancedCalculator(gtSource, tSource):
+def motMetricsEnhancedCalculator(gtSource, tSource, max_iou=0.1):
     # load ground truth
     gt = np.loadtxt(gtSource, delimiter=",")
 
@@ -182,7 +244,7 @@ def motMetricsEnhancedCalculator(gtSource, tSource):
         t_dets = t[t[:, 0] == frame, 1:6]  # select all detections in t
 
         C = mm.distances.iou_matrix(
-            gt_dets[:, 1:], t_dets[:, 1:], max_iou=0.5
+            gt_dets[:, 1:], t_dets[:, 1:], max_iou=max_iou
         )  # format: gt, t
 
         # Call update once for per frame.
@@ -208,6 +270,7 @@ def motMetricsEnhancedCalculator(gtSource, tSource):
             "mostly_tracked",
             "partially_tracked",
             "mostly_lost",
+            "num_detections",
             "num_false_positives",
             "num_misses",
             "num_switches",
@@ -231,6 +294,7 @@ def motMetricsEnhancedCalculator(gtSource, tSource):
             "mostly_tracked": "MT",
             "partially_tracked": "PT",
             "mostly_lost": "ML",
+            "num_detections": "TP",
             "num_false_positives": "FP",
             "num_misses": "FN",
             "num_switches": "IDsw",
@@ -240,13 +304,24 @@ def motMetricsEnhancedCalculator(gtSource, tSource):
         },
     )
     print(strsummary)
+    return summary, strsummary
 
 
 gt_file = "/home/fatemeh/Downloads/fish/mot_data/challenge/gt/8_1.txt"
 pr_file = "/home/fatemeh/Downloads/fish/mot_data/challenge/pred/8_1_ms_exp1.txt"
-motMetricsEnhancedCalculator(gt_file, pr_file)
-motMetricsEnhancedCalculator(gt_file, gt_file)
+gt = np.loadtxt(gt_file, delimiter=",")
+pred = np.loadtxt(pr_file, delimiter=",")
+summary, strsummary = motMetricsEnhancedCalculator(gt_file, pr_file, 0.9)
+
+from tracking import stats as ts
+
+tr_gt_file = "/home/fatemeh/Downloads/fish/mot_data/challenge/tr_gt/8_1.txt"
+tr_pr_file = "/home/fatemeh/Downloads/fish/mot_data/challenge/tr_pred/8_1_ms_exp1.txt"
+tr_gt = np.loadtxt(tr_gt_file, delimiter=",")
+tr_pred = np.loadtxt(tr_pr_file, delimiter=",")
+a = ts.get_stats_for_tracks(tr_gt, tr_pred)
 print("")
-main_path = Path("/home/fatemeh/Downloads/fish/mot_data")
-for p in main_path.glob("mots/*.txt"):
-    mot_to_challenge(p, main_path / f"challenge/gt/{p.name}")
+
+# main_path = Path("/home/fatemeh/Downloads/fish/mot_data")
+# for p in main_path.glob("mots/*.txt"):
+#     mot_to_track_file(p, main_path / f"challenge/tr_gt/{p.name}")
