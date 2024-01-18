@@ -6,8 +6,7 @@ import numpy as np
 import yaml
 
 from tracking.data_association import load_tracks_from_mot_format
-from tracking.visualize import (plot_tracks_array_in_video,
-                                save_images_with_tracks)
+from tracking.visualize import plot_tracks_array_in_video, save_images_with_tracks
 
 
 def process_config(config_path):

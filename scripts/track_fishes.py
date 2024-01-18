@@ -7,11 +7,12 @@ from types import SimpleNamespace
 import numpy as np
 import yaml
 
-from tracking.data_association import (hungarian_track,
-                                       save_tracks_to_mot_format)
-from tracking.multi_stage_tracking import (multistage_track,
-                                           ultralytics_detect_video,
-                                           ultralytics_track_video)
+from tracking.data_association import hungarian_track, save_tracks_to_mot_format
+from tracking.multi_stage_tracking import (
+    multistage_track,
+    ultralytics_detect_video,
+    ultralytics_track_video,
+)
 from tracking.visualize import get_video_parameters
 
 

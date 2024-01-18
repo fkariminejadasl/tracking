@@ -9,9 +9,13 @@ import wandb
 from torch.utils import tensorboard
 from torch.utils.data import DataLoader
 
-from tracking.association_learning import (AssDataset, AssociationNet,
-                                           evaluate, save_model,
-                                           train_one_epoch)
+from tracking.association_learning import (
+    AssDataset,
+    AssociationNet,
+    evaluate,
+    save_model,
+    train_one_epoch,
+)
 
 wandb.init(project="uncategorized")
 

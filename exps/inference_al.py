@@ -14,8 +14,11 @@ from tqdm import tqdm
 from tracking import association_learning as al
 from tracking import data_association as da
 from tracking import visualize
-from tracking.data_association import (change_center_bboxs, normalize_bboxs,
-                                       zero_out_of_image_bboxs)
+from tracking.data_association import (
+    change_center_bboxs,
+    normalize_bboxs,
+    zero_out_of_image_bboxs,
+)
 
 
 def zero_padding_images(image, crop_w, crop_h):

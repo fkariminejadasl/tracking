@@ -3,9 +3,13 @@ from typing import List
 import numpy as np
 
 from tracking.data_association import (
-    cen_wh_from_tl_br, get_iou, get_track_from_track_id,
-    get_track_ind_from_track_id_frame_number, get_track_inds_from_track_id,
-    interpolate_two_bboxes)
+    cen_wh_from_tl_br,
+    get_iou,
+    get_track_from_track_id,
+    get_track_ind_from_track_id_frame_number,
+    get_track_inds_from_track_id,
+    interpolate_two_bboxes,
+)
 from tracking.stereo_gt import get_disparity_info_from_stereo_track
 
 # min_track_length: int = 10
