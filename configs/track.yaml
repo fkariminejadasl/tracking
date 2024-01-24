@@ -1,8 +1,8 @@
 # None: means leave it empty
 # det_checkpoint: /home/fatemeh/Downloads/fish/best_model/det_best_bgr29.pt # Value: Path
-# save_path: /home/fatemeh/Downloads/fish/mot_data/tmp/ms_exp1 # Value: Path
-# video_path: /home/fatemeh/Downloads/fish/mot_data/tmp/vids/ # Value: Path. Single file or a path to multiple files. The video file extension .mp4.
-# dets_path: /home/fatemeh/Downloads/fish/mot_data/test/ # Value: Path | None . Path to the location of detection zip file e.g /content/dets/{vid_name_dets.zip} 
+# save_path: /home/fatemeh/Downloads/fish/mot_data # Value: Path
+# video_path: /home/fatemeh/Downloads/fish/mot_data/vids/ # Value: Path. Single file or a path to multiple files. The video file extension .mp4.
+# dets_path: /home/fatemeh/Downloads/fish/mot_data/yolov8/ # Value: Path | None . Path to the location of detection zip file e.g /content/dets/{vid_name_dets.zip} 
 # save_name: exp1 # Value: str . The name of the file used to save tracks and/or images with tracks
 det_checkpoint: /content/det_best_bgr29.pt # Value: Path
 save_path: /content # Value: Path

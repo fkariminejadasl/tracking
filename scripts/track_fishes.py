@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import numpy as np
 import yaml
 
+from tracking import utils
 from tracking.data_association import hungarian_track, save_tracks_to_mot_format
 from tracking.multi_stage_tracking import (
     multistage_track,
@@ -42,10 +43,9 @@ def main(inputs):
     step = inputs.step
     track_method = inputs.track_method
     det_checkpoint = Path(inputs.det_checkpoint)
-    save_path = Path(inputs.save_path)
+    main_save_path = Path(inputs.save_path)
     track_config_file = inputs.track_config_file
     video_path = Path(inputs.video_path)
-    exp_name = inputs.save_name
 
     track_config_file = (
         Path(inputs.track_config_file)
@@ -64,18 +64,27 @@ def main(inputs):
     for video_file in video_files:
         stime = time.time()
 
+        vid_name = video_file.stem
+        exp_name = inputs.save_name
+        save_name = f"{vid_name}_{track_method}_{exp_name}"
+        save_path = main_save_path / f"{track_method}_{exp_name}"
+        txt_path = save_path / f"extras"
+        txt_path.mkdir(parents=True, exist_ok=True)
+        txt_file = txt_path / f"{save_name}.txt"
+        mot_file = save_path / f"mots/{save_name}.txt"
+        if txt_file.exists() and mot_file.exists():
+            continue
+        print(vid_name)
+
         height, width, total_no_frames, _ = get_video_parameters(video_file)
         if inputs.end_frame is None:
             end_frame = total_no_frames - 1
-        vid_name = video_file.stem
-
-        save_name = f"{vid_name}_{track_method}_{exp_name}"
 
         if track_method == "ms":
             if inputs.dets_path:  #
                 dets_path = Path(inputs.dets_path) / f"{vid_name}_dets.zip"
             if (not inputs.dets_path) or (not dets_path.is_file()):  # None
-                dets_path = save_path / f"{vid_name}_dets.zip"
+                dets_path = main_save_path / f"yolov8/{vid_name}_dets.zip"
                 print("=====> Detection")
                 dets = ultralytics_detect_video(
                     video_file,
@@ -120,8 +129,10 @@ def main(inputs):
                 step,
             )
 
-        save_tracks_to_mot_format(save_path / save_name, trks[:, :11])
-        np.savetxt(save_path / f"{save_name}.txt", trks, delimiter=",", fmt="%d")
+        np.savetxt(txt_file, trks, delimiter=",", fmt="%d")
+        # save_tracks_to_mot_format(save_path / f"mots/{save_name}", trks[:, :11])
+        utils.track_file_to_mot(txt_file, mot_file)
+
         with open(save_path / f"{track_method}_{exp_name}_meta.csv", "a") as rfile:
             elapse_time = time.time() - stime
             rfile.write(

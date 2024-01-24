@@ -987,6 +987,8 @@ def ultralytics_track_video(
             continue
         results = model.track(image, persist=True, tracker=config_file, verbose=False)
 
+        if not results[0].boxes.is_track:
+            continue
         xyxy = results[0].boxes.xyxy
         track_ids = results[0].boxes.id[:, None]
         fns = frame_number * np.ones(len(xyxy))[:, None]

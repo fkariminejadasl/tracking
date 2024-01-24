@@ -1,3 +1,6 @@
+from pathlib import Path
+
+import motmetrics as mm
 import numpy as np
 
 from tracking.data_association import get_iou
@@ -100,3 +103,95 @@ def get_stats_for_tracks(annos, atracks):
         tp, fp, fn, sw, uid, _ = get_stats_for_track(annos, atracks, track_id)
         stats.append([track_id, tp, fp, fn, sw, uid])
     return np.array(stats).astype(np.int64)
+
+
+def compare_one_file(tr_gt_file, tr_pr_file, save_file):
+    """
+    Examples
+    --------
+    >>> exp = "ms_exp1"
+    >>> gt_path = Path("/home/fatemeh/Downloads/fish/mot_data/challenge/tr_gt/8_1.txt")
+    >>> track_path = Path("/home/fatemeh/Downloads/fish/mot_data/challenge/tr_pred/8_1_ms_exp1.txt")
+    >>> save_file = gt_path.parent.parent / f"{exp}.txt"
+    >>> compare_one_file(gt_path, track_path, save_file, exp)
+    """
+    gt = np.loadtxt(tr_gt_file, delimiter=",")
+    pred = np.loadtxt(tr_pr_file, delimiter=",")
+    sts = get_stats_for_tracks(gt, pred)
+
+    id_sw = sum([i[-1] - 1 for i in sts if i[-1] != -1])
+    n_tracks = sts.shape[0]
+    n_frames = len(np.unique(gt[:, 1]))
+    n_objects = gt.shape[0]
+    n_no_tracks = sum([1 for i in sts if i[-1] == -1])
+    vid_name = tr_gt_file.stem
+
+    with open(save_file, "a") as rfile:
+        rfile.write(
+            f"{vid_name},{n_frames},{n_tracks},{n_objects},{id_sw},{n_no_tracks}\n"
+        )
+
+
+def compare_files(gt_path, track_path, save_file, exp):
+    """
+    Examples
+    --------
+    >>> exp = "ms_exp1"
+    >>> gt_path = Path("/home/fatemeh/Downloads/fish/mot_data/challenge/txt_gt")
+    >>> track_path = Path(f"/home/fatemeh/Downloads/fish/mot_data/challenge/txt_{exp}")
+    >>> save_file = gt_path.parent / f"{exp}.txt"
+    >>> compare_files(gt_path, track_path, save_file, exp)
+    """
+    for gt_file in gt_path.glob("*txt"):
+        pr_file = track_path / f"{gt_file.stem}_{exp}.txt"
+        compare_one_file(gt_file, pr_file, save_file)
+
+
+def motMetricsEnhancedCalculator(gtSource, tSource, max_iou=0.9):
+    """
+    Examples
+    --------
+    >>> gt_file = "/home/fatemeh/Downloads/fish/mot_data/challenge/ch_gt/8_1.txt"
+    >>> track_file = "/home/fatemeh/Downloads/fish/mot_data/challenge/ch_ms_exp1/8_1_ms_exp1.txt"
+    >>> summary, strsummary = motMetricsEnhancedCalculator(gt_file, track_file, 0.9)
+    """
+    # load ground truth
+    gt = np.loadtxt(gtSource, delimiter=",")
+
+    # load tracking output
+    t = np.loadtxt(tSource, delimiter=",")
+
+    # Create an accumulator that will be updated during each frame
+    acc = mm.MOTAccumulator(auto_id=True)
+
+    # Max frame number maybe different for gt and t files
+    for frame in range(int(gt[:, 0].max())):
+        frame += 1  # detection and frame numbers begin at 1
+
+        # select id, x, y, width, height for current frame
+        # required format for distance calculation is X, Y, Width, Height \
+        # We already have this format
+        gt_dets = gt[gt[:, 0] == frame, 1:6]  # select all detections in gt
+        t_dets = t[t[:, 0] == frame, 1:6]  # select all detections in t
+
+        C = mm.distances.iou_matrix(
+            gt_dets[:, 1:], t_dets[:, 1:], max_iou=max_iou
+        )  # format: gt, t
+
+        # Call update once for per frame.
+        # format: gt object ids, t object ids, distance
+        acc.update(
+            gt_dets[:, 0].astype("int").tolist(),
+            t_dets[:, 0].astype("int").tolist(),
+            C,
+        )
+
+    mh = mm.metrics.create()
+
+    metrics = [i.split("|")[0] for i in mh.list_metrics_markdown().split("\n")[2:-1]]
+    summary = mh.compute(acc, metrics=metrics, name="acc")
+    # summary.to_dict()['num_objects']
+    strsummary = mm.io.render_summary(summary, namemap=dict(zip(metrics, metrics)))
+
+    print(strsummary)
+    return summary, strsummary
