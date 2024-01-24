@@ -874,17 +874,17 @@ def multistage_track(
 
             from tracking import visualize
 
-            vid_name, step, folder = 2, 8, "240hz"
-            main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
-            image_path = main_path / "images"
-            im1 = cv2.imread(
-                str(image_path / f"{vid_name}_frame_{frame_number - step:06d}.jpg")
-            )
-            visualize.plot_detections_in_image(dets1[:, [2, 3, 4, 5, 6]], im1)
-            im2 = cv2.imread(
-                str(image_path / f"{vid_name}_frame_{frame_number:06d}.jpg")
-            )
-            visualize.plot_detections_in_image(dets2[:, [2, 3, 4, 5, 6]], im2)
+            # vid_name, step, folder = 2, 8, "240hz"
+            # main_path = Path(f"/home/fatemeh/Downloads/fish/in_sample_vids/{folder}")
+            # image_path = main_path / "images"
+            # im1 = cv2.imread(
+            #     str(image_path / f"{vid_name}_frame_{frame_number - step:06d}.jpg")
+            # )
+            # im2 = cv2.imread(
+            #     str(image_path / f"{vid_name}_frame_{frame_number:06d}.jpg")
+            # )
+            visualize.plot_detections_in_image(dets1[:, [2, 3, 4, 5, 6]], image1)
+            visualize.plot_detections_in_image(dets2[:, [2, 3, 4, 5, 6]], image2)
 
         dets1 = predict_locations(dets1, disps, frame_number, step)
         clip_bboxs(dets1, im_height, im_width)
@@ -901,6 +901,8 @@ def multistage_track(
         memory = update_memory(
             memory, features2, matches, did2tid, bad_tids + killed_tids, u_dids
         )
+
+        image1 = image2.copy()
 
         # # save intermediate results
         # dets = get_last_dets_tracklets(trks)

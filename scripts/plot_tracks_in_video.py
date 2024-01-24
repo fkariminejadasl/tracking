@@ -54,7 +54,7 @@ def main(inputs):
         end_frame = frame_numbers[-1]
         step = min(np.diff(frame_numbers))
         if inputs.save_images:
-            save_file = save_path / f"{track_file.stem}"
+            save_file = save_path
         else:
             save_file = save_path / f"{track_name}.mp4"
         if save_file.exists():
@@ -62,7 +62,7 @@ def main(inputs):
 
         if inputs.save_images:
             save_images_with_tracks(
-                save_file,
+                save_path,
                 video_file,
                 tracks,
                 start_frame,
