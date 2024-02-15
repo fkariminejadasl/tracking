@@ -9,6 +9,7 @@ path = (Path(__file__).parents[1]).as_posix()
 sys.path.insert(0, path)
 
 from tracking.data_association import (
+    are_boxes_close,
     bipartite_local_matching,
     clean_detections,
     get_detections,
@@ -17,6 +18,7 @@ from tracking.data_association import (
     get_iou,
     hungarian_global_matching,
     is_bbox_in_bbox,
+    is_inside_bbox,
     load_disparities,
     load_tracks_from_cvat_txt_format,
     load_tracks_from_mot_format,
@@ -65,6 +67,33 @@ def test_get_iou():
     np.testing.assert_equal(get_iou(det1, det2), 0.0)
 
 
+def test_are_boxes_close():
+    kwargs = dict(iou_thrs=0, dist_thrs=2)
+    bbox1 = (2, 2, 6, 6)
+    bbox2 = (7, 5, 10, 6)
+    result = are_boxes_close(bbox1, bbox2, **kwargs)
+    assert result == True
+    bbox1 = (2, 2, 6, 6)
+    bbox2 = (7, 7, 10, 10)
+    result = are_boxes_close(bbox1, bbox2, **kwargs)
+    assert result == True
+    result = are_boxes_close(bbox2, bbox1, **kwargs)
+    assert result == True
+    bbox2 = (2, 7, 6, 10)
+    result = are_boxes_close(bbox1, bbox2, **kwargs)
+    assert result == True
+    result = are_boxes_close(bbox2, bbox1, **kwargs)
+    assert result == True
+    bbox2 = (7, 2, 10, 6)
+    result = are_boxes_close(bbox1, bbox2, **kwargs)
+    assert result == True
+    result = are_boxes_close(bbox2, bbox1, **kwargs)
+    assert result == True
+    kwargs = dict(iou_thrs=0, dist_thrs=0)
+    result = are_boxes_close(bbox2, bbox1, **kwargs)
+    assert result == False
+
+
 def test_is_bbox_in_bbox():
     adets = get_detections_array(
         data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height, 1
@@ -72,6 +101,13 @@ def test_is_bbox_in_bbox():
     assert is_bbox_in_bbox(adets[5, 3:7], adets[1, 3:7]) == True
     assert is_bbox_in_bbox(adets[1, 3:7], adets[5, 3:7]) == False
     assert is_bbox_in_bbox(adets[1, 3:7], adets[8, 3:7]) == False
+
+
+def test_is_inside_bbox():
+    bbox1 = (2, 2, 6, 6)
+    bbox2 = (1, 1, 5, 5)
+    assert is_inside_bbox(bbox1, bbox2, threshold=1) == True
+    assert is_inside_bbox(bbox1, bbox2, threshold=0) == False
 
 
 def test_load_tracks_from_cvat_txt_format():
@@ -191,7 +227,7 @@ def test_make_array_from_dets_reverse():
         data_path / "04_07_22_G_2_rect_valid_2.txt", im_width, im_height, 1
     )
     actual = make_array_from_dets(dets)
-    np.testing.assert_equal(actual, dets_array)
+    np.testing.assert_equal(actual, dets_array[:, :11])
 
     actual = make_dets_from_array(dets_array)
     assert actual[10].x == dets[10].x

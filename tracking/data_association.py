@@ -1,5 +1,8 @@
+import csv
 import enum
 import shutil
+import xml.etree.ElementTree as ET
+from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
@@ -144,6 +147,7 @@ def get_detections_array(
         center_y = int(round(det[2] * height))
         bbox_width = int(round(det[3] * width))
         bbox_height = int(round(det[4] * height))
+        det_score = int(round(det[5] * 100))
         x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(
             center_x, center_y, bbox_width, bbox_height
         )
@@ -160,6 +164,7 @@ def get_detections_array(
             center_y,
             bbox_width,
             bbox_height,
+            det_score,
         ]
         dets_array.append(item)
     return np.array(dets_array).astype(np.int64)
@@ -855,8 +860,12 @@ def save_tracks_to_mot_format(
             for item in tracks:
                 if item[0] == -1:  # track_id=-1: detections. no track info.
                     item[0] = item[2]  # deepcopy it not
+                if tracks.shape[1] == 12:
+                    det_quality = int(item[11])
+                else:
+                    det_quality = 1
                 file.write(
-                    f"{int(item[1])+1},{int(item[0])+1},{item[3]+1},{item[4]+1},{int(item[9])},{int(item[10])},1,1,1.0\n"
+                    f"{int(item[1])+1},{int(item[0])+1},{item[3]+1},{item[4]+1},{int(item[9])},{int(item[10])},{det_quality},1,1.0\n"
                 )
     if make_zip:
         shutil.make_archive(save_file.with_suffix(""), "zip", save_file.parent, "gt")
@@ -905,11 +914,219 @@ def load_tracks_from_mot_format(zip_file: Path) -> np.ndarray:
                 center_y,
                 width,
                 height,
+                int(items[6]),  # detection quality
             ]
             tracks.append(track)
     if zip_file.suffix == ".zip":
         shutil.rmtree(zip_file.parent / zip_file.stem)
-    return np.round(np.array(tracks)).astype(np.int64)
+    tracks = np.round(np.array(tracks)).astype(np.int64)
+    det_qualities = tracks[:, -1]
+    if set(det_qualities) == {1}:
+        return tracks[:, :11]
+    return tracks
+
+
+def mot_to_cvat_xml(mot_file_path, video_name, width, height, keyframe_frequency=10):
+    """
+    Convert a MOT format file to CVAT XML for videos.
+
+    Args:
+    - mot_file_path (str): path to the input MOT format file.
+    - video_name (str): name of the video.
+    - width (int): width of the frames in the video.
+    - height (int): height of the frames in the video.
+    - keyframe_frequency (int, optional): frequency for keyframes. Default is 10.
+
+    Returns:
+    - str: path to the converted CVAT XML file.
+    """
+
+    # Read the MOT file and process detections
+    detections = defaultdict(list)
+    with open(mot_file_path, "r") as file:
+        reader = csv.reader(file, delimiter=",")
+        for row in reader:
+            frame, track_id, x, y, w, h, _, _, _ = row
+            frame = int(frame) - 1
+            track_id = int(track_id) - 1
+            detections[track_id].append(
+                (frame, float(x), float(y), float(x) + float(w), float(y) + float(h))
+            )
+
+    # Create XML
+    root = ET.Element("annotations")
+    version = ET.SubElement(root, "version").text = "1.1"
+
+    meta = ET.SubElement(root, "meta")
+    task = ET.SubElement(meta, "task")
+    ET.SubElement(task, "id").text = "unknown"
+    ET.SubElement(task, "name").text = video_name
+    ET.SubElement(task, "size").text = str(
+        max(
+            [int(frame) for detection in detections.values() for frame, *_ in detection]
+        )
+    )
+    ET.SubElement(task, "mode").text = "interpolation"
+    ET.SubElement(task, "overlap").text = "0"
+    ET.SubElement(task, "bugtracker").text = ""
+    ET.SubElement(task, "flipped").text = "False"
+    ET.SubElement(task, "labels").append(ET.Element("label", name="fish"))
+    ET.SubElement(task, "segments").append(
+        ET.Element(
+            "segment",
+            id="0",
+            start="0",
+            stop=str(
+                max(
+                    [
+                        int(frame)
+                        for detection in detections.values()
+                        for frame, *_ in detection
+                    ]
+                )
+            ),
+        )
+    )
+    ET.SubElement(task, "original_size").append(ET.Element("width", text=str(width)))
+    ET.SubElement(task, "original_size").append(ET.Element("height", text=str(height)))
+
+    for track_id, boxes in detections.items():
+        track = ET.SubElement(root, "track", id=str(track_id), label="fish")
+        for frame, xtl, ytl, xbr, ybr in boxes:
+            ET.SubElement(
+                track,
+                "box",
+                frame=str(frame),
+                xtl=str(xtl),
+                ytl=str(ytl),
+                xbr=str(xbr),
+                ybr=str(ybr),
+                outside="0",
+                occluded="0",
+                keyframe="1"
+                if frame % keyframe_frequency == 0
+                or frame == boxes[0][0]
+                or frame == boxes[-1][0]
+                else "0",
+            )
+
+    tree = ET.ElementTree(root)
+    output_file_path = mot_file_path.rsplit(".", 1)[0] + "_converted.xml"
+    tree.write(output_file_path)
+
+    return output_file_path
+
+
+def cvat_xml_to_mot(cvat_xml_path, mot_file_path):
+    """
+    Convert a CVAT XML format file to MOT format.
+
+    Args:
+    - cvat_xml_path (str): path to the input CVAT XML file.
+    - mot_file_path (str): path to the output MOT format file.
+
+    Returns:
+    - str: path to the converted MOT format file.
+    """
+
+    # Parse the XML file
+    tree = ET.parse(cvat_xml_path)
+    root = tree.getroot()
+
+    # Extract track and box information
+    mot_data = []
+    for track in root.findall("track"):
+        track_id = int(track.get("id")) + 1
+        for box in track.findall("box"):
+            frame = int(box.get("frame")) + 1
+            xtl = float(box.get("xtl"))
+            ytl = float(box.get("ytl"))
+            xbr = float(box.get("xbr"))
+            ybr = float(box.get("ybr"))
+
+            # Convert to MOT format (x, y, w, h)
+            w = xbr - xtl
+            h = ybr - ytl
+            mot_data.append([frame, track_id, xtl, ytl, w, h, 1, 1, 1.0])
+
+    # Write to MOT format file
+    with open(mot_file_path, "w", newline="") as file:
+        writer = csv.writer(file)
+        for row in mot_data:
+            writer.writerow(row)
+
+    return mot_file_path
+
+
+def xml_to_mots(xml_path, save_path):
+    save_path = Path(save_path)
+    save_path.mkdir(parents=True, exist_ok=True)
+
+    tree = ET.parse(xml_path)
+    root = tree.getroot()
+
+    # since one of the tasks didn't have width and all videos have the same width I just get one of them.
+    width = int(root.find(".//task/original_size/width").text) // 2
+
+    task_id_to_name = {}
+    for task_element in root.findall(".//task"):
+        task_id = task_element.find("id").text
+        task_name = task_element.find("name").text
+        task_id_to_name[task_id] = task_name.split("_")[0]
+
+    task_id_to_min_frame = {}
+    for task_id in task_id_to_name.keys():
+        frame_numbers = [
+            int(box.get("frame"))
+            for box in root.findall(f".//track[@task_id='{task_id}']/box")
+        ]
+        if frame_numbers:
+            task_id_to_min_frame[task_id] = min(frame_numbers)
+
+    task_id_to_min_track_id = {}
+    for task_id in task_id_to_name.keys():
+        track_ids = [
+            int(box.get("id"))
+            for box in root.findall(f".//track[@task_id='{task_id}']")
+        ]
+        if track_ids:
+            task_id_to_min_track_id[task_id] = min(track_ids)
+
+    for task_id, name in tqdm(task_id_to_name.items()):
+        print(task_id, name)
+        tracks1 = []
+        tracks2 = []
+        task_tracks = root.findall(f".//track[@task_id='{task_id}']")
+        for task_track in task_tracks:
+            track_id = int(task_track.get("id")) - task_id_to_min_track_id.get(
+                task_id, 0
+            )
+            boxes = task_track.findall("box")
+            for box in boxes:
+                frame_number = int(box.get("frame")) - task_id_to_min_frame.get(
+                    task_id, 0
+                )
+                xtl = float(box.get("xtl"))
+                ytl = float(box.get("ytl"))
+                xbr = float(box.get("xbr"))
+                ybr = float(box.get("ybr"))
+                w = xbr - xtl
+                h = ybr - ytl
+                if xtl > width:
+                    xtl -= width
+                    xbr -= width
+                    tracks2.append([frame_number, track_id, xtl, ytl, w, h])
+                else:
+                    tracks1.append([frame_number, track_id, xtl, ytl, w, h])
+        _write_file(save_path / f"{name}_1.txt", tracks1)
+        _write_file(save_path / f"{name}_2.txt", tracks2)
+
+
+def _write_file(save_file, tracks):
+    with open(save_file, "w") as wfile:
+        for t in tracks:
+            item = f"{t[0]+1},{t[1]+1},{t[2]:.2f},{t[3]:.2f},{t[4]:.2f},{t[5]:.2f},1,1,1.0\n"
+            wfile.write(item)
 
 
 def load_tracks_from_cvat_txt_format(track_file: Path) -> np.ndarray:
@@ -1012,29 +1229,107 @@ def giou(bbox1, bbox2) -> float:
     return giou
 
 
-def get_iou(bbox1, bbox2) -> float:
-    # bbox1,2: (x_topleft, y_topleft, x_bottomright, y_bottomright)
+def is_valid_bbox(bbox):
+    """
+    inputs:
+        bbox1,2: tuple|list|np.ndarray
+            (x_topleft, y_topleft, x_bottomright, y_bottomright)
+    """
 
-    x_left = max(bbox1[0], bbox2[0])
-    y_top = max(bbox1[1], bbox2[1])
-    x_right = min(bbox1[2], bbox2[2])
-    y_bottom = min(bbox1[3], bbox2[3])
-    if x_right < x_left or y_bottom < y_top:
+    if (bbox[0] == bbox[2]) | (bbox[1] == bbox[3]):
+        return False
+    else:
+        return True
+
+
+def get_iou(bbox1, bbox2) -> float:
+    """
+    Calculate IOU (Intersection over Union)
+
+    inputs:
+        bbox1,2: tuple|list|np.ndarray
+            (x_topleft, y_topleft, x_bottomright, y_bottomright)
+    """
+
+    # If bbox is not a bbox.
+    # TODO: maybe remove
+    if (not is_valid_bbox(bbox1)) | (not is_valid_bbox(bbox2)):
         return 0.0
 
-    intersection_area = (x_right - x_left) * (y_bottom - y_top)
+    x1_1, y1_1, x2_1, y2_1 = bbox1
+    x1_2, y1_2, x2_2, y2_2 = bbox2
 
-    area1 = (bbox1[2] - bbox1[0]) * (bbox1[3] - bbox1[1])
-    area2 = (bbox2[2] - bbox2[0]) * (bbox2[3] - bbox2[1])
-
-    iou = intersection_area / float(area1 + area2 - intersection_area)
-    assert iou >= 0.0
-    assert iou <= 1.0
+    # Calculate IOU (Intersection over Union)
+    intersect_area = max(0, min(x2_1, x2_2) - max(x1_1, x1_2)) * max(
+        0, min(y2_1, y2_2) - max(y1_1, y1_2)
+    )
+    area1 = (x2_1 - x1_1) * (y2_1 - y1_1)
+    area2 = (x2_2 - x1_2) * (y2_2 - y1_2)
+    iou = intersect_area / (area1 + area2 - intersect_area)
     return iou
 
 
+def are_boxes_close(bbox1, bbox2, iou_thrs=0.5, dist_thrs=5):
+    """
+    Check if two bounding boxes are close to each other within a threshold.
+
+    Parameters:
+    - bbox1: Tuple (x1, y1, x2, y2) representing the coordinates of the first bounding box.
+    - bbox2: Tuple (x1, y1, x2, y2) representing the coordinates of the second bounding box.
+    - iou_thrs: Accepted Intersection over Union (IOU) threshold for intersection.
+    - dist_thrs: Accepted distance threshold for closeness.
+
+    Returns:
+    - True if the bounding boxes intersect or are close to each other, False otherwise.
+    """
+
+    x1_1, y1_1, x2_1, y2_1 = bbox1
+    x1_2, y1_2, x2_2, y2_2 = bbox2
+
+    iou1 = get_iou((x1_1, y1_1, x2_1 + dist_thrs, y2_1 + dist_thrs), bbox2)
+    iou2 = get_iou(bbox1, (x1_2, y1_2, x2_2 + dist_thrs, y2_2 + dist_thrs))
+
+    return iou1 > iou_thrs or iou2 > iou_thrs
+
+
+def is_inside_bbox(bbox1, bbox2, threshold=0):
+    """
+    Check if bbox1 is inside bbox2 or within an accepted threshold.
+
+    Parameters:
+    - bbox1: Tuple | List | np.ndarray
+        (x1, y1, x2, y2) representing the coordinates of the first bounding box.
+    - bbox2: Tuple | List | np.ndarray
+        (x1, y1, x2, y2) representing the coordinates of the second bounding box.
+    - threshold: Accepted threshold for containment.
+
+    Returns:
+    - True if bbox1 is inside bbox2 or within the accepted threshold, False otherwise.
+    """
+
+    x1_1, y1_1, x2_1, y2_1 = bbox1
+    x1_2, y1_2, x2_2, y2_2 = bbox2
+
+    # Check if bbox1 is inside bbox2
+    is_inside = (x1_2 <= x1_1 <= x2_1 <= x2_2) and (y1_2 <= y1_1 <= y2_1 <= y2_2)
+
+    # Check if bbox1 is within the accepted threshold in bbox2
+    is_within_threshold = (
+        x1_1 >= x1_2 - threshold
+        and y1_1 >= y1_2 - threshold
+        and x2_1 <= x2_2 + threshold
+        and y2_1 <= y2_2 + threshold
+    )
+
+    return is_inside or is_within_threshold
+
+
 def is_bbox_in_bbox(bbox1, bbox2, inters_thres=0.85) -> float:
-    # bbox1,2: (x_topleft, y_topleft, x_bottomright, y_bottomright)
+    """
+    inputs:
+        bbox1,2: tuple|list|np.ndarray
+            (x_topleft, y_topleft, x_bottomright, y_bottomright)
+    """
 
     x_left = max(bbox1[0], bbox2[0])
     y_top = max(bbox1[1], bbox2[1])

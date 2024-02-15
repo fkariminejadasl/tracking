@@ -1,106 +1,86 @@
 import argparse
-import sys
 from pathlib import Path
+from types import SimpleNamespace
 
-path = (Path(__file__).parents[1]).as_posix()
-sys.path.insert(0, path)
+import numpy as np
+import yaml
 
-import cv2
+from tracking.data_association import load_tracks_from_mot_format
+from tracking.visualize import plot_tracks_array_in_video, save_images_with_tracks
 
-from tracking.data_association import Point, load_tracks_from_mot_format
-from tracking.visualize import get_video_parameters, plot_tracks_array_in_video
+
+def process_config(config_path):
+    with open(config_path, "r") as config_file:
+        try:
+            return yaml.safe_load(config_file)
+        except yaml.YAMLError as error:
+            print(error)
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Plot tracks bounding boxes in video")
-    parser.add_argument(
-        "-t",
-        "--track_file",
-        help="Track file",
-        required=True,
-        type=Path,
-    )
-    parser.add_argument(
-        "-v",
-        "--video_file",
-        help="Video file extension '.mp4'",
-        required=True,
-        type=Path,
-    )
-    parser.add_argument(
-        "-s",
-        "--save_file",
-        help="The resulting video with or without full path.",
-        required=True,
-        type=Path,
-    )
-    parser.add_argument(
-        "--fps",
-        help="frame per second",
-        required=False,
-        type=int,
-    )
-    parser.add_argument(
-        "--total_no_frames",
-        help="total number of frames",
-        required=False,
-        type=int,
-    )
-    parser.add_argument(
-        "--video_bbox",
-        help="""
-        Crop and save the videos. Values are given by comma separated, 
-        top_left.x,top_left.y,bottom_right.x,bottom_right.y.
-        """,
-        required=False,
-        type=str,
-    )
+    parser = argparse.ArgumentParser(description="Process a config file.")
+    parser.add_argument("config_file", type=Path, help="Path to the config file")
+
     args = parser.parse_args()
-    print(args)
-    return args
+    config_path = args.config_file
+    inputs = process_config(config_path)
+    for key, value in inputs.items():
+        print(f"{key}: {value}")
+    inputs = SimpleNamespace(**inputs)
+    return inputs
 
 
-def main():
-    args = parse_args()
-    track_file = args.track_file.expanduser().resolve()
-    video_file = args.video_file.expanduser().resolve()
-    save_file = args.save_file.expanduser().resolve()
+def main(inputs):
+    track_path = Path(inputs.track_path)
+    video_path = Path(inputs.video_path)
+    save_path = Path(inputs.save_path)
 
-    save_file.parent.mkdir(parents=True, exist_ok=True)
-    vc = cv2.VideoCapture(video_file.as_posix())
+    if track_path.is_file():
+        track_files = [track_path]
+    if track_path.is_dir():
+        track_files = track_path.glob("*")
 
-    height, width, total_no_frames, fps = get_video_parameters(vc)
-    if args.fps is None:
-        args.fps = fps
-    if args.total_no_frames is None:
-        args.total_no_frames = total_no_frames
+    for track_file in track_files:
+        track_name = f"{track_file.stem}"
+        if video_path.is_file():
+            video_file = video_path
+        else:
+            video_file = video_path / f"{track_name}.mp4"
 
-    if args.video_bbox is None:
-        top_left = Point(x=0, y=0)
-        video_width = width
-        video_height = height
-    else:
-        top_left_x, top_left_y, bottom_right_x, bottom_right_y = map(
-            int, args.video_bbox.split(",")
-        )
-        top_left = Point(top_left_x, top_left_y)
-        video_width = bottom_right_x - top_left_x
-        video_height = bottom_right_y - top_left_y
+        print(track_name)
+        tracks = load_tracks_from_mot_format(track_file)
+        frame_numbers = np.unique(tracks[:, 1])
+        start_frame = frame_numbers[0]
+        end_frame = frame_numbers[-1]
+        step = min(np.diff(frame_numbers))
+        if inputs.save_images:
+            save_file = save_path
+        else:
+            save_file = save_path / f"{track_name}.mp4"
+        if save_file.exists():
+            continue
 
-    tracks = load_tracks_from_mot_format(track_file)
-    plot_tracks_array_in_video(
-        save_file,
-        tracks,
-        vc,
-        top_left,
-        video_width,
-        video_height,
-        end_frame=args.total_no_frames - 1,
-        fps=args.fps,
-        show_det_id=False,
-        black=False,
-    )
+        if inputs.save_images:
+            save_images_with_tracks(
+                save_path,
+                video_file,
+                tracks,
+                start_frame,
+                end_frame,
+                step,
+            )
+        else:
+            plot_tracks_array_in_video(
+                save_file,
+                tracks,
+                video_file,
+                start_frame,
+                end_frame,
+                step,
+                black=False,
+            )
 
 
 if __name__ == "__main__":
-    main()
+    inputs = parse_args()
+    main(inputs)
