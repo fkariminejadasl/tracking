@@ -11,6 +11,6 @@ dets_path: # Value: Path | None . Path to the location of detection zip file e.g
 save_name: exp1 # Value: str . The name of the file used to save tracks and/or images with tracks
 start_frame: 0 # Value: int . The counting of frames is zero-based.
 end_frame: # Value: int|None . The counting of frames is zero-based. 
-step: 1 # only track with this step size
+step: 8 # only track with this step size
 track_method: ms # Value: botsort | bytetrack | ms 
 track_config_file: # config file only for botsort and bytetrack if they are change. e.g /contect/botsort.yaml, /content/bytetrack.yaml
