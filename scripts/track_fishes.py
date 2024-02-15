@@ -131,7 +131,7 @@ def main(inputs):
 
         np.savetxt(txt_file, trks, delimiter=",", fmt="%d")
         # save_tracks_to_mot_format(save_path / f"mots/{save_name}", trks[:, :11])
-        utils.track_file_to_mot(txt_file, mot_file)
+        utils.track_file_to_mot_file(txt_file, mot_file)
 
         with open(save_path / f"{track_method}_{exp_name}_meta.csv", "a") as rfile:
             elapse_time = time.time() - stime
