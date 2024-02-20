@@ -161,3 +161,50 @@ def sift_to_rootsift(x: torch.Tensor, eps=1e-6) -> torch.Tensor:
     x.clip_(min=eps).sqrt_()
     return torch.nn.functional.normalize(x, p=2, dim=-1, eps=eps)
 """
+
+"""
+import numpy as np
+import cv2
+
+# Approximate initial values
+focal_length = 800  # Example focal length
+center = (320, 240)  # Assume the center of the image is the principal point
+cameraMatrixL = np.array([[focal_length, 0, center[0]],
+                          [0, focal_length, center[1]],
+                          [0, 0, 1]], dtype=np.float32)
+cameraMatrixR = np.array([[focal_length, 0, center[0]],
+                          [0, focal_length, center[1]],
+                          [0, 0, 1]], dtype=np.float32)
+distCoeffsL = np.zeros((4, 1))  # Assuming no distortion initially
+distCoeffsR = np.zeros((4, 1))
+
+# Corresponding image points: imagePointsL and imagePointsR
+# imagePointsL = np.array([...]) # Corresponding points in the left image as (N, 2) array
+# imagePointsR = np.array([...]) # Corresponding points in the right image as (N, 2) array
+
+# Find the Fundamental Matrix
+F, mask = cv2.findFundamentalMat(imagePointsL, imagePointsR, cv2.FM_RANSAC)
+
+# Calculate the Essential Matrix (if intrinsics are known)
+E = cameraMatrixR.T @ F @ cameraMatrixL
+
+# Decompose the Essential Matrix to obtain R and T
+_, R, T, mask = cv2.recoverPose(E, imagePointsL, imagePointsR, cameraMatrixL, cameraMatrixR)
+
+
+# Projection matrices
+P1 = np.dot(cameraMatrixL, np.hstack((np.eye(3), np.zeros((3, 1)))))
+P2 = np.dot(cameraMatrixR, np.hstack((R, T.reshape(3, 1))))
+
+# Undistort points
+undistortedPointsL = cv2.undistortPoints(np.expand_dims(imagePointsL, axis=1), cameraMatrixL, distCoeffsL, P=P1)
+undistortedPointsR = cv2.undistortPoints(np.expand_dims(imagePointsR, axis=1), cameraMatrixR, distCoeffsR, P=P2)
+
+# Triangulate points
+points_4D = cv2.triangulatePoints(P1, P2, undistortedPointsL, undistortedPointsR)
+
+# Convert from homogeneous to 3D coordinates
+points_3D = points_4D[:3] / points_4D[3]
+
+# points_3D now contains the (X, Y, Z) coordinates of the points in the scene
+"""

@@ -40,6 +40,7 @@ def parse_args():
 
 def main(inputs):
     start_frame = inputs.start_frame
+    end_frame = inputs.end_frame
     step = inputs.step
     track_method = inputs.track_method
     det_checkpoint = Path(inputs.det_checkpoint)
@@ -77,7 +78,7 @@ def main(inputs):
         print(vid_name)
 
         height, width, total_no_frames, _ = get_video_parameters(video_file)
-        if inputs.end_frame is None:
+        if end_frame is None:
             end_frame = total_no_frames - 1
 
         if track_method == "ms":
