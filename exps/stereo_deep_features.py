@@ -5,6 +5,8 @@ import cv2
 import matplotlib.pylab as plt
 import numpy as np
 from scipy.io import loadmat
+from scipy.ndimage import gaussian_filter
+from tqdm import tqdm
 
 from tracking import data_association as da
 from tracking import multi_stage_tracking as ms
@@ -240,7 +242,6 @@ points_3d = reconstruct_3d_points(pts1, pts2, P1, P2)
 print("3D Points:\n", points_3d)
 """
 
-
 gt_matches = {3: 0, 5: 1, 4: 2, 2: 3, 8: 4, 0: 5, 1: 6, 6: 7, 7: 8}
 dd = loadmat("/home/fatemeh/Downloads/fish/mot_data//stereo_129.mat")
 image1 = cv2.imread("/home/fatemeh/Downloads/fish/mot_data/129_1_0.png")
@@ -248,11 +249,24 @@ image2 = cv2.imread("/home/fatemeh/Downloads/fish/mot_data/129_2_0.png")
 tracks1 = da.load_tracks_from_mot_format(
     Path("/home/fatemeh/Downloads/fish/mot_data/mots/129_1.txt")
 )
-tracks1[:, 2] = tracks1[:, 0]  # dets or tracks used as dets
-dets1 = tracks1[tracks1[:, 1] == 0]
 tracks2 = da.load_tracks_from_mot_format(
     Path("/home/fatemeh/Downloads/fish/mot_data/mots/129_2.txt")
 )
+
+distCoeffs1 = deepcopy(dd["distortionCoefficients1"])
+distCoeffs2 = deepcopy(dd["distortionCoefficients2"])
+cameraMatrix1 = deepcopy(dd["intrinsicMatrix1"])
+cameraMatrix2 = deepcopy(dd["intrinsicMatrix2"])
+R = deepcopy(dd["rotationOfCamera2"])
+T = deepcopy(dd["translationOfCamera2"])
+cameraMatrix1[0:2, 2] += 1
+cameraMatrix2[0:2, 2] += 1
+# Projection matrices
+P1 = np.dot(cameraMatrix1, np.hstack((np.eye(3), np.zeros((3, 1)))))
+P2 = np.dot(cameraMatrix2, np.hstack((R, T.reshape(3, 1))))
+
+tracks1[:, 2] = tracks1[:, 0]  # dets or tracks used as dets
+dets1 = tracks1[tracks1[:, 1] == 0]
 tracks2[:, 2] = tracks2[:, 0]  # dets or tracks used as dets
 dets2 = tracks2[tracks2[:, 1] == 0]
 
@@ -262,21 +276,8 @@ for id in gt_matches.keys():
 a = np.array(a)
 dets1 = a
 
-distCoeffs1 = deepcopy(dd["distortionCoefficients1"])
-distCoeffs2 = deepcopy(dd["distortionCoefficients2"])
-cameraMatrix1 = deepcopy(dd["intrinsicMatrix1"])
-cameraMatrix2 = deepcopy(dd["intrinsicMatrix2"])
-R = deepcopy(dd["rotationOfCamera2"])
-T = deepcopy(dd["translationOfCamera2"])
 imagePoints1 = dets1[:, 7:9].astype(np.float32)
 imagePoints2 = dets2[:, 7:9].astype(np.float32)
-
-cameraMatrix1[0:2, 2] += 1
-cameraMatrix2[0:2, 2] += 1
-
-# Projection matrices
-P1 = np.dot(cameraMatrix1, np.hstack((np.eye(3), np.zeros((3, 1)))))
-P2 = np.dot(cameraMatrix2, np.hstack((R, T.reshape(3, 1))))
 
 # Undistort points
 undistortedPoints1 = cv2.undistortPoints(
@@ -293,8 +294,22 @@ points_3D = points_4D[:3] / points_4D[3]
 
 print(points_3D.T)
 print(dets1)
-print("end")
 
+worldPoints = 1e3 * np.array(
+    [
+        [0.2928, -0.4759, 2.6248],
+        [0.5945, -0.5079, 2.5994],
+        [0.6387, -0.5236, 2.7220],
+        [1.2068, -0.2507, 2.5901],
+        [0.4596, 0.0793, 2.1652],
+        [0.4974, -0.2415, 2.1729],
+        [0.3884, -0.2499, 2.2020],
+        [0.2599, -0.1001, 2.5094],
+        [0.2724, -0.1413, 2.2591],
+    ]
+)
+print(worldPoints - points_3D.T)
+print("end")
 
 """Matlab
 # I had to check Matlab because my python result was not correct. Issue due to:
@@ -323,4 +338,137 @@ rgray2 = rgb2gray(image2Rect);
 figure();imshow(stereoAnaglyph(gray1, gray2))
 figure();imshow(stereoAnaglyph(rgray1, rgray2))
 showExtrinsics(stereoParams)
+
+# I got from matlab
+worldPoints = 1e3 * np.array([
+[0.2928,-0.4759,2.6248],
+[0.5945,-0.5079,2.5994],
+[0.6387,-0.5236,2.7220],
+[1.2068,-0.2507,2.5901],
+[0.4596, 0.0793,2.1652],
+[0.4974,-0.2415,2.1729],
+[0.3884,-0.2499,2.2020],
+[0.2599,-0.1001,2.5094],
+[0.2724,-0.1413,2.2591]])
 """
+
+# fmt: off
+gt_matches = {3:0, 5:1, 4:2, 2:3, 8:4, 0:5, 1:6, 6:7, 7:8, 9:9, 10:10, 11:11, 12:12, 13:13, 14:14}
+# fmt: on
+dd = loadmat("/home/fatemeh/Downloads/fish/mot_data//stereo_129.mat")
+vc1 = cv2.VideoCapture("/home/fatemeh/Downloads/fish/mot_data/vids/129_1.mp4")
+vc2 = cv2.VideoCapture("/home/fatemeh/Downloads/fish/mot_data/vids/129_2.mp4")
+tracks1 = da.load_tracks_from_mot_format(
+    Path("/home/fatemeh/Downloads/fish/mot_data/mots/129_1.txt")
+)
+tracks2 = da.load_tracks_from_mot_format(
+    Path("/home/fatemeh/Downloads/fish/mot_data/mots/129_2.txt")
+)
+
+max_frames = min(
+    int(vc1.get(cv2.CAP_PROP_FRAME_COUNT)), int(vc2.get(cv2.CAP_PROP_FRAME_COUNT))
+)
+step = 1
+
+distCoeffs1 = deepcopy(dd["distortionCoefficients1"])
+distCoeffs2 = deepcopy(dd["distortionCoefficients2"])
+cameraMatrix1 = deepcopy(dd["intrinsicMatrix1"])
+cameraMatrix2 = deepcopy(dd["intrinsicMatrix2"])
+R = deepcopy(dd["rotationOfCamera2"])
+T = deepcopy(dd["translationOfCamera2"])
+cameraMatrix1[0:2, 2] += 1
+cameraMatrix2[0:2, 2] += 1
+# Projection matrices
+P1 = np.dot(cameraMatrix1, np.hstack((np.eye(3), np.zeros((3, 1)))))
+P2 = np.dot(cameraMatrix2, np.hstack((R, T.reshape(3, 1))))
+
+
+match_frames = np.empty((0, 7))
+for frame_number in tqdm(range(0, max_frames, step)):
+    _, image1 = vc1.read()
+    _, image2 = vc2.read()
+    if frame_number % step != 0:
+        continue
+
+    tracks1[:, 2] = tracks1[:, 0]  # dets or tracks used as dets
+    dets1 = tracks1[tracks1[:, 1] == frame_number]
+    tracks2[:, 2] = tracks2[:, 0]  # dets or tracks used as dets
+    dets2 = tracks2[tracks2[:, 1] == frame_number]
+
+    n_dets1 = []
+    n_dets2 = []
+    for id1, id2 in gt_matches.items():
+        if (id1 in dets1[:, 0]) and (id2 in dets2[:, 0]):
+            det1 = dets1[dets1[:, 0] == id1][0]
+            det2 = dets2[dets2[:, 0] == id2][0]
+            n_dets1.append(det1)
+            n_dets2.append(det2)
+    dets1 = np.array(n_dets1)
+    dets2 = np.array(n_dets2)
+
+    imagePoints1 = dets1[:, 7:9].astype(np.float32)
+    imagePoints2 = dets2[:, 7:9].astype(np.float32)
+
+    # Undistort points
+    undistortedPoints1 = cv2.undistortPoints(
+        imagePoints1, cameraMatrix1, distCoeffs1, P=cameraMatrix1
+    )  # result Nx1x2. No need for np.expand_dims(imagePoints1, axis=1)
+    undistortedPoints2 = cv2.undistortPoints(
+        imagePoints2, cameraMatrix2, distCoeffs2, P=cameraMatrix2
+    )
+
+    points_4D = cv2.triangulatePoints(P1, P2, undistortedPoints1, undistortedPoints2)
+
+    # Convert from homogeneous to 3D coordinates
+    points_3D = points_4D[:3] / points_4D[3]
+
+    extras = np.stack(
+        (dets2[:, 0], frame_number * np.ones(len(dets1)), dets1[:, 0], dets2[:, 0])
+    ).T
+    match_frame = np.concatenate((extras, points_3D.T), axis=1)
+    match_frames = np.concatenate((match_frames, match_frame), axis=0)
+
+
+def grad_3d(coor):
+    dcoor = np.stack(
+        (
+            coor[1:, 0],
+            np.diff(coor[:, 1]) / np.diff(coor[:, 0]),
+            np.diff(coor[:, 2]) / np.diff(coor[:, 0]),
+            np.diff(coor[:, 3]) / np.diff(coor[:, 0]),
+        )
+    ).T
+    return dcoor
+
+
+def smooth_3d(coor, sigma):
+    x = gaussian_filter(coor[:, 1], sigma=sigma)
+    y = gaussian_filter(coor[:, 2], sigma=sigma)
+    z = gaussian_filter(coor[:, 3], sigma=sigma)
+    smoothed_coor = np.stack((coor[:, 0], x, y, z)).T
+    return smoothed_coor
+
+
+coor = match_frames[match_frames[:, 0] == 0]
+coor = coor[:, [1, 4, 5, 6]]
+s_coor = smooth_3d(coor, 16)
+
+
+dcoor = grad_3d(s_coor)
+ddcoor = grad_3d(dcoor)
+
+plt.figure()
+ax = plt.subplot(projection="3d")
+ax.plot(s_coor[:, 1], s_coor[:, 2], s_coor[:, 3], "*-")
+plt.figure()
+ax = plt.subplot(projection="3d")
+ax.plot(coor[::16, 1], coor[::16, 2], coor[::16, 3], "*-")
+plt.figure()
+ax = plt.subplot(projection="3d")
+ax.plot(dcoor[:, 1], dcoor[:, 2], dcoor[:, 3], "*-")
+plt.figure()
+ax = plt.subplot(projection="3d")
+ax.plot(ddcoor[:, 1], ddcoor[:, 2], ddcoor[:, 3], "*-")
+plt.show(block=False)
+
+print("end")
