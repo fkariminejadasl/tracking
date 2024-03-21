@@ -210,3 +210,10 @@ def mot_file_to_challenge_file(mot_file, output_file):
             else:
                 modified_line = ",".join(parts[:-3] + ["-1", "-1", "-1", "-1"]) + "\n"
             outfile.write(modified_line)
+
+
+def mot_to_yolo():
+    # read mot
+    # convert to 0,1
+    #
+    ...

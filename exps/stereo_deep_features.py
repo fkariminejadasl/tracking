@@ -253,17 +253,17 @@ tracks2 = da.load_tracks_from_mot_format(
     Path("/home/fatemeh/Downloads/fish/mot_data/mots/129_2.txt")
 )
 
-distCoeffs1 = deepcopy(dd["distortionCoefficients1"])
-distCoeffs2 = deepcopy(dd["distortionCoefficients2"])
-cameraMatrix1 = deepcopy(dd["intrinsicMatrix1"])
-cameraMatrix2 = deepcopy(dd["intrinsicMatrix2"])
-R = deepcopy(dd["rotationOfCamera2"])
-T = deepcopy(dd["translationOfCamera2"])
+distCoeffs1 = deepcopy(dd["distortionCoefficients1"])[0].astype(np.float64)
+distCoeffs2 = deepcopy(dd["distortionCoefficients2"])[0].astype(np.float64)
+cameraMatrix1 = deepcopy(dd["intrinsicMatrix1"]).astype(np.float64)
+cameraMatrix2 = deepcopy(dd["intrinsicMatrix2"]).astype(np.float64)
+R = deepcopy(dd["rotationOfCamera2"]).astype(np.float64)
+T = deepcopy(dd["translationOfCamera2"]).T.astype(np.float64)
 cameraMatrix1[0:2, 2] += 1
 cameraMatrix2[0:2, 2] += 1
 # Projection matrices
-P1 = np.dot(cameraMatrix1, np.hstack((np.eye(3), np.zeros((3, 1)))))
-P2 = np.dot(cameraMatrix2, np.hstack((R, T.reshape(3, 1))))
+P1 = np.dot(cameraMatrix1, np.hstack((np.eye(3), np.zeros((3, 1))))).astype(np.float64)
+P2 = np.dot(cameraMatrix2, np.hstack((R, T))).astype(np.float64)
 
 tracks1[:, 2] = tracks1[:, 0]  # dets or tracks used as dets
 dets1 = tracks1[tracks1[:, 1] == 0]
@@ -309,6 +309,33 @@ worldPoints = 1e3 * np.array(
     ]
 )
 print(worldPoints - points_3D.T)
+
+image_size = image1.shape[1], image1.shape[0]
+R1, R2, r_P1, r_P2, Q, validPixROI1, validPixROI2 = cv2.stereoRectify(
+    cameraMatrix1=cameraMatrix1,
+    distCoeffs1=distCoeffs1,
+    cameraMatrix2=cameraMatrix2,
+    distCoeffs2=distCoeffs2,
+    imageSize=image_size,
+    R=R,
+    T=T,
+)  # , flags=cv2.CALIB_ZERO_DISPARITY, alpha=-1)
+map1x, map1y = cv2.initUndistortRectifyMap(
+    cameraMatrix1, distCoeffs1, R1, r_P1, image_size, cv2.CV_32FC1
+)
+map2x, map2y = cv2.initUndistortRectifyMap(
+    cameraMatrix2, distCoeffs2, R2, r_P2, image_size, cv2.CV_32FC1
+)
+rectified_im1 = cv2.remap(image1, map1x, map1y, cv2.INTER_LINEAR)
+rectified_im2 = cv2.remap(image2, map2x, map2y, cv2.INTER_LINEAR)
+# recotify points
+rectified_points1 = cv2.undistortPoints(
+    imagePoints1, cameraMatrix1, distCoeffs1, R=R1, P=r_P1
+).squeeze(axis=1)
+rectified_points2 = cv2.undistortPoints(
+    imagePoints2, cameraMatrix2, distCoeffs2, R=R2, P=r_P2
+).squeeze(axis=1)
+
 print("end")
 
 """Matlab
@@ -353,7 +380,8 @@ worldPoints = 1e3 * np.array([
 """
 
 # fmt: off
-gt_matches = {3:0, 5:1, 4:2, 2:3, 8:4, 0:5, 1:6, 6:7, 7:8, 9:9, 10:10, 11:11, 12:12, 13:13, 14:14}
+# gt_matches = {3:0, 5:1, 4:2, 2:3, 8:4, 0:5, 1:6, 6:7, 7:8, 9:9, 10:10, 11:11, 12:12, 13:13, 14:14}
+gt_matches = {3:0, 5:0, 4:0, 2:0, 8:0, 0:0, 1:0, 6:0, 7:0, 9:0, 10:0, 11:0, 12:0, 13:0, 14:0} 
 # fmt: on
 dd = loadmat("/home/fatemeh/Downloads/fish/mot_data//stereo_129.mat")
 vc1 = cv2.VideoCapture("/home/fatemeh/Downloads/fish/mot_data/vids/129_1.mp4")
@@ -370,17 +398,17 @@ max_frames = min(
 )
 step = 1
 
-distCoeffs1 = deepcopy(dd["distortionCoefficients1"])
-distCoeffs2 = deepcopy(dd["distortionCoefficients2"])
-cameraMatrix1 = deepcopy(dd["intrinsicMatrix1"])
-cameraMatrix2 = deepcopy(dd["intrinsicMatrix2"])
-R = deepcopy(dd["rotationOfCamera2"])
-T = deepcopy(dd["translationOfCamera2"])
+distCoeffs1 = deepcopy(dd["distortionCoefficients1"])[0].astype(np.float64)
+distCoeffs2 = deepcopy(dd["distortionCoefficients2"])[0].astype(np.float64)
+cameraMatrix1 = deepcopy(dd["intrinsicMatrix1"]).astype(np.float64)
+cameraMatrix2 = deepcopy(dd["intrinsicMatrix2"]).astype(np.float64)
+R = deepcopy(dd["rotationOfCamera2"]).astype(np.float64)
+T = deepcopy(dd["translationOfCamera2"]).T.astype(np.float64)
 cameraMatrix1[0:2, 2] += 1
 cameraMatrix2[0:2, 2] += 1
 # Projection matrices
-P1 = np.dot(cameraMatrix1, np.hstack((np.eye(3), np.zeros((3, 1)))))
-P2 = np.dot(cameraMatrix2, np.hstack((R, T.reshape(3, 1))))
+P1 = np.dot(cameraMatrix1, np.hstack((np.eye(3), np.zeros((3, 1))))).astype(np.float64)
+P2 = np.dot(cameraMatrix2, np.hstack((R, T))).astype(np.float64)
 
 
 match_frames = np.empty((0, 7))
@@ -449,26 +477,106 @@ def smooth_3d(coor, sigma):
     return smoothed_coor
 
 
-coor = match_frames[match_frames[:, 0] == 0]
+def calculate_angle_between_vectors(v1, v2):
+    """Calculate the angle in degrees between two vectors."""
+    unit_vector_1 = v1 / np.linalg.norm(v1)
+    unit_vector_2 = v2 / np.linalg.norm(v2)
+    dot_product = np.dot(unit_vector_1, unit_vector_2)
+    angle = np.arccos(dot_product) / np.pi * 180  # Convert to degrees
+    return angle
+
+
+coor = match_frames[match_frames[:, 2] == 3]
 coor = coor[:, [1, 4, 5, 6]]
 s_coor = smooth_3d(coor, 16)
+
+
+# interactive visualization of 3D points with time as slider
+# =========
+from matplotlib.widgets import Slider
+
+fig = plt.figure()
+ax = fig.add_subplot(111, projection="3d")
+
+# Initial plot with the full trajectory for context
+ax.plot(coor[:, 1], coor[:, 2], coor[:, 3], color="gray", alpha=0.5)
+
+# Plot the initial state
+(line,) = ax.plot(coor[0:1, 1], coor[0:1, 2], coor[0:1, 3], "*-")
+
+# [left, bottom, width, height]
+axtime = plt.axes([0.2, 0.01, 0.65, 0.03], facecolor="lightgoldenrodyellow")
+stime = Slider(
+    axtime, "Time", coor[0, 0], coor[-1, 0].max(), valinit=coor[0, 0], valstep=1
+)
+
+
+def update(val):
+    time = stime.val
+    updated_coor = coor[coor[:, 0] <= time]
+    line.set_data(updated_coor[:, 1], updated_coor[:, 2])
+    line.set_3d_properties(updated_coor[:, 3])
+    fig.canvas.draw_idle()
+
+
+stime.on_changed(update)
+# ======
 
 
 dcoor = grad_3d(s_coor)
 ddcoor = grad_3d(dcoor)
 
+angles = []
+for i in range(0, len(dcoor) - 1):
+    angle = calculate_angle_between_vectors(dcoor[i, 1:], dcoor[i + 1, 1:])
+    angles.append(angle)
+
+
+angles2d = []
+for i in range(0, len(dcoor) - 1):
+    angle = calculate_angle_between_vectors(dcoor[i, 1:3], dcoor[i + 1, 1:3])
+    angles2d.append(angle)
+
 plt.figure()
 ax = plt.subplot(projection="3d")
 ax.plot(s_coor[:, 1], s_coor[:, 2], s_coor[:, 3], "*-")
 plt.figure()
-ax = plt.subplot(projection="3d")
-ax.plot(coor[::16, 1], coor[::16, 2], coor[::16, 3], "*-")
-plt.figure()
-ax = plt.subplot(projection="3d")
-ax.plot(dcoor[:, 1], dcoor[:, 2], dcoor[:, 3], "*-")
-plt.figure()
-ax = plt.subplot(projection="3d")
-ax.plot(ddcoor[:, 1], ddcoor[:, 2], ddcoor[:, 3], "*-")
-plt.show(block=False)
+plt.plot(angles, "-*")
+print("end")
+
+
+# gt_matches = {3:0, 5:0, 4:0, 2:0, 8:0, 0:0, 1:0, 6:0, 7:0, 9:0, 10:0, 11:0, 12:0, 13:0, 14:0}
+for i in range(0, 15):
+    coor = match_frames[match_frames[:, 2] == i]
+    coor = coor[:, [1, 4, 5, 6]]
+    dcoor = grad_3d(coor)
+    speed_mag = np.linalg.norm(dcoor[:, 1:], axis=1)
+
+    # depth
+    plt.figure()
+    plt.plot(coor[:, 0], coor[:, -1], "*-")
+    plt.title(f"depth: {i}")
+    plt.figure()
+    plt.plot(dcoor[:, 0], dcoor[:, -1], "*-")
+    plt.title(f"ddepth: {i}")
+
+    # speed
+    plt.figure()
+    plt.plot(dcoor[:, 0], speed_mag, "*-")
+    plt.title(f"speed mag: {i}")
+    plt.figure()
+    plt.hist(speed_mag)
+    plt.title(f"speed mag: {i}")
+    plt.figure()
+    ax = plt.subplot(projection="3d")
+    ax.plot(coor[:, 1], coor[:, 2], coor[:, 3], "*-")
+    plt.title(f"{i}")
+
+    # s_coor = smooth_3d(coor, 16)
+    # plt.figure();plt.plot(s_coor[:,0], s_coor[:,3],"*-");plt.title(f"{i}")
+    # plt.figure()
+    # ax = plt.subplot(projection="3d")
+    # ax.plot(s_coor[:, 1], s_coor[:, 2], s_coor[:, 3], "*-")
+    # plt.title(f"{i}")
 
 print("end")
