@@ -380,8 +380,8 @@ worldPoints = 1e3 * np.array([
 """
 
 # fmt: off
-# gt_matches = {3:0, 5:1, 4:2, 2:3, 8:4, 0:5, 1:6, 6:7, 7:8, 9:9, 10:10, 11:11, 12:12, 13:13, 14:14}
-gt_matches = {3:0, 5:0, 4:0, 2:0, 8:0, 0:0, 1:0, 6:0, 7:0, 9:0, 10:0, 11:0, 12:0, 13:0, 14:0} 
+gt_matches = {3:0, 5:1, 4:2, 2:3, 8:4, 0:5, 1:6, 6:7, 7:8, 9:9, 10:10, 11:11, 12:12, 13:13, 14:14}
+# gt_matches = {3:0, 5:0, 4:0, 2:0, 8:0, 0:0, 1:0, 6:0, 7:0, 9:0, 10:0, 11:0, 12:0, 13:0, 14:0}
 # fmt: on
 dd = loadmat("/home/fatemeh/Downloads/fish/mot_data//stereo_129.mat")
 vc1 = cv2.VideoCapture("/home/fatemeh/Downloads/fish/mot_data/vids/129_1.mp4")
@@ -461,9 +461,9 @@ def grad_3d(coor):
     dcoor = np.stack(
         (
             coor[1:, 0],
-            np.diff(coor[:, 1]) / np.diff(coor[:, 0]),
-            np.diff(coor[:, 2]) / np.diff(coor[:, 0]),
-            np.diff(coor[:, 3]) / np.diff(coor[:, 0]),
+            np.diff(coor[:, 1]) * 1e-3 / (np.diff(coor[:, 0]) / 240),
+            np.diff(coor[:, 2]) * 1e-3 / (np.diff(coor[:, 0]) / 240),
+            np.diff(coor[:, 3]) * 1e-3 / (np.diff(coor[:, 0]) / 240),
         )
     ).T
     return dcoor
@@ -490,6 +490,17 @@ coor = match_frames[match_frames[:, 2] == 3]
 coor = coor[:, [1, 4, 5, 6]]
 s_coor = smooth_3d(coor, 16)
 
+# fmt: off
+# TODO: remove
+# 7->48, 1-> 40, 8,0-> 30 rest <8 (6 near 8,0 but different)
+gt_matches = {3:0, 5:1, 4:2, 2:3, 8:4, 0:5, 1:6, 6:7, 7:8, 9:9, 10:10, 11:11, 12:12, 13:13, 14:14}
+dets1 = tracks1[tracks1[:, 0] == 7]
+dets2 = tracks2[tracks2[:, 0] == 8]
+plt.figure();plt.plot(dets1[::16,7],dets1[::16,8],'g-*');plt.plot(dets2[::16,7],dets2[::16,8],'r-*');plt.show(block=False)
+plt.figure();plt.plot(np.diff(np.linalg.norm(dets1[::16,7:9], axis=1)),'-*');plt.show(block=False)
+# plt.figure();plt.plot(dets1[:,7],dets1[:,8],'g-*');plt.plot(dets2[:,7],dets2[:,8],'r-*');plt.show(block=False)
+# TODO: remove
+# fmt: on
 
 # interactive visualization of 3D points with time as slider
 # =========
@@ -552,25 +563,16 @@ for i in range(0, 15):
     dcoor = grad_3d(coor)
     speed_mag = np.linalg.norm(dcoor[:, 1:], axis=1)
 
+    # fmt: off
     # depth
-    plt.figure()
-    plt.plot(coor[:, 0], coor[:, -1], "*-")
-    plt.title(f"depth: {i}")
-    plt.figure()
-    plt.plot(dcoor[:, 0], dcoor[:, -1], "*-")
-    plt.title(f"ddepth: {i}")
+    plt.figure();plt.plot(coor[:, 0], coor[:, -1], "*-");plt.title(f"depth: {i}")
+    plt.figure();plt.plot(dcoor[:, 0], dcoor[:, -1], "*-");plt.title(f"ddepth: {i}")
 
     # speed
-    plt.figure()
-    plt.plot(dcoor[:, 0], speed_mag, "*-")
-    plt.title(f"speed mag: {i}")
-    plt.figure()
-    plt.hist(speed_mag)
-    plt.title(f"speed mag: {i}")
-    plt.figure()
-    ax = plt.subplot(projection="3d")
-    ax.plot(coor[:, 1], coor[:, 2], coor[:, 3], "*-")
-    plt.title(f"{i}")
+    plt.figure();plt.plot(dcoor[:, 0], speed_mag, "*-");plt.title(f"speed mag: {i}")
+    plt.figure();plt.hist(speed_mag);plt.title(f"speed mag: {i}")
+    plt.figure();ax = plt.subplot(projection="3d");ax.plot(coor[:, 1], coor[:, 2], coor[:, 3], "*-");plt.title(f"{i}")
+    # fmt: on
 
     # s_coor = smooth_3d(coor, 16)
     # plt.figure();plt.plot(s_coor[:,0], s_coor[:,3],"*-");plt.title(f"{i}")
@@ -580,3 +582,15 @@ for i in range(0, 15):
     # plt.title(f"{i}")
 
 print("end")
+
+# TODO: remove
+for i in range(0, 15):
+    coor = match_frames[match_frames[:, 2] == i]
+    coor = coor[:, [1, 4, 5, 6]]
+    dcoor = np.diff(coor, axis=0)
+    speed_mag = np.linalg.norm(dcoor[:, 1:], axis=1)
+    # speed
+    plt.figure()
+    plt.plot(coor[1:, 0], speed_mag, "*-")
+    plt.title(f"speed mag: {i}")
+# TODO: remove
