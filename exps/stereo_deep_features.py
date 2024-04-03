@@ -214,34 +214,8 @@ points_3D = points_4D[:3] / points_4D[3]
 """
 
 """
-import numpy as np
-import cv2
-
-def reconstruct_3d_points(pts1, pts2, P1, P2):
-    # Placeholder for 3D points
-    points_3d = cv2.triangulatePoints(P1, P2, pts1, pts2)
-    # Convert from homogeneous coordinates to 3D coordinates
-    points_3d /= points_3d[3]
-    return points_3d[:3]
-
-# Example corresponding points (in pixels)
-pts1 = np.float32([[100, 100]]).T
-pts2 = np.float32([[110, 100]]).T
-
-# Camera matrices (Identity for this example)
-K = np.eye(3)
-
-# Projection matrices for both cameras
-P1 = np.hstack((K, np.zeros((3, 1))))  # Camera 1 matrix
-t = np.array([[1, 0, 0]]).T  # Translation vector for Camera 2
-P2 = np.hstack((K, t))  # Camera 2 matrix with translation
-
-# Triangulate points
-points_3d = reconstruct_3d_points(pts1, pts2, P1, P2)
-
-print("3D Points:\n", points_3d)
-"""
-
+# One image 3D position, rectified coordinate and rectified images
+# =========
 gt_matches = {3: 0, 5: 1, 4: 2, 2: 3, 8: 4, 0: 5, 1: 6, 6: 7, 7: 8}
 dd = loadmat("/home/fatemeh/Downloads/fish/mot_data//stereo_129.mat")
 image1 = cv2.imread("/home/fatemeh/Downloads/fish/mot_data/129_1_0.png")
@@ -338,7 +312,7 @@ rectified_points2 = cv2.undistortPoints(
 
 print("end")
 
-"""Matlab
+'''Matlab
 # I had to check Matlab because my python result was not correct. Issue due to:
 # 1. undistortPoints: P should be camera matrix (main issue)
 # 2. conversion of matlab to opencv parameters shifting principal point to be 0-based
@@ -377,7 +351,9 @@ worldPoints = 1e3 * np.array([
 [0.3884,-0.2499,2.2020],
 [0.2599,-0.1001,2.5094],
 [0.2724,-0.1413,2.2591]])
+'''
 """
+
 
 # fmt: off
 gt_matches = {3:0, 5:1, 4:2, 2:3, 8:4, 0:5, 1:6, 6:7, 7:8, 9:9, 10:10, 11:11, 12:12, 13:13, 14:14}
@@ -486,6 +462,36 @@ def calculate_angle_between_vectors(v1, v2):
     return angle
 
 
+def find_matching_frames_for_matched_track(tracks1, tracks2, track_id1, track_id2):
+    # get the matched detections based on the commond frame numbers
+    dets1 = tracks1[tracks1[:, 0] == track_id1]
+    dets2 = tracks2[tracks2[:, 0] == track_id2]
+    common_frames = np.intersect1d(dets1[:, 1], dets2[:, 1])
+    dets1 = dets1[np.isin(dets1[:, 1], common_frames)]
+    dets2 = dets2[np.isin(dets2[:, 1], common_frames)]
+    return dets1, dets2
+
+
+def correct_outliers(dets1, dets2, max_disp=10):
+    """
+    example for track 7:8 frame 1400 has issues
+    dets1[np.arange(1396,1404+1),7] = np.interp(np.arange(1396,1404+1), [1396,1404], [dets1[1396,7], dets1[1404,7]])
+    dets1[np.arange(1396,1404+1),8] = np.interp(np.arange(1396,1404+1), [1396,1404], [dets1[1396,8], dets1[1404,8]])
+    """
+    argmax_diff_disp = np.argmax(abs(np.diff(np.linalg.norm(dets1[:, 7:9], axis=1))))
+    max_diff_disp = np.max(abs(np.diff(np.linalg.norm(dets1[:, 7:9], axis=1))))
+    if max_diff_disp > max_disp:
+        ind1 = argmax_diff_disp - 4
+        ind2 = argmax_diff_disp + 4
+        dets1[np.arange(ind1, ind2 + 1), 7] = np.interp(
+            np.arange(ind1, ind2 + 1), [ind1, ind2], [dets1[ind1, 7], dets1[ind2, 7]]
+        )
+        dets1[np.arange(ind1, ind2 + 1), 8] = np.interp(
+            np.arange(ind1, ind2 + 1), [ind1, ind2], [dets1[ind1, 8], dets1[ind2, 8]]
+        )
+    return dets1, dets2
+
+
 coor = match_frames[match_frames[:, 2] == 3]
 coor = coor[:, [1, 4, 5, 6]]
 s_coor = smooth_3d(coor, 16)
@@ -494,11 +500,70 @@ s_coor = smooth_3d(coor, 16)
 # TODO: remove
 # 7->48, 1-> 40, 8,0-> 30 rest <8 (6 near 8,0 but different)
 gt_matches = {3:0, 5:1, 4:2, 2:3, 8:4, 0:5, 1:6, 6:7, 7:8, 9:9, 10:10, 11:11, 12:12, 13:13, 14:14}
-dets1 = tracks1[tracks1[:, 0] == 7]
-dets2 = tracks2[tracks2[:, 0] == 8]
+# gt_matches = {3:0, 5:0, 4:0, 2:0, 8:0, 0:0, 1:0, 6:0, 7:0, 9:0, 10:0, 11:0, 12:0, 13:0, 14:0}
+
+dets1, dets2 = find_matching_frames_for_matched_track(tracks1, tracks2, 7, 8)
+dets1, dets2 = correct_outliers(dets1, dets2)
+
 plt.figure();plt.plot(dets1[::16,7],dets1[::16,8],'g-*');plt.plot(dets2[::16,7],dets2[::16,8],'r-*');plt.show(block=False)
-plt.figure();plt.plot(np.diff(np.linalg.norm(dets1[::16,7:9], axis=1)),'-*');plt.show(block=False)
-# plt.figure();plt.plot(dets1[:,7],dets1[:,8],'g-*');plt.plot(dets2[:,7],dets2[:,8],'r-*');plt.show(block=False)
+# plt.figure();plt.plot(np.diff(np.linalg.norm(dets1[:,7:9], axis=1)),'-*');plt.plot(np.diff(np.linalg.norm(dets2[:,7:9], axis=1)),'-*');plt.title(f"{id1}:{id2}");plt.show(block=False)
+# np.mean(np.linalg.norm(np.diff(dets1[:,7:9]-dets2[:,7:9],axis=0),axis=1))
+
+# for tid1, tid2 in gt_matches.items():
+#     dets1, dets2 = find_matching_frames_for_matched_track(tracks1, tracks2, tid1, tid2)
+#     plt.figure();plt.plot(np.diff(np.linalg.norm(dets1[:,7:9], axis=1)),'-*');plt.plot(np.diff(np.linalg.norm(dets2[:,7:9], axis=1)),'-*');plt.title(f"{tid1}:{tid2}")
+
+# compute the sum of squared distances between curves, multiplied by curve number of points
+def curve_distance(curve1, curve2):
+    n_points = curve1.shape[0]
+    return np.sum((curve1 - curve2) ** 2) * 1/ n_points
+
+# normalize curves by translating them to have the same starting point (0,0) and scaling
+def normalize_curve(curve):
+    curve = deepcopy(curve)
+    curve -= curve.min(axis=0)
+    max_length = np.max(curve.max(axis=0) - curve.min(axis=0))
+    return curve / max_length if max_length > 0 else curve
+
+dets1, dets2 = find_matching_frames_for_matched_track(tracks1, tracks2, 3, 0)
+c1 = normalize_curve(dets1[:,7:9])
+c2 = normalize_curve(dets2[:,7:9])
+curve_distance(c1, c2)
+
+a = []
+for tid1, tid2 in gt_matches.items():
+    print(f"{tid1}, {tid2}")
+    dets1, dets2 = find_matching_frames_for_matched_track(tracks1, tracks2, tid1, tid2)
+    # ddisp = np.mean(np.linalg.norm(np.diff(dets1[:,7:9]-dets2[:,7:9],axis=0),axis=1))
+    c1 = normalize_curve(dets1[:,7:9])
+    c2 = normalize_curve(dets2[:,7:9])
+    dist = curve_distance(c1, c2)
+    a.append(f"{tid1}, {tid2}, {dist:.3f}")
+
+tids1 = sorted(gt_matches.keys())
+tids2 = sorted(gt_matches.values())
+all_dists = dict()
+row_dists = dict()
+min_dists = dict()
+matched_keys = list()
+for tid1 in tids1:
+    for tid2 in tids2:
+        dets1, dets2 = find_matching_frames_for_matched_track(tracks1, tracks2, tid1, tid2)
+        if dets1.size == 0:
+            continue
+        c1 = normalize_curve(dets1[:,7:9])
+        c2 = normalize_curve(dets2[:,7:9])
+        dist = curve_distance(c1, c2)
+        all_dists[(tid1,tid2)] = round(dist, 3)
+        row_dists[(tid1,tid2)] = round(dist, 3)
+    match_key = min(row_dists, key=row_dists.get)
+    matched_keys.append(match_key)
+    # match_key = sorted(row_dists, key=row_dists.get)
+    # matched_keys.append(match_key[:2])
+    row_dists = dict()
+
+# [all_dists[k] for m in matched_keys for k in m]
+
 # TODO: remove
 # fmt: on
 
