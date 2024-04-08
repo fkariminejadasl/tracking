@@ -50,21 +50,23 @@ def cut_track_into_tracklets(track, start, end, step):
     """
 
     tracklets = []
-    for st in enumerate(range(start, end + 1, step)):
+    for st in range(start, end + 1, step):
         en = min(st + step - 1, end)
         tracklet = track[(track[:, 1] >= st) & (track[:, 1] <= en)]
         if tracklet.size > 0:
-            tracklets.append(tracklet)
-    return tracklets
+            tracklet = deepcopy(tracklet)
+            tracklet[:, 2] = st
+            tracklets.extend(tracklet)
+    return np.array(tracklets)
 
 
 def cut_tracks_into_tracklets(tracks, start, end, step):
     tids = set(tracks[:, 0])
-    tracklets_dict = dict()
+    tracklets = []
     for tid in tids:
         track = tracks[tracks[:, 0] == tid]
-        tracklets_dict[tid] = cut_track_into_tracklets(track, start, end, step)
-    return tracklets_dict
+        tracklets.extend(cut_track_into_tracklets(track, start, end, step))
+    return np.array(tracklets)
 
 
 # fmt: off
@@ -81,7 +83,6 @@ tids1 = sorted(gt_matches.keys())
 tids2 = sorted(gt_matches.values())
 all_dists = dict()
 row_dists = dict()
-min_dists = dict()
 matched_keys = list()
 for tid1 in tids1:
     for tid2 in tids2:
@@ -107,13 +108,45 @@ print(sorted(gt_matches.items(), key=lambda i: i[0]))
 #     plt.figure();plt.plot(track1[::16,7],track1[::16,8],'g-*');plt.plot(track2[::16,7],track2[::16,8],'r-*');plt.show(block=False)
 #     plt.figure();plt.plot(c1[::16,0],c1[::16,1],'g-*');plt.plot(c2[::16,0],c2[::16,1],'r-*');plt.show(block=False)
 
-start, end, step = 0, 3117, 200
-# tid1 = 3
-# track1 = tracks1[tracks1[:,0]==tid1]
-# tracklet1 = cut_track_into_tracklets(track1, start, end, step)
-# for tr in tracklet1:
-# plt.plot(tr[::16,7],tr[::16,8],'-*')
+start, end, step = 0, 3117, 1000  # 200
+tid1 = 3
+track1 = tracks1[tracks1[:, 0] == tid1]
+tracklet1 = cut_track_into_tracklets(track1, start, end, step)
+for st in range(start, end + 1, step):
+    tr = tracklet1[tracklet1[:, 2] == st]
+    plt.plot(tr[::16, 7], tr[::16, 8], "-*")
 
 
-tracklets_dict1 = cut_tracks_into_tracklets(tracks1, start, end, step)
-tracklets_dict2 = cut_tracks_into_tracklets(tracks2, start, end, step)
+tracklets1 = cut_tracks_into_tracklets(tracks1, start, end, step)
+tracklets2 = cut_tracks_into_tracklets(tracks2, start, end, step)
+
+for st in range(start, end + 1, step):
+    # tracklets in a specific time
+    tracks1 = tracklets1[tracklets1[:, 2] == st]
+    tracks2 = tracklets2[tracklets2[:, 2] == st]
+
+    # same code for all tracks
+    all_dists = dict()
+    row_dists = dict()
+    matched_keys = list()
+    for tid1 in tids1:
+        for tid2 in tids2:
+            track1, track2 = find_matching_frames_for_matched_track(
+                tracks1, tracks2, tid1, tid2
+            )
+            if track1.size == 0:
+                continue
+            c1 = normalize_curve(track1[:, 7:9])
+            c2 = normalize_curve(track2[:, 7:9])
+            dist = curve_distance(c1, c2)
+            all_dists[(tid1, tid2)] = round(dist, 3)
+            row_dists[(tid1, tid2)] = round(dist, 3)
+        if len(row_dists) == 0:
+            continue
+        match_key = min(row_dists, key=row_dists.get)
+        matched_keys.append(match_key)
+        row_dists = dict()
+
+    print(matched_keys)
+    print(sorted(gt_matches.items(), key=lambda i: i[0]))
+    print("----> ", st)
