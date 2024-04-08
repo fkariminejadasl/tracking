@@ -9,12 +9,12 @@ from tracking import data_association as da
 
 def find_matching_frames_for_matched_track(tracks1, tracks2, track_id1, track_id2):
     # get the matched detections based on the commond frame numbers
-    dets1 = tracks1[tracks1[:, 0] == track_id1]
-    dets2 = tracks2[tracks2[:, 0] == track_id2]
-    common_frames = np.intersect1d(dets1[:, 1], dets2[:, 1])
-    dets1 = dets1[np.isin(dets1[:, 1], common_frames)]
-    dets2 = dets2[np.isin(dets2[:, 1], common_frames)]
-    return dets1, dets2
+    track1 = tracks1[tracks1[:, 0] == track_id1]
+    track2 = tracks2[tracks2[:, 0] == track_id2]
+    common_frames = np.intersect1d(track1[:, 1], track2[:, 1])
+    track1 = track1[np.isin(track1[:, 1], common_frames)]
+    track2 = track2[np.isin(track2[:, 1], common_frames)]
+    return track1, track2
 
 
 # normalize curves by translating them to have the same starting point (0,0) and scaling
@@ -34,11 +34,11 @@ def curve_distance(curve1, curve2):
 def cut_track_into_tracklets(track, start, end, step):
     """
     Cut a track into tracklets within a specified frame range, creating a new tracklet
-    every 'step' number of frames. 
+    every 'step' number of frames.
 
     Parameters:
     - track: numpy array representing the track to be cut into tracklets.
-             The expected format of the array is: 
+             The expected format of the array is:
              [track_id, frame_number, det_id, x_tl, y_tl, x_br, y_br, x_cen, y_cen, width, height].
     - start: int, the starting frame number from which to begin creating tracklets.
     - end: int, the ending frame number at which to stop creating tracklets.
@@ -50,14 +50,21 @@ def cut_track_into_tracklets(track, start, end, step):
     """
 
     tracklets = []
-    frame_numbers = track[:, 1]
-    for frame in range(start, end + 1, step):
-        current_start_index = np.searchsorted(frame_numbers, frame)
-        tracklet = track[current_start_index : current_start_index + step]
-        if tracklet.size != 0:
+    for st in enumerate(range(start, end + 1, step)):
+        en = min(st + step - 1, end)
+        tracklet = track[(track[:, 1] >= st) & (track[:, 1] <= en)]
+        if tracklet.size > 0:
             tracklets.append(tracklet)
-
     return tracklets
+
+
+def cut_tracks_into_tracklets(tracks, start, end, step):
+    tids = set(tracks[:, 0])
+    tracklets_dict = dict()
+    for tid in tids:
+        track = tracks[tracks[:, 0] == tid]
+        tracklets_dict[tid] = cut_track_into_tracklets(track, start, end, step)
+    return tracklets_dict
 
 
 # fmt: off
@@ -78,13 +85,13 @@ min_dists = dict()
 matched_keys = list()
 for tid1 in tids1:
     for tid2 in tids2:
-        dets1, dets2 = find_matching_frames_for_matched_track(
+        track1, track2 = find_matching_frames_for_matched_track(
             tracks1, tracks2, tid1, tid2
         )
-        if dets1.size == 0:
+        if track1.size == 0:
             continue
-        c1 = normalize_curve(dets1[:, 7:9])
-        c2 = normalize_curve(dets2[:, 7:9])
+        c1 = normalize_curve(track1[:, 7:9])
+        c2 = normalize_curve(track2[:, 7:9])
         dist = curve_distance(c1, c2)
         all_dists[(tid1, tid2)] = round(dist, 3)
         row_dists[(tid1, tid2)] = round(dist, 3)
@@ -96,6 +103,17 @@ print(matched_keys)
 print(sorted(gt_matches.items(), key=lambda i: i[0]))
 
 # for tid1, tid2 in gt_matches.items():
-#     dets1, dets2 = find_matching_frames_for_matched_track(tracks1, tracks2, tid1, tid2)
-#     plt.figure();plt.plot(dets1[::16,7],dets1[::16,8],'g-*');plt.plot(dets2[::16,7],dets2[::16,8],'r-*');plt.show(block=False)
+#     track1, track2 = find_matching_frames_for_matched_track(tracks1, tracks2, tid1, tid2)
+#     plt.figure();plt.plot(track1[::16,7],track1[::16,8],'g-*');plt.plot(track2[::16,7],track2[::16,8],'r-*');plt.show(block=False)
 #     plt.figure();plt.plot(c1[::16,0],c1[::16,1],'g-*');plt.plot(c2[::16,0],c2[::16,1],'r-*');plt.show(block=False)
+
+start, end, step = 0, 3117, 200
+# tid1 = 3
+# track1 = tracks1[tracks1[:,0]==tid1]
+# tracklet1 = cut_track_into_tracklets(track1, start, end, step)
+# for tr in tracklet1:
+# plt.plot(tr[::16,7],tr[::16,8],'-*')
+
+
+tracklets_dict1 = cut_tracks_into_tracklets(tracks1, start, end, step)
+tracklets_dict2 = cut_tracks_into_tracklets(tracks2, start, end, step)
