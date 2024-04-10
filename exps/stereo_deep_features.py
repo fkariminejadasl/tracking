@@ -6,6 +6,7 @@ import matplotlib.pylab as plt
 import numpy as np
 from scipy.io import loadmat
 from scipy.ndimage import gaussian_filter
+from scipy.optimize import linear_sum_assignment
 from tqdm import tqdm
 
 from tracking import data_association as da
@@ -13,10 +14,10 @@ from tracking import multi_stage_tracking as ms
 from tracking import visualize as tv
 
 """
-The bbox embeddings were not descriptive enough.  
+The bbox embeddings 
 """
 """
-gt_matches = {3: 0, 5: 1, 4: 2, 2: 3, 8: 4, 0: 5, 1: 6, 6: 7, 7: 8}
+gt_matches = {3:0, 5:1, 4:2, 2:3, 8:4, 0:5, 1:6, 6:7, 7:8, 9:9, 10:10, 11:11, 12:12, 13:13, 14:14}
 
 kwargs = ms.get_model_args()
 
@@ -42,15 +43,18 @@ features2 = ms.calculate_deep_features(det_ids2, dets2, image2, **kwargs)
 
 
 csims = dict()
+dist = np.zeros((len(features1), len(features2)), dtype=np.float32)
 for did1, f1 in features1.items():
     for did2, f2 in features2.items():
         csim = f1.dot(f2) / (np.linalg.norm(f1) * np.linalg.norm(f2))
         csims[(did1, did2)] = csim
+        dist[did1, did2] = 1 - csim
 
 [csims[(0, i)] for i in det_ids2]
 
 tv.plot_detections_in_image(dets1[:, [2, 3, 4, 5, 6]], image1);plt.show(block=False)
 tv.plot_detections_in_image(dets2[:, [2, 3, 4, 5, 6]], image2);plt.show(block=False)
+rows, cols = linear_sum_assignment(dist)
 """
 
 """
@@ -70,8 +74,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # 'mps', 
 matcher = LightGlue(features="sift").eval().to(device)  # superpoint
 extractor = SIFT(max_num_keypoints=2048).eval().to(device)
 
-image0 = load_image("/home/fatemeh/Downloads/left.png")
-image1 = load_image("/home/fatemeh/Downloads/right.png")
+image0 = load_image("/home/fatemeh/Downloads/fish/mot_data/left.png")
+image1 = load_image("/home/fatemeh/Downloads/fish/mot_data/right.png")
 
 feats0 = extractor.extract(image0.to(device))
 feats1 = extractor.extract(image1.to(device))
@@ -659,3 +663,18 @@ for i in range(0, 15):
     plt.plot(coor[1:, 0], speed_mag, "*-")
     plt.title(f"speed mag: {i}")
 # TODO: remove
+
+"""
+# Test parameters are equal (129 is the dept4)
+st_path = Path("/home/fatemeh/Downloads/fish/mot_data/stereo_parameters")
+for i in range(1, 13):
+    print(i)
+    dd1 = loadmat(st_path/f"stereoParams_Dep{i}.mat")
+    dd2 = loadmat(st_path/f"stereoParams_Dep{i}_OpenCV.mat")
+    np.testing.assert_allclose(dd1["distortionCoefficients1"], dd2["distortionCoefficients1"])
+    np.testing.assert_allclose(dd1["distortionCoefficients2"], dd2["distortionCoefficients2"])
+    np.testing.assert_allclose(dd1["intrinsicMatrix1"], dd2["intrinsicMatrix1"])
+    np.testing.assert_allclose(dd1["intrinsicMatrix2"], dd2["intrinsicMatrix2"])
+    np.testing.assert_allclose(dd1["rotationOfCamera2"], dd2["rotationOfCamera2"])
+    np.testing.assert_allclose(dd1["translationOfCamera2"], dd2["translationOfCamera2"])
+"""
