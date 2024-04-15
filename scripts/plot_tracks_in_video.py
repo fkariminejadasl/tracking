@@ -35,6 +35,7 @@ def main(inputs):
     video_path = Path(inputs.video_path)
     save_path = Path(inputs.save_path)
 
+    assert track_path.exists(), f"Error: {track_path} doesn't exist!"
     if track_path.is_file():
         track_files = [track_path]
     if track_path.is_dir():

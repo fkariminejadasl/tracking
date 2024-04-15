@@ -49,4 +49,7 @@ The association learning still requirs some improvement. Here is the list:
 - add extra class for unmatched items. This requires to add data without matches. 
 - [Most likely not]: aggregate multiple frames (4 previous and 4 after), aggregate their flows. Better temporal encoding should be sufficient, since this step is expensive. 
 
+Postprocessing tracks
+==================
 
+remove static tracks, remove short tracks, interpolate tracks, reindexing
