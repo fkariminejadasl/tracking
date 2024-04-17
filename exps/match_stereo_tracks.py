@@ -6,16 +6,7 @@ from matplotlib import pylab as plt
 from scipy.optimize import linear_sum_assignment
 
 from tracking import data_association as da
-
-
-def find_matching_frames_for_matched_track(tracks1, tracks2, track_id1, track_id2):
-    # get the matched detections based on the commond frame numbers
-    track1 = tracks1[tracks1[:, 0] == track_id1]
-    track2 = tracks2[tracks2[:, 0] == track_id2]
-    common_frames = np.intersect1d(track1[:, 1], track2[:, 1])
-    track1 = track1[np.isin(track1[:, 1], common_frames)]
-    track2 = track2[np.isin(track2[:, 1], common_frames)]
-    return track1, track2
+from tracking import postprocess as pp
 
 
 # normalize curves by translating them to have the same starting point (0,0) and scaling
@@ -92,7 +83,7 @@ tids2 = np.unique(tracks2[:, 0])
 all_dists = dict()
 for tid1 in tids1:
     for tid2 in tids2:
-        track1, track2 = find_matching_frames_for_matched_track(
+        track1, track2 = pp.get_matching_frames_between_tracks(
             tracks1, tracks2, tid1, tid2
         )
         if track1.size == 0:
@@ -125,7 +116,7 @@ print(matched_keys)
 print(sorted(gt_matches.items(), key=lambda i: i[0]))
 
 # for tid1, tid2 in gt_matches.items():
-#     track1, track2 = find_matching_frames_for_matched_track(tracks1, tracks2, tid1, tid2)
+#     track1, track2 = pp.get_matching_frames_between_tracks(tracks1, tracks2, tid1, tid2)
 #     plt.figure();plt.plot(track1[::16,7],track1[::16,8],'g-*');plt.plot(track2[::16,7],track2[::16,8],'r-*');plt.show(block=False)
 #     plt.figure();plt.plot(c1[::16,0],c1[::16,1],'g-*');plt.plot(c2[::16,0],c2[::16,1],'r-*');plt.show(block=False)
 
@@ -152,7 +143,7 @@ for st in range(start, end + 1, step):
     all_dists = dict()
     for tid1 in tids1:
         for tid2 in tids2:
-            track1, track2 = find_matching_frames_for_matched_track(
+            track1, track2 = pp.get_matching_frames_between_tracks(
                 tracks1, tracks2, tid1, tid2
             )
             if track1.size == 0:
@@ -175,100 +166,3 @@ for st in range(start, end + 1, step):
     print("----> ", st)
     print(matched_tids)
     print(sorted(gt_matches.items(), key=lambda i: i[0]))
-
-# ======================================
-# Move to tracklet_operations or track postprocessing. Some of the functions are reimplemented accidentally.
-def correct_outliers(track1, track2, max_disp=10):
-    """
-    example for track 7:8 frame 1400 has issues
-    track1[np.arange(1396,1404+1),7] = np.interp(np.arange(1396,1404+1), [1396,1404], [track1[1396,7], track1[1404,7]])
-    track1[np.arange(1396,1404+1),8] = np.interp(np.arange(1396,1404+1), [1396,1404], [track1[1396,8], track1[1404,8]])
-    """
-    argmax_diff_disp = np.argmax(abs(np.diff(np.linalg.norm(track1[:, 7:9], axis=1))))
-    max_diff_disp = np.max(abs(np.diff(np.linalg.norm(track1[:, 7:9], axis=1))))
-    if max_diff_disp > max_disp:
-        ind1 = argmax_diff_disp - 4
-        ind2 = argmax_diff_disp + 4
-        track1[np.arange(ind1, ind2 + 1), 7] = np.interp(
-            np.arange(ind1, ind2 + 1), [ind1, ind2], [track1[ind1, 7], track1[ind2, 7]]
-        )
-        track1[np.arange(ind1, ind2 + 1), 8] = np.interp(
-            np.arange(ind1, ind2 + 1), [ind1, ind2], [track1[ind1, 8], track1[ind2, 8]]
-        )
-    return track1, track2
-
-
-# TODO: rem. these functions are already implemented tracklet_operations
-
-
-def remove_short_tracks(tracks, min_track_length):
-    # Group by track_id (first column of the array) and filter by length
-    unique_track_ids = np.unique(tracks[:, 0])
-    new_tracks = []
-    for track_id in unique_track_ids:
-        track = tracks[tracks[:, 0] == track_id]
-        if len(track) > min_track_length:
-            new_tracks.extend(track)
-    return np.array(new_tracks)
-
-
-def reindex_tracks(tracks):
-    # Reindex all tracks to have consecutive track_ids starting from 0
-    unique_track_ids = np.unique(tracks[:, 0])
-    new_id = 0
-    new_tracks = []
-    for old_id in unique_track_ids:
-        track = tracks[tracks[:, 0] == old_id]
-        # change track id
-        track[:, 0] = new_id
-        new_tracks.extend(track)
-        new_id += 1
-    return np.array(new_tracks)
-
-
-def get_track_lengths(tracks):
-    tids = np.unique(tracks[:, 0])
-    track_lens = dict()
-    for tid in tids:
-        track = tracks1[tracks1[:, 0] == tid]
-        track_lens[tid] = len(track)
-    return track_lens
-
-
-track_lens1 = get_track_lengths(tracks1)  # tk.get_tracks_lengths
-sorted(track_lens1.items(), key=lambda x: x[1])
-
-tracks1_lt = remove_short_tracks(tracks1, 10)  # tk.remove_short_tracks
-track_lt_lens1 = get_track_lengths(tracks1_lt)
-tracks1_lt_ri = reindex_tracks(tracks1_lt)  # tk.arrange_track_ids
-
-track1 = tracks1[tracks1[:, 0] == 7]
-plt.figure()
-plt.plot(track1[::16, 7], track1[::16, 8], "g-*")
-track1 = tracks1_lt[tracks1_lt[:, 0] == 7]
-plt.figure()
-plt.plot(track1[::16, 7], track1[::16, 8], "g-*")
-track1 = tracks1_lt_ri[tracks1_lt_ri[:, 0] == 7]
-plt.figure()
-plt.plot(track1[::16, 7], track1[::16, 8], "g-*")
-
-
-# fmt: off
-# TODO: remove
-# 7->48, 1-> 40, 8,0-> 30 rest <8 (6 near 8,0 but different)
-gt_matches = {3:0, 5:1, 4:2, 2:3, 8:4, 0:5, 1:6, 6:7, 7:8, 9:9, 10:10, 11:11, 12:12, 13:13, 14:14}
-# gt_matches = {3:0, 5:0, 4:0, 2:0, 8:0, 0:0, 1:0, 6:0, 7:0, 9:0, 10:0, 11:0, 12:0, 13:0, 14:0}
-
-track1, track2 = find_matching_frames_for_matched_track(tracks1, tracks2, 7, 8)
-track1, track2 = correct_outliers(track1, track2)
-
-plt.figure();plt.plot(track1[::16,7],track1[::16,8],'g-*');plt.plot(track2[::16,7],track2[::16,8],'r-*');plt.show(block=False)
-# plt.figure();plt.plot(np.diff(np.linalg.norm(track1[:,7:9], axis=1)),'-*');plt.plot(np.diff(np.linalg.norm(track2[:,7:9], axis=1)),'-*');plt.title(f"{id1}:{id2}");plt.show(block=False)
-# np.mean(np.linalg.norm(np.diff(track1[:,7:9]-track2[:,7:9],axis=0),axis=1))
-
-# for tid1, tid2 in gt_matches.items():
-#     track1, track2 = find_matching_frames_for_matched_track(tracks1, tracks2, tid1, tid2)
-#     plt.figure();plt.plot(np.diff(np.linalg.norm(track1[:,7:9], axis=1)),'-*');plt.plot(np.diff(np.linalg.norm(track2[:,7:9], axis=1)),'-*');plt.title(f"{tid1}:{tid2}")
-
-# TODO: remove
-# fmt: on
