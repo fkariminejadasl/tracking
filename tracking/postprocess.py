@@ -38,6 +38,41 @@ def correct_outliers(track1, track2, max_disp=10):
     return track1, track2
 
 
+def remove_static_tracks(tracks, window_size=16, move_threshold=10):
+    """
+    Removes static tracks based on the moving average position over a specified window size.
+
+    Parameters:
+    - tracks (np.ndarray): Array containing track data with columns as follows:
+        [track_id, frame_number, det_id, x_tl, y_tl, x_br, y_br, x_cen, y_cen, width, height]
+    - window_size (int): The size of the rolling window for computing the moving average.
+    - move_threshold (int): The minimum distance the moving average position of a track must move.
+
+    Returns:
+    - np.ndarray: Array with static tracks removed.
+    """
+    track_ids = np.unique(tracks[:, 0])
+    non_static_indices = []
+
+    for track_id in track_ids:
+        track = tracks[tracks[:, 0] == track_id]  # copy
+        x_centers = track[:, 7]
+        y_centers = track[:, 8]
+
+        ma_x = np.convolve(x_centers, np.ones(window_size) / window_size, mode="valid")
+        ma_y = np.convolve(y_centers, np.ones(window_size) / window_size, mode="valid")
+        ma_x = x_centers[::window_size]  # stride
+        ma_y = y_centers[::window_size]
+
+        distances = np.sqrt((ma_x[1:] - ma_x[0]) ** 2 + (ma_y[1:] - ma_y[0]) ** 2)
+        if np.all(distances < move_threshold):
+            print(track_id)
+        else:
+            non_static_indices.append(np.where(tracks[:, 0] == track_id)[0])
+
+    return tracks[np.concatenate(non_static_indices)]
+
+
 def remove_short_tracks(tracks: np.ndarray, min_track_length: int = 10):
     track_ids = np.unique(tracks[:, 0])
     new_tracks = []
@@ -156,23 +191,24 @@ def interpolate_tracks_when_missing_frames(tracks):
 # fmt: off
 gt_matches = {3:0, 5:1, 4:2, 2:3, 8:4, 0:5, 1:6, 6:7, 7:8, 9:9, 10:10, 11:11, 12:12, 13:13, 14:14}
 # fmt: on
-tracks1 = da.load_tracks_from_mot_format(
+gtracks1 = da.load_tracks_from_mot_format(
     Path("/home/fatemeh/Downloads/fish/mot_data/mots/129_1.txt")
 )
-tracks2 = da.load_tracks_from_mot_format(
+gtracks2 = da.load_tracks_from_mot_format(
     Path("/home/fatemeh/Downloads/fish/mot_data/mots/129_2.txt")
 )
-# tracks1 = da.load_tracks_from_mot_format(
-#     Path("/home/fatemeh/Downloads/fish/mot_data/ms_exp1/mots/129_1_ms_exp1.txt")
-# )
-# tracks2 = da.load_tracks_from_mot_format(
-#     Path("/home/fatemeh/Downloads/fish/mot_data/ms_exp1/mots/129_2_ms_exp1.txt")
-# )
+tracks1 = da.load_tracks_from_mot_format(
+    Path("/home/fatemeh/Downloads/fish/mot_data/ms_exp1/mots/129_1_ms_exp1.txt")
+)
+tracks2 = da.load_tracks_from_mot_format(
+    Path("/home/fatemeh/Downloads/fish/mot_data/ms_exp1/mots/129_2_ms_exp1.txt")
+)
 
+min_track_length = 16
 track_lens1 = get_tracks_lengths(tracks1)
 sorted(track_lens1.items(), key=lambda x: x[1])
 
-tracks1_lt = remove_short_tracks(tracks1, 10)
+tracks1_lt = remove_short_tracks(tracks1, min_track_length)
 track_lt_lens1 = get_tracks_lengths(tracks1_lt)
 tracks1_lt_ri = reindex_tracks(tracks1_lt)
 
@@ -187,16 +223,25 @@ plt.figure()
 plt.plot(track1[::16, 7], track1[::16, 8], "g-*")
 
 
-tracks = tracks1_lt.copy()
-
-
 def plot_2d_tracks(tracks):
     track_ids = np.unique(tracks[:, 0])
     plt.figure()
     for tid in track_ids:
         track = tracks[tracks[:, 0] == tid]
-        plt.plot(track[:, 7], track[:, 8], "-*")
+        plt.plot(track[:, 7], track[:, 8], "-*", color="gray")
 
+
+sorted(get_tracks_lengths(tracks1_lt_ri).items(), key=lambda x: x[1])
+# track1 = tracks1_lt_ri[tracks1_lt_ri[:, 0] == 22]
+track_ids = [9, 10, 11, 13, 16, 18, 23, 26, 27]
+_ = remove_static_tracks(tracks1_lt_ri, window_size=16, move_threshold=10)
+plot_2d_tracks(tracks1_lt_ri)
+plt.figure()
+for track_id in track_ids:
+    track1 = tracks1_lt_ri[tracks1_lt_ri[:, 0] == track_id]
+    plt.plot(track1[:, 7], track1[:, 8], "-o", label=str(track_id))
+plt.legend()
+plt.show()
 
 # fmt: off
 # TODO: remove
