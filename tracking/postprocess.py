@@ -204,25 +204,90 @@ def tid_from_xyf(tracks, xcent, ycent, frame, thrs=1):
     return track_id
 
 
-def merge_two_tracks_by_speed(track1, track2, thrs=6):
-    """Merge two tracks
-    Due to (partial) occlusions, there is id switchs.
-    E.g. groudtruth track 1 consists of track 6, 70
+def merge_two_tracks_by_len_diff(track1, track2, thrs=6):
     """
-    # check with track follows other track
-    if track2[-1, 1] < track1[0, 1]:
-        tmp = track2.copy()
-        track2 = track1.copy()
-        track1 = tmp
-    # normalized displacement (not a real speed)
-    disp = np.linalg.norm(track2[0, 7:9] - track1[-1, 7:9]) / (
-        track2[0, 1] - track1[-1, 1]
-    )
-    if disp < thrs:
-        tid = track1[0, 0]
+    Merge two tracks if the center length to orgin difference between
+    the last point of the first track and the first point of the second track is below a threshold.
+    N.B. displacement (np.linalg.norm(track2[0, 7:9] - track1[-1, 7:9])) was not a good metric.
+
+    Due to (partial) occlusions, there is id switchs.
+    E.g. groudtruth track 1 of the camera 129_1 consists of track 6, 70
+
+    Parameters:
+    - track1 (np.ndarray): First track, assumed to be a 2D array where track1[-1, 1] is the time of the last point.
+    - track2 (np.ndarray): Second track, assumed to be a 2D array where track2[0, 1] is the time of the first point.
+    - thrs (float): Threshold for the normalized displacement to decide merging.
+
+    Returns:
+    - np.ndarray: Merged track if the conditions are met, otherwise returns None.
+    """
+    # ensure track1 starts before track2 starts
+    if track2[0, 1] < track1[0, 1]:
+        track1, track2 = track2, track1  # swap tracks
+
+    # Overlap case: e.g. handle case track 0->72,74 where there is overlap between tracks by wrong detections
+    if track2[0, 1] < track1[-1, 1]:
+        ind1 = np.where(track1[:, 1] <= track2[0, 1])[0][-1]
+        end_track1 = track1[ind1]
+        ind2 = np.where(track2[:, 1] >= track1[-1, 1])[0][0]
+        start_track2 = track2[ind2]
+        len_diff = abs(
+            np.linalg.norm(start_track2[7:9]) - np.linalg.norm(end_track1[7:9])
+        ) / (start_track2[1] - end_track1[1])
+        if len_diff < thrs:
+            track1 = track1[: ind1 + 1]
+            track2 = track2[ind2:]
+            track = np.concatenate((track1, track2), axis=0)  # copy
+            track[:, 0] = track1[0, 0]  # change track id
+            return track
+
+    # length to origin difference
+    end_track1 = track1[-1]
+    start_track2 = track2[0]
+    len_diff = abs(
+        np.linalg.norm(start_track2[7:9]) - np.linalg.norm(end_track1[7:9])
+    ) / (start_track2[1] - end_track1[1])
+    if len_diff < thrs:
         track = np.concatenate((track1, track2), axis=0)  # copy
-        track[:, 0] = tid
-    return track
+        track[:, 0] = track1[0, 0]  # change track id
+        return track
+    return None
+
+
+def split_track_by_len_diff(track, thrs=6):
+    """
+    TODO: This is not a good metric to split. I might remove this and replace it with stereo
+    Splits a track into multiple tracks if the length to origin difference
+    between consecutive points exceeds a given threshold.
+
+    Parameters:
+    - track (np.ndarray): The track to split, assumed to be a 2D array where each row represents a point.
+    - thrs (float): Threshold for the length to origin difference to trigger a split.
+
+    Returns:
+    - list of np.ndarray: A list of split tracks. Returns the original track in a list if no split is needed.
+    """
+    splits = []
+    current_start_index = 0  # starting index of the current track
+
+    # iterate over the track to find splits
+    for i in range(1, len(track)):
+        len_diff = abs(
+            np.linalg.norm(track[i, 7:9]) - np.linalg.norm(track[i - 1, 7:9])
+        )
+        len_diff = len_diff / track[i, 1] - track[i - 1, 1]
+
+        # check if the length to origin difference exceeds the threshold and split the track
+        if len_diff > thrs:
+            # include the current track up to the previous point
+            splits.append(track[current_start_index:i])
+            current_start_index = i  # Start a new track from the current point
+
+    # add the last track segment if any remains
+    if current_start_index < len(track):
+        splits.append(track[current_start_index:])
+
+    return splits
 
 
 def plot_2d_tracks(tracks):
@@ -251,7 +316,8 @@ tracks2 = da.load_tracks_from_mot_format(
     Path("/home/fatemeh/Downloads/fish/mot_data/ms_exp1/mots/129_2_ms_exp1.txt")
 )
 
-# gtrack1: 0->0,72,74 (16.76 0-72); 1->6,70 (6.1); 2->1; 3->7; 4->9; 5->4,51,81 (10.8 4-51); 6->3,71; 7->5,75 (8.3);
+# gtrack1: 0->0,72,74 (11.68 0-72, 74 starts earlier); 1->6,70; 2->1; 3->7; 4->9;
+# 5->4,51,81 (7.11 4-51); 6->3,71; 7->5,75;
 # 8->2; 9->36; 10->55; 11->61; 12->67; 13->82; 14->84
 # track 2(larger disp 6.2,10.2)
 # [ 0,  1,  2,  3,  4,  5,  6,  7,  9, 36, 51, 55, 61, 67, 70, 71, 72, 74, 75, 81, 82, 84]
@@ -267,7 +333,7 @@ plt.plot(gtrack1[:, 7], gtrack1[:, 8], "*-g")
 plt.plot(track1[:, 7], track1[:, 8], "o--")
 plt.plot(track2[:, 7], track2[:, 8], "o--")
 
-track = merge_two_tracks_by_speed(track1, track2, thrs=7)
+track = merge_two_tracks_by_len_diff(track1, track2, thrs=6)
 new_track = interpolate_track_when_missing_frames(track)
 
 disp1 = abs(np.diff(np.linalg.norm(track1[:, 7:9], axis=1))) / np.diff(track1[:, 1])
@@ -281,10 +347,11 @@ sorted(track_lens1.items(), key=lambda x: x[1])
 
 
 # remove static tracks, remove short tracks, split and merge tracks, reindexing, interpolate tracks, correct outliers (?)
+# only remove static tracks and then merge two tracks get the ground truth tracks. But threshold 11 is high.
 tracks = tracks1.copy()
 tracks = remove_static_tracks(tracks, window_size=16, move_threshold=10)
 tracks = remove_short_tracks(tracks, min_track_length=16)
-track = merge_two_tracks_by_speed(track1, track2, thrs=7)
+track = merge_two_tracks_by_len_diff(track1, track2, thrs=7)
 s_tracks = tracks[np.isin(tracks[:, 0], [0, 1, 2, 3, 4, 5, 6, 7, 9])]
 plot_2d_tracks(s_tracks)
 tracks = reindex_tracks(tracks)
