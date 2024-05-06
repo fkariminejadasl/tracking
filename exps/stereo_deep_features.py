@@ -220,7 +220,9 @@ points_3D = points_4D[:3] / points_4D[3]
 """
 # One image 3D position, rectified coordinate and rectified images
 # =========
-gt_matches = {3: 0, 5: 1, 4: 2, 2: 3, 8: 4, 0: 5, 1: 6, 6: 7, 7: 8}
+# fmt: off
+gt_matches = {3:0, 5:1, 4:2, 2:3, 8:4, 0:5, 1:6, 6:7, 7:8, 9:9, 10:10, 11:11, 12:12, 13:13, 14:14}
+# fmt: on
 dd = loadmat("/home/fatemeh/Downloads/fish/mot_data//stereo_129.mat")
 image1 = cv2.imread("/home/fatemeh/Downloads/fish/mot_data/129_1_0.png")
 image2 = cv2.imread("/home/fatemeh/Downloads/fish/mot_data/129_2_0.png")
@@ -250,7 +252,8 @@ dets2 = tracks2[tracks2[:, 1] == 0]
 
 a = []
 for id in gt_matches.keys():
-    a.append(dets1[id])
+    if id in dets1[:, 0]:
+        a.append(dets1[id])
 a = np.array(a)
 dets1 = a
 
@@ -306,7 +309,7 @@ map2x, map2y = cv2.initUndistortRectifyMap(
 )
 rectified_im1 = cv2.remap(image1, map1x, map1y, cv2.INTER_LINEAR)
 rectified_im2 = cv2.remap(image2, map2x, map2y, cv2.INTER_LINEAR)
-# recotify points
+# rectify points
 rectified_points1 = cv2.undistortPoints(
     imagePoints1, cameraMatrix1, distCoeffs1, R=R1, P=r_P1
 ).squeeze(axis=1)
@@ -315,7 +318,36 @@ rectified_points2 = cv2.undistortPoints(
 ).squeeze(axis=1)
 
 print("end")
-
+# plt.figure();plt.imshow(rectified_im1[...,::-1]);plt.plot(rectified_points1[:,0], rectified_points1[:,1], "r*")
+# [plt.text(point[0] + 5, point[1] + 5, str(i + 1), color='red') for i, point in enumerate(rectified_points1)]
+# plt.figure();plt.imshow(rectified_im2[...,::-1]);plt.plot(rectified_points2[:,0], rectified_points2[:,1], "r*")
+# [plt.text(point[0] + 5, point[1] + 5, str(i + 1), color='red') for i, point in enumerate(rectified_points2)]
+# rectified_points1
+# array([[     1077.5,      346.42],
+#    [     1229.7,      330.82],
+#    [     1237.3,      338.44],
+#    [     1550.6,      467.83],
+#    [     1192.8,      619.32],
+#    [     1224.4,      437.73],
+#    [       1156,      431.35],
+#    [     1058.2,       516.4],
+#    [     1081.2,      491.46]], dtype=float32)
+# rectified_points2
+# array([[     857.58,      344.76],
+#        [     1002.7,      332.44],
+#        [     1020.4,      332.64],
+#        [     1312.2,      465.49],
+#        [     920.87,      618.36],
+#        [     952.83,      434.91],
+#        [     890.57,      430.61],
+#        [     828.28,      517.92],
+#        [     825.04,      489.68]], dtype=float32)
+# Due to synchronization error 6 frames (the frame 2416 in the camera 129_1 corresponds to 2422 in the camera 129_2)
+# The rectification error is large in attack time for (1,6):40, (7,8):32 
+# (tid1,tid2):(min_rec,max_rec) 
+# (3, 0): (-2, 7), (5, 1): (-15, 7), (4, 2): (-3, 7), (2, 3): (-1, 7), (8, 4): (-14, 8), (0, 5): (-10, 8), 
+# (1, 6): (-9, 40), (6, 7): (-6, 7), (7, 8): (-8, 32), (9, 9): (-5, 12), (10, 10): (-3, 5), (11, 11): (-3, 5), 
+# (12, 12): (-4, 2), (13, 13): (0, 5), (14, 14): (-1, 4)
 '''Matlab
 # I had to check Matlab because my python result was not correct. Issue due to:
 # 1. undistortPoints: P should be camera matrix (main issue)

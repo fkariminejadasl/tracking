@@ -300,6 +300,7 @@ def plot_2d_tracks(tracks):
     plt.legend()
 
 
+"""
 # fmt: off
 gt_matches = {3:0, 5:1, 4:2, 2:3, 8:4, 0:5, 1:6, 6:7, 7:8, 9:9, 10:10, 11:11, 12:12, 13:13, 14:14}
 # fmt: on
@@ -378,3 +379,4 @@ plt.figure();plt.plot(track1[::16,7],track1[::16,8],'g-*');plt.plot(track2[::16,
 
 # TODO: remove
 # fmt: on
+"""
