@@ -11,6 +11,14 @@ from tqdm import tqdm
 from tracking import data_association as da
 from tracking import postprocess as pp
 
+"""
+TODO id dictionary after reindex 
+TODO match_tracks_with_gt is very basic. Since due to id switch, part of id
+can be matched to gt. The same for plot_matched_tracks_with_gt.
+e.g. in 129_1, 2 in gt 6 wrong (crossing); 14 in 5
+e.g. in 129_2, 2 in gt 2 wrong; 6, 8, 9 in 5 (part 8, 9 correct)
+"""
+
 
 # normalize curves by translating them to have the same starting point (0,0) and scaling
 def normalize_curve(curve):
@@ -110,6 +118,17 @@ def rectify_tracks(tracks, cameraMatrix, distCoeffs, R, r_P):
     return np.concatenate(r_tracks, axis=0)
 
 
+# postprocess
+def postprocess_tracks(tracks):
+    # remove static tracks, remove short tracks, reindexing, interpolate tracks
+    tracks = tracks.copy()
+    tracks = pp.remove_static_tracks(tracks, window_size=16, move_threshold=10)
+    tracks = pp.remove_short_tracks(tracks, min_track_length=16)
+    tracks = pp.reindex_tracks(tracks)
+    tracks = pp.interpolate_tracks_when_missing_frames(tracks)
+    return tracks
+
+
 # =========
 dd = loadmat("/home/fatemeh/Downloads/fish/mot_data//stereo_129.mat")
 vc1 = cv2.VideoCapture("/home/fatemeh/Downloads/fish/mot_data/vids/129_1.mp4")
@@ -139,24 +158,67 @@ R1, R2, r_P1, r_P2, Q, validPixROI1, validPixROI2 = cv2.stereoRectify(
     T=T,
 )  # , flags=cv2.CALIB_ZERO_DISPARITY, alpha=-1)
 
+max_dist = 100
 # fmt: off
 gt_matches = {3:0, 5:1, 4:2, 2:3, 8:4, 0:5, 1:6, 6:7, 7:8, 9:9, 10:10, 11:11, 12:12, 13:13, 14:14}
 # fmt: on
-tracks1 = da.load_tracks_from_mot_format(
+gtracks1 = da.load_tracks_from_mot_format(
     Path("/home/fatemeh/Downloads/fish/mot_data/mots/129_1.txt")
 )
-tracks2 = da.load_tracks_from_mot_format(
+gtracks2 = da.load_tracks_from_mot_format(
     Path("/home/fatemeh/Downloads/fish/mot_data/mots/129_2.txt")
 )
-# tracks1 = da.load_tracks_from_mot_format(
-#     Path("/home/fatemeh/Downloads/fish/mot_data/ms_exp1/mots/129_1_ms_exp1.txt")
-# )
-# tracks2 = da.load_tracks_from_mot_format(
-#     Path("/home/fatemeh/Downloads/fish/mot_data/ms_exp1/mots/129_2_ms_exp1.txt")
-# )
-max_dist = 100
-# tracks1 = rectify_tracks(tracks1, cameraMatrix1, distCoeffs1, R1, r_P1)
-# tracks2 = rectify_tracks(tracks2, cameraMatrix2, distCoeffs2, R2, r_P2)
+tracks1 = da.load_tracks_from_mot_format(
+    Path("/home/fatemeh/Downloads/fish/mot_data/ms_exp1/mots/129_1_ms_exp1.txt")
+)
+tracks2 = da.load_tracks_from_mot_format(
+    Path("/home/fatemeh/Downloads/fish/mot_data/ms_exp1/mots/129_2_ms_exp1.txt")
+)
+
+# postprocess tracks
+# =====
+tracks1 = postprocess_tracks(tracks1)
+tracks2 = postprocess_tracks(tracks2)
+
+
+# match with ground truth (for evaluation)
+# ========
+def match_tracks_with_gt(tracks, gtracks):
+    match_gt_to_tids = dict()
+    for gtid in np.unique(gtracks[:, 0]):
+        gtrack = gtracks[(gtracks[:, 0] == gtid)]
+        tids = []
+        for det in gtrack[::16]:
+            tid = pp.tid_from_xyf(tracks, det[7], det[8], det[1], thrs=5)
+            if tid is not None:
+                tids.append(tid)
+        match_gt_to_tids[gtid] = set(tids)
+    return match_gt_to_tids
+
+
+gt2tids1 = match_tracks_with_gt(tracks1, gtracks1)
+gt2tids2 = match_tracks_with_gt(tracks2, gtracks2)
+
+
+def plot_matched_tracks_with_gt(tracks, gtracks, gtid, tids):
+    gtrack = gtracks[(gtracks[:, 0] == gtid)]
+    plt.figure()
+    for tid in tids:
+        track = tracks[(tracks[:, 0] == tid)]
+        plt.plot(track[:, 7], track[:, 8], "o--", label=str(tid))
+    plt.plot(gtrack[:, 7], gtrack[:, 8], "*-", color="gray", alpha=0.3)
+    plt.legend()
+    plt.title(f"{gtid}->{tids}")
+
+
+# [plot_matched_tracks_with_gt(tracks2, gtracks2, k, v) for k, v in gt2tids2.items()]
+
+# rectify
+# =======
+# tracks2 = rectify_tracks(tracks1, cameraMatrix1, distCoeffs1, R1, r_P1)
+# tracks1 = rectify_tracks(gtracks1, cameraMatrix1, distCoeffs1, R1, r_P1)
+tracks1 = rectify_tracks(tracks1, cameraMatrix1, distCoeffs1, R1, r_P1)
+tracks2 = rectify_tracks(tracks2, cameraMatrix2, distCoeffs2, R2, r_P2)
 
 # for debuging
 # for tid1, tid2 in gt_matches.items():
@@ -164,6 +226,7 @@ max_dist = 100
 #     plt.figure();plt.plot(track1[:,1], track1[:,8]-track2[:,8], '*-')
 #     plt.title(f'{tid1}:{tid2}')
 
+"""
 # compute distances between tracks
 tids1 = np.unique(tracks1[:, 0])
 tids2 = np.unique(tracks2[:, 0])
@@ -203,24 +266,25 @@ for tid1 in tids1:
 print(matched_tids)
 print(matched_keys)
 print(sorted(gt_matches.items(), key=lambda i: i[0]))
+"""
 
-# for tid1, tid2 in gt_matches.items():
-#     track1, track2 = pp.get_matching_frames_between_tracks(tracks1, tracks2, tid1, tid2)
-#     plt.figure();plt.plot(track1[::16,7],track1[::16,8],'g-*');plt.plot(track2[::16,7],track2[::16,8],'r-*');plt.show(block=False)
-#     plt.figure();plt.plot(c1[::16,0],c1[::16,1],'g-*');plt.plot(c2[::16,0],c2[::16,1],'r-*');plt.show(block=False)
-
+# tracklet matching
+# =================
 start, end, step = 0, 3117, 200  # 200
-tid1 = 3
-track1 = tracks1[tracks1[:, 0] == tid1]
-tracklet1 = cut_track_into_tracklets(track1, start, end, step)
-for st in range(start, end + 1, step):
-    tr = tracklet1[tracklet1[:, 2] == st]
-    plt.plot(tr[::16, 7], tr[::16, 8], "-*")
+
+# for debuging
+# tid1 = 3
+# track1 = tracks1[tracks1[:, 0] == tid1]
+# tracklet1 = cut_track_into_tracklets(track1, start, end, step)
+# for st in range(start, end + 1, step):
+#     tr = tracklet1[tracklet1[:, 2] == st]
+#     plt.plot(tr[::16, 7], tr[::16, 8], "-*")
 
 
 tracklets1 = cut_tracks_into_tracklets(tracks1, start, end, step)
 tracklets2 = cut_tracks_into_tracklets(tracks2, start, end, step)
 
+frame_matched_tids = dict()
 for st in range(start, end + 1, step):
     # tracklets in a specific time
     tracks1 = tracklets1[tracklets1[:, 2] == st]
@@ -237,11 +301,11 @@ for st in range(start, end + 1, step):
             )
             if track1.size == 0:
                 continue
-            c1 = normalize_curve(track1[:, 7:9])
-            c2 = normalize_curve(track2[:, 7:9])
-            dist = curve_distance(c1, c2)
-            # n_points = track1.shape[0]
-            # dist = np.mean(abs(track1[:, 8] - track2[:, 8])) / n_points
+            # c1 = normalize_curve(track1[:, 7:9])
+            # c2 = normalize_curve(track2[:, 7:9])
+            # dist = curve_distance(c1, c2)
+            n_points = track1.shape[0]
+            dist = np.mean(abs(track1[:, 8] - track2[:, 8])) / n_points
             all_dists[(tid1, tid2)] = round(dist, 3)
 
     # n-n matching
@@ -253,7 +317,62 @@ for st in range(start, end + 1, step):
             dist_mat[i, j] = all_dists.get((tid1, tid2), max_dist)
     rows, cols = linear_sum_assignment(dist_mat)
     matched_tids = [(i2tids1[r], i2tids2[c]) for r, c in zip(rows, cols)]
+    frame_matched_tids[st] = matched_tids
 
     print("----> ", st)
     print(matched_tids)
     print(sorted(gt_matches.items(), key=lambda i: i[0]))
+    # for tid1, tid2 in frame_matched_tids[st]:
+    #     track1, track2 = pp.get_matching_frames_between_tracks(tracks1, tracks2, tid1, tid2)
+    #     plt.figure();plt.plot(track1[:, 7], track1[:, 8], "o--", label=str(tid1));plt.plot(track2[:, 7], track2[:, 8], "o--", label=str(tid2));plt.legend()
+
+print("here")
+"""
+{0: {0, 16, 17}, 1: {6, 14}, 2: {1}, 3: {7}, 4: {8}, 5: {4, 10, 19}, 6: {3, 15}, 7: {5, 18}, 8: {2}, 9: {9}, 10: {11}, 11: {12}, 12: {13}, 13: {20}, 14: {21}}
+{0: {4}, 1: {0}, 2: {11, 5, 15}, 3: {3}, 4: {8, 9}, 5: {1, 16, 8, 9}, 6: {2}, 7: {6}, 8: {7}, 9: {10}, 10: {12}, 11: {13}, 12: {14}, 13: {17}, 14: {18}}
+gt_matches = {3:0, 5:1, 4:2, 2:3, 8:4, 0:5, 1:6, 6:7, 7:8, 9:9, 10:10, 11:11, 12:12, 13:13, 14:14}
+frame_matches=
+[[0, 800, 0, 1], [0, 400, 1, 3], [0, 2400, 2, 8], [0, 2400, 3, 6], [0, 1400, 4, 0], [0, 2400, 5, 7], [0, 2400, 6, 2], [0, 3200, 7, 4], [0, 1200, 8, 5], 
+[800, 2600, 0, 9], [1000, 2200, 9, 10], [1200, 2400, 8, 11], [1400, 2800, 10, 0], [1600, 3200, 11, 12], [1800, 3200, 12, 13], [2200, 3200, 13, 14], 
+[2400, 2600, 2, 17]x, [2400, 2600, 6, 11]x, [2400, 3200, 8, 15], [2400, 3200, 14, 2], [2400, 3200, 15, 6], [2400, 2600, 16, 8], [2400, 3200, 17, 16], 
+[2400, 3200, 18, 7], [2600, 3200, 2, 9], [2800, 3200, 19, 0], [2800, 3200, 20, 17], [2800, 3200, 21, 18]]
+[(0, 1), (1, 3), (2, 8), (3, 6), (4, 0), (5, 7), (6, 2), (7, 4), (8, 5)] 0, 200
+[(0, 1), (2, 8), (3, 6), (4, 0), (5, 7), (6, 2), (7, 4), (8, 5)] 400, 600
+[(0, 9), (2, 8), (3, 6), (4, 0), (5, 7), (6, 2), (7, 4), (8, 5)] 800
+[(0, 9), (2, 8), (3, 6), (4, 0), (5, 7), (6, 2), (7, 4), (8, 5), (9, 10)] 1000
+[(0, 9), (2, 8), (3, 6), (4, 0), (5, 7), (6, 2), (7, 4), (8, 11), (9, 10)] 1200
+[(0, 9), (2, 8), (3, 6), (5, 7), (6, 2), (7, 4), (8, 11), (9, 10), (10, 0)] 1400
+[(0, 9), (2, 8), (3, 6), (5, 7), (6, 2), (7, 4), (8, 11), (9, 10), (10, 0), (11, 12)] 1600
+[(0, 9), (2, 8), (3, 6), (5, 7), (6, 2), (7, 4), (8, 11), (9, 10), (10, 0), (11, 12), (12, 13)] 1800
+[(0, 9), (2, 8), (3, 6), (5, 7), (6, 2), (7, 4), (8, 11), (9, 10), (10, 0), (11, 12), (12, 13)] 2000
+[(0, 9), (2, 8), (3, 6), (5, 7), (6, 2), (7, 4), (8, 11), (10, 0), (11, 12), (12, 13), (13, 14)] 2200
+[(0, 9), (2, 17), (6, 11), (7, 4), (8, 15), (10, 0), (11, 12), (12, 13), (13, 14), (14, 2), (15, 6), (16, 8), (17, 16), (18, 7)] 2400
+[(2, 9), (7, 4), (8, 15), (10, 0), (11, 12), (12, 13), (13, 14), (14, 2), (15, 6), (17, 16), (18, 7)] 2600
+[(2, 9), (7, 4), (8, 15), (11, 12), (12, 13), (13, 14), (14, 2), (15, 6), (17, 16), (18, 7), (19, 0), (20, 17), (21, 18)] 2800
+[(2, 9), (7, 4), (8, 15), (11, 12), (12, 13), (13, 14), (14, 2), (15, 6), (17, 16), (18, 7), (19, 0), (20, 17), (21, 18)] 3000
+"""
+
+
+def merge_lists(input_list):
+    # Create a dictionary to group lists by their last two elements
+    merge_dict = {}
+    for item in input_list:
+        key = tuple(item[2:4])  # The key is the tuple of the last two elements
+        if key not in merge_dict:
+            merge_dict[key] = item
+        else:
+            # Merge the lists by updating the second element
+            merge_dict[key][1] = item[1]
+
+    # Extract the merged lists from the dictionary
+    merged_list = list(merge_dict.values())
+
+    return merged_list
+
+
+frame_matches = [
+    [st, st + step, *match]
+    for st, matches in frame_matched_tids.items()
+    for match in matches
+]
+frame_matches = merge_lists(frame_matches)
