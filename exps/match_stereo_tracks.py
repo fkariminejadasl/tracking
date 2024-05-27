@@ -326,6 +326,14 @@ for st in range(start, end + 1, step):
     #     track1, track2 = pp.get_matching_frames_between_tracks(tracks1, tracks2, tid1, tid2)
     #     plt.figure();plt.plot(track1[:, 7], track1[:, 8], "o--", label=str(tid1));plt.plot(track2[:, 7], track2[:, 8], "o--", label=str(tid2));plt.legend()
 
+# for debuging
+g_frame_matches = []
+for tid1, tid2 in gt_matches.items():
+    track1, track2 = pp.get_matching_frames_between_tracks(
+        gtracks1, gtracks2, tid1, tid2
+    )
+    g_frame_matches.append([min(track1[:, 1]), max(track1[:, 1]), tid1, tid2])
+
 print("here")
 """
 {0: {0, 16, 17}, 1: {6, 14}, 2: {1}, 3: {7}, 4: {8}, 5: {4, 10, 19}, 6: {3, 15}, 7: {5, 18}, 8: {2}, 9: {9}, 10: {11}, 11: {12}, 12: {13}, 13: {20}, 14: {21}}
@@ -336,6 +344,9 @@ frame_matches=
 [800, 2600, 0, 9], [1000, 2200, 9, 10], [1200, 2400, 8, 11], [1400, 2800, 10, 0], [1600, 3200, 11, 12], [1800, 3200, 12, 13], [2200, 3200, 13, 14], 
 [2400, 2600, 2, 17]x, [2400, 2600, 6, 11]x, [2400, 3200, 8, 15], [2400, 3200, 14, 2], [2400, 3200, 15, 6], [2400, 2600, 16, 8], [2400, 3200, 17, 16], 
 [2400, 3200, 18, 7], [2600, 3200, 2, 9], [2800, 3200, 19, 0], [2800, 3200, 20, 17], [2800, 3200, 21, 18]]
+g_frame_matches=
+[[0, 3116, 3, 0], [0, 3116, 5, 1], [0, 3116, 4, 2], [0, 315, 2, 3], [0, 3116, 8, 4], [0, 3116, 0, 5], [0, 3116, 1, 6], [0, 3116, 6, 7], [0, 3116, 7, 8], 
+[1084, 2141, 9, 9], [1644, 3116, 10, 10], [2016, 3116, 11, 11], [2274, 3116, 12, 12], [2866, 3116, 13, 13], [2917, 3116, 14, 14]]
 [(0, 1), (1, 3), (2, 8), (3, 6), (4, 0), (5, 7), (6, 2), (7, 4), (8, 5)] 0, 200
 [(0, 1), (2, 8), (3, 6), (4, 0), (5, 7), (6, 2), (7, 4), (8, 5)] 400, 600
 [(0, 9), (2, 8), (3, 6), (4, 0), (5, 7), (6, 2), (7, 4), (8, 5)] 800
@@ -353,7 +364,13 @@ frame_matches=
 """
 
 
-def merge_lists(input_list):
+def merge_by_mached_tids(input_list):
+    """
+    If the matched track ids are the same merge them even if there is a gap.
+    N.B. Each item of the list is [start_frame, end_frame, tid1, tid2]
+    e.g. if [0, 400, 1, 4] and [400, 1000, 1, 4] then [0, 1000, 1, 4]
+    e.g. if [0, 400, 1, 4] and [600, 1000, 1, 4] then [0, 1000, 1, 4]
+    """
     # Create a dictionary to group lists by their last two elements
     merge_dict = {}
     for item in input_list:
@@ -370,9 +387,44 @@ def merge_lists(input_list):
     return merged_list
 
 
+def merge_by_one_tid(input_list, which_tid=1):
+    """
+    If one track id is common, then merge them even if there is a gap.
+    N.B. Each item of the list is [start_frame, end_frame, tid1, tid2]
+    e.g. if [0, 2400, 2, 8] and [2600, 3200, 2, 9] then [0, 3200, 2, [8, 9]]
+    e.g. if [0, 2400, 3, 6] and [2400, 3200, 15, 6] then [0, 3200, [3,15], 6]
+    """
+    merge_dict = dict()
+    for item in input_list:
+        if which_tid == 1:
+            key_ind = 2
+            change_ind = 3
+        else:
+            key_ind = 3
+            change_ind = 2
+        key = tuple(item[key_ind])
+        if key not in merge_dict:
+            merge_dict[key] = [item[0], item[1], item[2], item[3]]
+        else:
+            # Merge the lists by updating the second element
+            merge_dict[key][1] = item[1]
+            merge_dict[key][change_ind].extend(item[change_ind])
+
+    # Extract the merged lists from the dictionary
+    merged_list = list(merge_dict.values())
+
+    return merged_list
+
+
+merge_by_one_tid([[0, 2400, [2], [8]], [2600, 3200, [2], [9]]], 1)
+merge_by_one_tid([[0, 2400, [3], [6]], [2400, 3200, [15], [6]]], 2)
+
 frame_matches = [
     [st, st + step, *match]
     for st, matches in frame_matched_tids.items()
     for match in matches
 ]
-frame_matches = merge_lists(frame_matches)
+frame_matches = merge_by_mached_tids(frame_matches)
+frame_matches = [[i[0], i[1], [i[2]], [i[3]]] for i in frame_matches]
+frame_matches = merge_by_one_tid(frame_matches, 1)
+frame_matches = merge_by_one_tid(frame_matches, 2)
