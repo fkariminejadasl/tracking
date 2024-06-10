@@ -803,22 +803,47 @@ def show_two_frames(axes, frame1, frame2):
     plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
 
 
+# def _plot_detections_epipolar_lines(dets, ax, image_width, draw_text=True):
+#     for det in dets:
+#         ax.plot([0, image_width - 1], [det.y, det.y], "--r", linewidth=0.5, alpha=0.5)
+#         x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
+#         if draw_text:
+#             ax.text(
+#                 x_tl,
+#                 y_tl,
+#                 str(f"{det.det_id},{det.score:.2f}"),
+#                 color="r",
+#                 fontsize=12,
+#             )
+#         rect = patches.Rectangle(
+#             (x_tl, y_tl),
+#             det.w,
+#             det.h,
+#             linewidth=1,
+#             edgecolor="r",
+#             facecolor="none",
+#         )
+#         ax.add_patch(rect)
+
+
 def _plot_detections_epipolar_lines(dets, ax, image_width, draw_text=True):
     for det in dets:
-        ax.plot([0, image_width - 1], [det.y, det.y], "--r", linewidth=0.5, alpha=0.5)
-        x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
+        # ax.plot([0, image_width - 1], [det.y, det.y], "--r", linewidth=0.5, alpha=0.5)
+        # x_tl, y_tl, x_br, y_br = tl_br_from_cen_wh(det.x, det.y, det.w, det.h)
+        ax.plot([0, image_width - 1], [det[8], det[8]], "--r", linewidth=0.5, alpha=0.5)
+        x_tl, y_tl, x_br, y_br = det[3:7]
         if draw_text:
             ax.text(
                 x_tl,
                 y_tl,
-                str(f"{det.det_id},{det.score:.2f}"),
+                str(f"{det[0]},{det[-1]:.2f}"),
                 color="r",
                 fontsize=12,
             )
         rect = patches.Rectangle(
             (x_tl, y_tl),
-            det.w,
-            det.h,
+            det[9],
+            det[10],
             linewidth=1,
             edgecolor="r",
             facecolor="none",

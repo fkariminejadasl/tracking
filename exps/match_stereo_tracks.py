@@ -1,3 +1,4 @@
+from collections import defaultdict
 from copy import deepcopy
 from pathlib import Path
 
@@ -106,7 +107,7 @@ def rectify_tracks(tracks, cameraMatrix, distCoeffs, R, r_P):
     stop = max(frame_numbers)
 
     r_tracks = []
-    for frame_number in tqdm(range(start, stop, step)):
+    for frame_number in tqdm(range(start, stop + 1, step)):
         if frame_number % step != 0:
             continue
 
@@ -217,6 +218,8 @@ def plot_matched_tracks_with_gt(tracks, gtracks, gtid, tids):
 # =======
 # tracks2 = rectify_tracks(tracks1, cameraMatrix1, distCoeffs1, R1, r_P1)
 # tracks1 = rectify_tracks(gtracks1, cameraMatrix1, distCoeffs1, R1, r_P1)
+otracks1 = tracks1.copy()
+otracks2 = tracks2.copy()
 tracks1 = rectify_tracks(tracks1, cameraMatrix1, distCoeffs1, R1, r_P1)
 tracks2 = rectify_tracks(tracks2, cameraMatrix2, distCoeffs2, R2, r_P2)
 
@@ -387,44 +390,72 @@ def merge_by_mached_tids(input_list):
     return merged_list
 
 
-def merge_by_one_tid(input_list, which_tid=1):
-    """
-    If one track id is common, then merge them even if there is a gap.
-    N.B. Each item of the list is [start_frame, end_frame, tid1, tid2]
-    e.g. if [0, 2400, 2, 8] and [2600, 3200, 2, 9] then [0, 3200, 2, [8, 9]]
-    e.g. if [0, 2400, 3, 6] and [2400, 3200, 15, 6] then [0, 3200, [3,15], 6]
-    """
-    merge_dict = dict()
-    for item in input_list:
-        if which_tid == 1:
-            key_ind = 2
-            change_ind = 3
-        else:
-            key_ind = 3
-            change_ind = 2
-        key = tuple(item[key_ind])
-        if key not in merge_dict:
-            merge_dict[key] = [item[0], item[1], item[2], item[3]]
-        else:
-            # Merge the lists by updating the second element
-            merge_dict[key][1] = item[1]
-            merge_dict[key][change_ind].extend(item[change_ind])
-
-    # Extract the merged lists from the dictionary
-    merged_list = list(merge_dict.values())
-
-    return merged_list
-
-
-merge_by_one_tid([[0, 2400, [2], [8]], [2600, 3200, [2], [9]]], 1)
-merge_by_one_tid([[0, 2400, [3], [6]], [2400, 3200, [15], [6]]], 2)
-
 frame_matches = [
     [st, st + step, *match]
     for st, matches in frame_matched_tids.items()
     for match in matches
 ]
-frame_matches = merge_by_mached_tids(frame_matches)
-frame_matches = [[i[0], i[1], [i[2]], [i[3]]] for i in frame_matches]
-frame_matches = merge_by_one_tid(frame_matches, 1)
-frame_matches = merge_by_one_tid(frame_matches, 2)
+frame_matches1 = merge_by_mached_tids(frame_matches)
+# frame_matches2 = merge_by_one_tid(frame_matches1)
+print("finished")
+
+
+def save_stereo_image_with_matches(image1, image2, dets1, dets2, frame, frame_matches):
+    # find matches. frame_matches: list[list], each item [start_frame, end_frame, tid1, tid2]
+    tids1 = dets1[:, 0]
+    matches = dict()
+    for tid1 in tids1:
+        for frame_match in frame_matches:
+            st, en = frame_match[0:2]
+            if ((frame >= st) and (frame < en)) and (frame_match[2] == tid1):
+                matches[tid1] = frame_match[3]
+
+    # ordered based on matches
+    mdets1 = []
+    mdets2 = []
+    for tid1, tid2 in matches.items():
+        mdets1.append(dets1[dets1[:, 0] == tid1][0])
+        mdets2.append(dets2[dets2[:, 0] == tid2][0])
+    mdets1 = np.array(mdets1)
+    mdets2 = np.array(mdets2)
+
+    # plot and save results
+    _ = viz2d.plot_images([image1[..., ::-1], image2[..., ::-1]])
+    viz2d.plot_matches(mdets1[:, 7:9], mdets2[:, 7:9], color="lime", lw=0.2)
+    fig = plt.gcf()
+    fig.savefig(f"{save_path}/frame_{frame:06d}.jpg", dpi=200, bbox_inches="tight")
+    plt.close()
+
+
+def save_stereo_images_with_matches(
+    save_path, vid_path1, vid_path2, tracks1, tracks2, frame_matches
+):
+    save_path.mkdir(parents=True, exist_ok=True)
+
+    vc1 = cv2.VideoCapture(str(vid_path1))
+    vc2 = cv2.VideoCapture(str(vid_path2))
+    total_no_frames = int(
+        min(vc1.get(cv2.CAP_PROP_FRAME_COUNT), vc2.get(cv2.CAP_PROP_FRAME_COUNT))
+    )
+    vc2.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    vc1.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    for frame in tqdm(range(0, 50)):
+        _, image1 = vc1.read()
+        _, image2 = vc2.read()
+        dets1 = tracks1[tracks1[:, 1] == frame]
+        dets2 = tracks2[tracks2[:, 1] == frame]
+        save_stereo_image_with_matches(
+            image1, image2, dets1, dets2, frame, frame_matches
+        )
+
+
+from lightglue import viz2d
+
+save_path = Path("/home/fatemeh/Downloads/fish/mot_data/tmp")
+vid_path1 = Path("/home/fatemeh/Downloads/fish/mot_data/vids/129_1.mp4")
+vid_path2 = Path("/home/fatemeh/Downloads/fish/mot_data/vids/129_2.mp4")
+save_stereo_images_with_matches(
+    save_path, vid_path1, vid_path2, otracks1, otracks2, frame_matches1
+)
+
+print("======")
