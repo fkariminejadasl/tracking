@@ -400,62 +400,119 @@ frame_matches1 = merge_by_mached_tids(frame_matches)
 print("finished")
 
 
+# Visualization
+def put_bbox_in_image(image, x_tl, y_tl, x_br, y_br, color, text, black=True):
+    cv2.rectangle(image, (x_tl, y_tl), (x_br, y_br), color=color, thickness=1)
+    if black:
+        color = (0, 0, 0)
+    # font name, font scale, color, thinckness, line type
+    cv2.putText(image, text, (x_tl, y_tl), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, 2)
+
+
+def draw_matches(image1, image2, dets1, dets2, color):
+    combined_image = np.hstack((image1, image2))
+    for d1, d2 in zip(dets1, dets2):
+        start_point = (int(d1[7]), int(d1[8]))
+        end_point = (int(d2[7]) + image1.shape[1], int(d2[8]))
+        cv2.line(combined_image, start_point, end_point, (0, 255, 0), 1)
+
+    for det in dets1:
+        x_tl, y_tl, x_br, y_br = det[3:7]
+        put_bbox_in_image(
+            combined_image,
+            int(x_tl),
+            int(y_tl),
+            int(x_br),
+            int(y_br),
+            color,
+            f"{det[0]}",
+        )
+
+    for det in dets2:
+        x_tl, y_tl, x_br, y_br = det[3:7]
+        put_bbox_in_image(
+            combined_image,
+            int(x_tl) + image1.shape[1],
+            int(y_tl),
+            int(x_br) + image1.shape[1],
+            int(y_br),
+            color,
+            f"{det[0]}",
+        )
+
+    return combined_image
+
+
 def save_stereo_image_with_matches(image1, image2, dets1, dets2, frame, frame_matches):
     # find matches. frame_matches: list[list], each item [start_frame, end_frame, tid1, tid2]
     tids1 = dets1[:, 0]
-    matches = dict()
-    for tid1 in tids1:
-        for frame_match in frame_matches:
-            st, en = frame_match[0:2]
-            if ((frame >= st) and (frame < en)) and (frame_match[2] == tid1):
-                matches[tid1] = frame_match[3]
+    tids2 = dets2[:, 0]
+    matches = {
+        frame_match[2]: frame_match[3]
+        for frame_match in frame_matches
+        if frame_match[0] <= frame < frame_match[1]
+        and frame_match[2] in tids1
+        and frame_match[3] in tids2
+    }
+
+    if not matches:
+        return None
 
     # ordered based on matches
-    mdets1 = []
-    mdets2 = []
-    for tid1, tid2 in matches.items():
-        mdets1.append(dets1[dets1[:, 0] == tid1][0])
-        mdets2.append(dets2[dets2[:, 0] == tid2][0])
-    mdets1 = np.array(mdets1)
-    mdets2 = np.array(mdets2)
+    mdets1 = np.array([dets1[dets1[:, 0] == tid1][0] for tid1 in matches.keys()])
+    mdets2 = np.array([dets2[dets2[:, 0] == tid2][0] for tid2 in matches.values()])
 
     # plot and save results
-    _ = viz2d.plot_images([image1[..., ::-1], image2[..., ::-1]])
-    viz2d.plot_matches(mdets1[:, 7:9], mdets2[:, 7:9], color="lime", lw=0.2)
-    fig = plt.gcf()
-    fig.savefig(f"{save_path}/frame_{frame:06d}.jpg", dpi=200, bbox_inches="tight")
-    plt.close()
+    color = (0, 0, 255)
+    combined_image = draw_matches(image1, image2, mdets1, mdets2, color)
+    cv2.imwrite(f"{save_path}/frame_{frame:06d}.jpg", combined_image)
 
 
 def save_stereo_images_with_matches(
-    save_path, vid_path1, vid_path2, tracks1, tracks2, frame_matches
+    save_path,
+    vid_path1,
+    vid_path2,
+    tracks1,
+    tracks2,
+    frame_matches,
+    st_frame=0,
+    en_frame=None,
+    step=1,
 ):
     save_path.mkdir(parents=True, exist_ok=True)
 
     vc1 = cv2.VideoCapture(str(vid_path1))
     vc2 = cv2.VideoCapture(str(vid_path2))
-    total_no_frames = int(
-        min(vc1.get(cv2.CAP_PROP_FRAME_COUNT), vc2.get(cv2.CAP_PROP_FRAME_COUNT))
-    )
-    vc2.set(cv2.CAP_PROP_POS_FRAMES, 0)
-    vc1.set(cv2.CAP_PROP_POS_FRAMES, 0)
-    for frame in tqdm(range(0, 50)):
+    if not en_frame:
+        en_frame = (
+            int(
+                min(
+                    vc1.get(cv2.CAP_PROP_FRAME_COUNT), vc2.get(cv2.CAP_PROP_FRAME_COUNT)
+                )
+            )
+            - 1
+        )  # total number of frames -1
+    vc2.set(cv2.CAP_PROP_POS_FRAMES, st_frame)
+    vc1.set(cv2.CAP_PROP_POS_FRAMES, st_frame)
+    for frame in tqdm(range(st_frame, en_frame)):
         _, image1 = vc1.read()
         _, image2 = vc2.read()
+        if frame % step != 0:
+            continue
         dets1 = tracks1[tracks1[:, 1] == frame]
         dets2 = tracks2[tracks2[:, 1] == frame]
+        if (dets1.size == 0) or (dets2.size == 0):
+            continue
         save_stereo_image_with_matches(
             image1, image2, dets1, dets2, frame, frame_matches
         )
 
 
-from lightglue import viz2d
-
 save_path = Path("/home/fatemeh/Downloads/fish/mot_data/tmp")
 vid_path1 = Path("/home/fatemeh/Downloads/fish/mot_data/vids/129_1.mp4")
 vid_path2 = Path("/home/fatemeh/Downloads/fish/mot_data/vids/129_2.mp4")
 save_stereo_images_with_matches(
-    save_path, vid_path1, vid_path2, otracks1, otracks2, frame_matches1
+    save_path, vid_path1, vid_path2, otracks1, otracks2, frame_matches1, 0, None, 8
 )
 
 print("======")
