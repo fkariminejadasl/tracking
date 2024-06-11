@@ -390,17 +390,8 @@ def merge_by_mached_tids(input_list):
     return merged_list
 
 
-frame_matches = [
-    [st, st + step, *match]
-    for st, matches in frame_matched_tids.items()
-    for match in matches
-]
-frame_matches1 = merge_by_mached_tids(frame_matches)
-# frame_matches2 = merge_by_one_tid(frame_matches1)
-print("finished")
-
-
 # Visualization
+# =============
 def put_bbox_in_image(image, x_tl, y_tl, x_br, y_br, color, text, black=True):
     cv2.rectangle(image, (x_tl, y_tl), (x_br, y_br), color=color, thickness=1)
     if black:
@@ -443,8 +434,8 @@ def draw_matches(image1, image2, dets1, dets2, color):
     return combined_image
 
 
-def save_stereo_image_with_matches(
-    save_path, image1, image2, dets1, dets2, frame, frame_matches
+def create_stereo_image_with_matches(
+    image1, image2, dets1, dets2, frame, frame_matches
 ):
     """
     frame_matches: list[list], each item [start_frame, end_frame, tid1, tid2]
@@ -470,10 +461,65 @@ def save_stereo_image_with_matches(
     # plot and save results
     color = (0, 0, 255)
     combined_image = draw_matches(image1, image2, mdets1, mdets2, color)
-    cv2.imwrite(f"{save_path}/frame_{frame:06d}.jpg", combined_image)
+    return combined_image
 
 
-def save_stereo_images_with_matches(
+def save_stereo_images_with_matches_as_video(
+    save_video_file,
+    vid_path1,
+    vid_path2,
+    tracks1,
+    tracks2,
+    frame_matches,
+    st_frame=0,
+    en_frame=None,
+    step=1,
+    fps=30,
+):
+    save_video_file = Path(save_video_file)
+    save_video_file.parent.mkdir(parents=True, exist_ok=True)
+
+    vc1 = cv2.VideoCapture(str(vid_path1))
+    vc2 = cv2.VideoCapture(str(vid_path2))
+    if not en_frame:
+        en_frame = (
+            int(
+                min(
+                    vc1.get(cv2.CAP_PROP_FRAME_COUNT), vc2.get(cv2.CAP_PROP_FRAME_COUNT)
+                )
+            )
+            - 1
+        )  # total number of frames -1
+
+    width = int(vc1.get(cv2.CAP_PROP_FRAME_WIDTH) + vc2.get(cv2.CAP_PROP_FRAME_WIDTH))
+    assert vc1.get(cv2.CAP_PROP_FRAME_HEIGHT) == vc2.get(cv2.CAP_PROP_FRAME_HEIGHT)
+    height = int(vc1.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # (*"XVID") with .avi
+    out = cv2.VideoWriter(str(save_video_file), fourcc, fps, (width, height))
+
+    vc2.set(cv2.CAP_PROP_POS_FRAMES, st_frame)
+    vc1.set(cv2.CAP_PROP_POS_FRAMES, st_frame)
+    for frame in tqdm(range(st_frame, en_frame)):
+        ret1, image1 = vc1.read()
+        ret2, image2 = vc2.read()
+        if not ret1 or not ret2:
+            break
+        if frame % step != 0:
+            continue
+        dets1 = tracks1[tracks1[:, 1] == frame]
+        dets2 = tracks2[tracks2[:, 1] == frame]
+        if (dets1.size == 0) or (dets2.size == 0):
+            continue
+        combined_image = create_stereo_image_with_matches(
+            image1, image2, dets1, dets2, frame, frame_matches
+        )
+        out.write(combined_image)
+
+    out.release()
+
+
+def save_stereo_images_with_matches_as_images(
     save_path,
     vid_path1,
     vid_path2,
@@ -508,9 +554,10 @@ def save_stereo_images_with_matches(
         dets2 = tracks2[tracks2[:, 1] == frame]
         if (dets1.size == 0) or (dets2.size == 0):
             continue
-        save_stereo_image_with_matches(
-            save_path, image1, image2, dets1, dets2, frame, frame_matches
+        combined_image = create_stereo_image_with_matches(
+            image1, image2, dets1, dets2, frame, frame_matches
         )
+        cv2.imwrite(f"{save_path}/frame_{frame:06d}.jpg", combined_image)
 
 
 def save_images_as_video(vid_file, image_path, fps, width, height):
@@ -529,11 +576,30 @@ def save_images_as_video(vid_file, image_path, fps, width, height):
     out.release()
 
 
-# save_path = Path("/home/fatemeh/Downloads/fish/mot_data/tmp")
-# vid_path1 = Path("/home/fatemeh/Downloads/fish/mot_data/vids/129_1.mp4")
-# vid_path2 = Path("/home/fatemeh/Downloads/fish/mot_data/vids/129_2.mp4")
-# save_stereo_images_with_matches(
+frame_matches = [
+    [st, st + step, *match]
+    for st, matches in frame_matched_tids.items()
+    for match in matches
+]
+frame_matches1 = merge_by_mached_tids(frame_matches)
+# frame_matches2 = merge_by_one_tid(frame_matches1)
+
+save_path = Path("/home/fatemeh/Downloads/fish/mot_data/tmp")
+vid_path1 = Path("/home/fatemeh/Downloads/fish/mot_data/vids/129_1.mp4")
+vid_path2 = Path("/home/fatemeh/Downloads/fish/mot_data/vids/129_2.mp4")
+# save_stereo_images_with_matches_as_images(
 #     save_path, vid_path1, vid_path2, otracks1, otracks2, frame_matches1, 0, None, 8
 # )
 # save_images_as_video(f"{save_path}/stereo.mp4", save_path, 30, 3840, 1080)
+save_stereo_images_with_matches_as_video(
+    f"{save_path.parent}/stereo.mp4",
+    vid_path1,
+    vid_path2,
+    otracks1,
+    otracks2,
+    frame_matches1,
+    0,
+    None,
+    8,
+)
 print("======")
