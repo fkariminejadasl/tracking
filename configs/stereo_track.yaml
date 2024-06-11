@@ -1,0 +1,23 @@
+# None: means leave it empty
+save_video_file: "/content/stereo.mp4"  # Value: Path
+mat_file: "/content/stereo_129.mat"  # Value: Path. Stereo calibration file.
+vid_path1: "/content/129_1.mp4"  # Value: Path
+vid_path2: "/content/129_2.mp4"  # Value: Path
+track_file1: "/content/129_1_ms_exp1.txt"  # Value: Path. Track files in the mot format.
+track_file2: "/content/129_2_ms_exp1.txt"  # Value: Path. Track files in the mot format.
+gt_track_file1: # Value: Path | None
+gt_track_file2: # Value: Path | None
+
+# save_video_file: "/home/fatemeh/Downloads/fish/mot_data/stereo.mp4"  # Value: Path
+# mat_file: "/home/fatemeh/Downloads/fish/mot_data//stereo_129.mat"  # Value: Path
+# vid_path1: "/home/fatemeh/Downloads/fish/mot_data/vids/129_1.mp4"  # Value: Path
+# vid_path2: "/home/fatemeh/Downloads/fish/mot_data/vids/129_2.mp4"  # Value: Path
+# track_file1: "/home/fatemeh/Downloads/fish/mot_data/ms_exp1/mots/129_1_ms_exp1.txt"  # Value: Path
+# track_file2: "/home/fatemeh/Downloads/fish/mot_data/ms_exp1/mots/129_2_ms_exp1.txt"  # Value: Path
+# gt_track_file1: "/home/fatemeh/Downloads/fish/mot_data/mots/129_1.txt"  # Value: Path | None
+# gt_track_file2: "/home/fatemeh/Downloads/fish/mot_data/mots/129_2.txt"  # Value: Path | None
+
+start_frame: 0 # Value: int . The counting of frames is zero-based.
+end_frame: # Value: int|None . The counting of frames is zero-based. 
+step: 8 # Value: int. Save with this step size.
+fps: 30 # Value: int. frame per second

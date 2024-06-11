@@ -1,9 +1,12 @@
+import argparse
 from collections import defaultdict
 from copy import deepcopy
 from pathlib import Path
+from types import SimpleNamespace
 
 import cv2
 import numpy as np
+import yaml
 from matplotlib import pylab as plt
 from scipy.io import loadmat
 from scipy.optimize import linear_sum_assignment
@@ -373,21 +376,59 @@ def save_images_as_video(vid_file, image_path, fps, width, height):
     out.release()
 
 
-# =========
+# Parse arguments
+# ===============
+def process_config(config_path):
+    with open(config_path, "r") as config_file:
+        try:
+            return yaml.safe_load(config_file)
+        except yaml.YAMLError as error:
+            print(error)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Process a config file.")
+    parser.add_argument("config_file", type=Path, help="Path to the config file")
+
+    args = parser.parse_args()
+    config_path = args.config_file
+    inputs = process_config(config_path)
+    for key, value in inputs.items():
+        print(f"{key}: {value}")
+    inputs = SimpleNamespace(**inputs)
+    return inputs
+
+
 # Inputs
 # =======
-save_path = Path("/home/fatemeh/Downloads/fish/mot_data/tmp")
-vid_path1 = Path("/home/fatemeh/Downloads/fish/mot_data/vids/129_1.mp4")
-vid_path2 = Path("/home/fatemeh/Downloads/fish/mot_data/vids/129_2.mp4")
-track_file1 = Path(
-    "/home/fatemeh/Downloads/fish/mot_data/ms_exp1/mots/129_1_ms_exp1.txt"
-)
-track_file2 = Path(
-    "/home/fatemeh/Downloads/fish/mot_data/ms_exp1/mots/129_2_ms_exp1.txt"
-)
-gt_track_file1 = Path("/home/fatemeh/Downloads/fish/mot_data/mots/129_1.txt")
-gt_track_file2 = Path("/home/fatemeh/Downloads/fish/mot_data/mots/129_2.txt")
-mat_file = Path("/home/fatemeh/Downloads/fish/mot_data//stereo_129.mat")
+inputs = parse_args()
+save_video_file = Path(inputs.save_video_file)
+mat_file = Path(inputs.mat_file)
+vid_path1 = Path(inputs.vid_path1)
+vid_path2 = Path(inputs.vid_path2)
+track_file1 = Path(inputs.track_file1)
+track_file2 = Path(inputs.track_file2)
+if not inputs.gt_track_file1:
+    gt_track_file1 = track_file1
+    gt_track_file2 = track_file2
+else:
+    gt_track_file1 = Path(inputs.gt_track_file1)
+    gt_track_file2 = Path(inputs.gt_track_file2)
+
+
+# save_video_file=Path("/home/fatemeh/Downloads/fish/mot_data/stereo.mp4")
+# mat_file = Path("/home/fatemeh/Downloads/fish/mot_data//stereo_129.mat")
+# vid_path1 = Path("/home/fatemeh/Downloads/fish/mot_data/vids/129_1.mp4")
+# vid_path2 = Path("/home/fatemeh/Downloads/fish/mot_data/vids/129_2.mp4")
+# track_file1 = Path(
+#     "/home/fatemeh/Downloads/fish/mot_data/ms_exp1/mots/129_1_ms_exp1.txt"
+# )
+# track_file2 = Path(
+#     "/home/fatemeh/Downloads/fish/mot_data/ms_exp1/mots/129_2_ms_exp1.txt"
+# )
+# gt_track_file1 = Path("/home/fatemeh/Downloads/fish/mot_data/mots/129_1.txt")
+# gt_track_file2 = Path("/home/fatemeh/Downloads/fish/mot_data/mots/129_2.txt")
+
 
 # parameters
 # ==========
@@ -559,14 +600,13 @@ for st in range(start, end + 1, step):
     #     plt.figure();plt.plot(track1[:, 7], track1[:, 8], "o--", label=str(tid1));plt.plot(track2[:, 7], track2[:, 8], "o--", label=str(tid2));plt.legend()
 
 # for debuging
-g_frame_matches = []
-for tid1, tid2 in gt_matches.items():
-    track1, track2 = pp.get_matching_frames_between_tracks(
-        gtracks1, gtracks2, tid1, tid2
-    )
-    g_frame_matches.append([min(track1[:, 1]), max(track1[:, 1]), tid1, tid2])
+# g_frame_matches = []
+# for tid1, tid2 in gt_matches.items():
+#     track1, track2 = pp.get_matching_frames_between_tracks(
+#         gtracks1, gtracks2, tid1, tid2
+#     )
+#     g_frame_matches.append([min(track1[:, 1]), max(track1[:, 1]), tid1, tid2])
 
-print("here")
 """
 {0: {0, 16, 17}, 1: {6, 14}, 2: {1}, 3: {7}, 4: {8}, 5: {4, 10, 19}, 6: {3, 15}, 7: {5, 18}, 8: {2}, 9: {9}, 10: {11}, 11: {12}, 12: {13}, 13: {20}, 14: {21}}
 {0: {4}, 1: {0}, 2: {11, 5, 15}, 3: {3}, 4: {8, 9}, 5: {1, 16, 8, 9}, 6: {2}, 7: {6}, 8: {7}, 9: {10}, 10: {12}, 11: {13}, 12: {14}, 13: {17}, 14: {18}}
@@ -606,18 +646,19 @@ frame_matches1 = merge_by_mached_tids(frame_matches)
 
 
 # save_stereo_images_with_matches_as_images(
-#     save_path, vid_path1, vid_path2, otracks1, otracks2, frame_matches1, 0, None, 8
+#     save_video_file/"tmp", vid_path1, vid_path2, otracks1, otracks2, frame_matches1, 0, None, 8
 # )
-# save_images_as_video(f"{save_path}/stereo.mp4", save_path, 30, 3840, 1080)
+# save_images_as_video(save_video_file, save_video_file/"tmp", 30, 3840, 1080)
 save_stereo_images_with_matches_as_video(
-    f"{save_path.parent}/stereo.mp4",
+    save_video_file,
     vid_path1,
     vid_path2,
     otracks1,
     otracks2,
     frame_matches1,
-    0,
-    None,
-    8,
+    inputs.start_frame,
+    inputs.end_frame,
+    inputs.step,
+    inputs.fps,
 )
 print("======")
