@@ -443,8 +443,13 @@ def draw_matches(image1, image2, dets1, dets2, color):
     return combined_image
 
 
-def save_stereo_image_with_matches(image1, image2, dets1, dets2, frame, frame_matches):
-    # find matches. frame_matches: list[list], each item [start_frame, end_frame, tid1, tid2]
+def save_stereo_image_with_matches(
+    save_path, image1, image2, dets1, dets2, frame, frame_matches
+):
+    """
+    frame_matches: list[list], each item [start_frame, end_frame, tid1, tid2]
+    """
+    # find matches.
     tids1 = dets1[:, 0]
     tids2 = dets2[:, 0]
     matches = {
@@ -504,15 +509,31 @@ def save_stereo_images_with_matches(
         if (dets1.size == 0) or (dets2.size == 0):
             continue
         save_stereo_image_with_matches(
-            image1, image2, dets1, dets2, frame, frame_matches
+            save_path, image1, image2, dets1, dets2, frame, frame_matches
         )
 
 
-save_path = Path("/home/fatemeh/Downloads/fish/mot_data/tmp")
-vid_path1 = Path("/home/fatemeh/Downloads/fish/mot_data/vids/129_1.mp4")
-vid_path2 = Path("/home/fatemeh/Downloads/fish/mot_data/vids/129_2.mp4")
-save_stereo_images_with_matches(
-    save_path, vid_path1, vid_path2, otracks1, otracks2, frame_matches1, 0, None, 8
-)
+def save_images_as_video(vid_file, image_path, fps, width, height):
+    """
+    The same code as ffmpeg but get 3 time more storage.
+    # ffmpeg -framerate 30 -pattern_type glob -i "frame_*.jpg" -c:v libx264 -pix_fmt yuv420p output.mp4
+    """
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # (*"XVID") with .avi
+    out = cv2.VideoWriter(str(vid_file), fourcc, fps, (width, height))
+    image_files = sorted(
+        image_path.glob("frame_*jpg"), key=lambda x: int(x.stem.split("_")[1])
+    )
+    for image_file in tqdm(image_files):
+        image = cv2.imread(str(image_file))
+        out.write(image)
+    out.release()
 
+
+# save_path = Path("/home/fatemeh/Downloads/fish/mot_data/tmp")
+# vid_path1 = Path("/home/fatemeh/Downloads/fish/mot_data/vids/129_1.mp4")
+# vid_path2 = Path("/home/fatemeh/Downloads/fish/mot_data/vids/129_2.mp4")
+# save_stereo_images_with_matches(
+#     save_path, vid_path1, vid_path2, otracks1, otracks2, frame_matches1, 0, None, 8
+# )
+# save_images_as_video(f"{save_path}/stereo.mp4", save_path, 30, 3840, 1080)
 print("======")
