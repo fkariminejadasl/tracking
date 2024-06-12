@@ -138,18 +138,77 @@ def postprocess_tracks(tracks):
 
 # Evaluation
 # ==========
+def match_gt_stereo_tracks(tracks1, tracks2):
+    """match two ground truth tracks
+    rectified coordinates should be given.
+    return list[tuple(gid1, gid2)]
+    >>> gtracks1 = rectify_tracks(gtracks1, cameraMatrix1, distCoeffs1, R1, r_P1)
+    >>> gtracks2 = rectify_tracks(gtracks2, cameraMatrix2, distCoeffs2, R2, r_P2)
+    >>> g1g2_tids = match_gt_stereo_tracks(gtracks1, gtracks2)
+    """
+    # compute distances between tracks
+    tids1 = np.unique(tracks1[:, 0])
+    tids2 = np.unique(tracks2[:, 0])
+    all_dists = dict()
+    for tid1 in tids1:
+        for tid2 in tids2:
+            track1, track2 = pp.get_matching_frames_between_tracks(
+                tracks1, tracks2, tid1, tid2
+            )
+            if track1.size == 0:
+                continue
+            # c1 = normalize_curve(track1[:, 7:9])
+            # c2 = normalize_curve(track2[:, 7:9])
+            # dist = curve_distance(c1, c2)
+            n_points = track1.shape[0]
+            dist = np.mean(abs(track1[:,8]-track2[:,8]))/n_points
+            all_dists[(tid1, tid2)] = round(dist, 3)
+
+    # n-n matching
+    i2tids1 = {k: v for k, v in enumerate(tids1)}
+    i2tids2 = {k: v for k, v in enumerate(tids2)}
+    dist_mat = np.zeros((len(tids1), len(tids2)))
+    for i, tid1 in enumerate(tids1):
+        for j, tid2 in enumerate(tids2):
+            dist_mat[i, j] = all_dists.get((tid1, tid2), max_dist)
+    rows, cols = linear_sum_assignment(dist_mat)
+    matched_tids = [(i2tids1[r], i2tids2[c]) for r, c in zip(rows, cols)]
+    """
+    # 1-n matching
+    matched_keys = []
+    for tid1 in tids1:
+        row_dists = {k: v for k, v in all_dists.items() if k[0] == tid1}
+        if row_dists:
+            match_key = min(row_dists, key=row_dists.get)
+            matched_keys.append(match_key)
+
+    print(matched_tids)
+    print(matched_keys)
+    print(sorted(gt_matches.items(), key=lambda i: i[0]))
+    """
+    return matched_tids
+
 # match with ground truth (for evaluation)
-def match_tracks_with_gt(tracks, gtracks):
-    match_gt_to_tids = dict()
+def match_tracks_with_gt(tracks, gtracks, step=8):
+    """
+    gid2tids: dict[list]. ground truth id to matched tids
+    frames_tids: list[list]: each element: start frame, end frame, gt id, track id
+    """
+    gid2tids = defaultdict(list)
+    frames_tids = []
     for gtid in np.unique(gtracks[:, 0]):
         gtrack = gtracks[(gtracks[:, 0] == gtid)]
-        tids = []
-        for det in gtrack[::16]:
+        tid2frame = defaultdict(list) # gtid to frame number
+        for det in gtrack[::step]:
             tid = pp.tid_from_xyf(tracks, det[7], det[8], det[1], thrs=5)
             if tid is not None:
-                tids.append(tid)
-        match_gt_to_tids[gtid] = set(tids)
-    return match_gt_to_tids
+                tid2frame[tid].append(det[1])
+        # take min and max 
+        for tid, frames in tid2frame.items():
+            if min(frames) != max(frames):
+                gid2tids[gtid].append(tid)
+                frames_tids.append([min(frames), max(frames), gtid, tid])
+    return gid2tids, frames_tids
 
 
 # Debugging
@@ -476,74 +535,57 @@ R1, R2, r_P1, r_P2, Q, validPixROI1, validPixROI2 = cv2.stereoRectify(
 # =====
 tracks1 = postprocess_tracks(tracks1)
 tracks2 = postprocess_tracks(tracks2)
+# from tracking import visualize
+# visualize.save_images_with_tracks(
+#                 Path("/home/fatemeh/Downloads/fish/mot_data/images/129_1/pp"),
+#                 vid_path1,
+#                 tracks1,
+#                 0,
+#                 None,
+#                 1,
+#             )
 
-# evaluation
-# ==========
-gt2tids1 = match_tracks_with_gt(tracks1, gtracks1)
-gt2tids2 = match_tracks_with_gt(tracks2, gtracks2)
-
-# [plot_matched_tracks_with_gt(tracks2, gtracks2, k, v) for k, v in gt2tids2.items()]
 
 # rectify
 # =======
-# tracks2 = rectify_tracks(tracks1, cameraMatrix1, distCoeffs1, R1, r_P1)
-# tracks1 = rectify_tracks(gtracks1, cameraMatrix1, distCoeffs1, R1, r_P1)
 otracks1 = tracks1.copy()
 otracks2 = tracks2.copy()
 tracks1 = rectify_tracks(tracks1, cameraMatrix1, distCoeffs1, R1, r_P1)
 tracks2 = rectify_tracks(tracks2, cameraMatrix2, distCoeffs2, R2, r_P2)
 
-# for debuging
+# debuging
+# ============
 # for tid1, tid2 in gt_matches.items():
 #     track1, track2 = pp.get_matching_frames_between_tracks(tracks1, tracks2, tid1, tid2)
 #     plt.figure();plt.plot(track1[:,1], track1[:,8]-track2[:,8], '*-')
 #     plt.title(f'{tid1}:{tid2}')
 
-"""
-# compute distances between tracks
-tids1 = np.unique(tracks1[:, 0])
-tids2 = np.unique(tracks2[:, 0])
-all_dists = dict()
-for tid1 in tids1:
-    for tid2 in tids2:
-        track1, track2 = pp.get_matching_frames_between_tracks(
-            tracks1, tracks2, tid1, tid2
-        )
-        if track1.size == 0:
-            continue
-        c1 = normalize_curve(track1[:, 7:9])
-        c2 = normalize_curve(track2[:, 7:9])
-        dist = curve_distance(c1, c2)
-        # n_points = track1.shape[0]
-        # dist = np.mean(abs(track1[:,8]-track2[:,8]))/n_points
-        all_dists[(tid1, tid2)] = round(dist, 3)
+# evaluation
+# ==========
+# # g_frame_matches(g1->g2), frames_gtids1(g1->t1), frames_gtids2(g2->t2) -> (t1->t2) 
 
-# n-n matching
-i2tids1 = {k: v for k, v in enumerate(tids1)}
-i2tids2 = {k: v for k, v in enumerate(tids2)}
-dist_mat = np.zeros((len(tids1), len(tids2)))
-for i, tid1 in enumerate(tids1):
-    for j, tid2 in enumerate(tids2):
-        dist_mat[i, j] = all_dists.get((tid1, tid2), max_dist)
-rows, cols = linear_sum_assignment(dist_mat)
-matched_tids = [(i2tids1[r], i2tids2[c]) for r, c in zip(rows, cols)]
+# # g1->t1, g2->t2
+# gid2tids1, frames_gtids1 = match_tracks_with_gt(tracks1, gtracks1)
+# gid2tids2, frames_gtids2 = match_tracks_with_gt(tracks2, gtracks2)
+# # [plot_matched_tracks_with_gt(tracks2, gtracks2, k, v) for k, v in gid2tids1.items()]
 
-# 1-n matching
-matched_keys = []
-for tid1 in tids1:
-    row_dists = {k: v for k, v in all_dists.items() if k[0] == tid1}
-    if row_dists:
-        match_key = min(row_dists, key=row_dists.get)
-        matched_keys.append(match_key)
-
-print(matched_tids)
-print(matched_keys)
-print(sorted(gt_matches.items(), key=lambda i: i[0]))
-"""
+# # g1->g2
+# rgtracks1 = rectify_tracks(gtracks1, cameraMatrix1, distCoeffs1, R1, r_P1)
+# rgtracks2 = rectify_tracks(gtracks2, cameraMatrix2, distCoeffs2, R2, r_P2)
+# g1g2_tids = match_gt_stereo_tracks(rgtracks1, rgtracks2)
+# g_frame_matches = []
+# for tid1, tid2 in g1g2_tids: #gt_matches.items():
+#     track1, track2 = pp.get_matching_frames_between_tracks(
+#         gtracks1, gtracks2, tid1, tid2
+#     )
+#     g_frame_matches.append([min(track1[:, 1]), max(track1[:, 1]), tid1, tid2])
+# print(sorted(gt_matches.items(), key=lambda x:x[0]))
+# print(g1g2_tids)
+# print(g_frame_matches)
 
 # tracklet matching
 # =================
-start, end, step = 0, 3117, 200  # 200
+start, end, step = 0, 3117, 240  # 200
 
 # for debuging
 # tid1 = 3
@@ -599,25 +641,24 @@ for st in range(start, end + 1, step):
     #     track1, track2 = pp.get_matching_frames_between_tracks(tracks1, tracks2, tid1, tid2)
     #     plt.figure();plt.plot(track1[:, 7], track1[:, 8], "o--", label=str(tid1));plt.plot(track2[:, 7], track2[:, 8], "o--", label=str(tid2));plt.legend()
 
-# for debuging
-# g_frame_matches = []
-# for tid1, tid2 in gt_matches.items():
-#     track1, track2 = pp.get_matching_frames_between_tracks(
-#         gtracks1, gtracks2, tid1, tid2
-#     )
-#     g_frame_matches.append([min(track1[:, 1]), max(track1[:, 1]), tid1, tid2])
 
 """
-{0: {0, 16, 17}, 1: {6, 14}, 2: {1}, 3: {7}, 4: {8}, 5: {4, 10, 19}, 6: {3, 15}, 7: {5, 18}, 8: {2}, 9: {9}, 10: {11}, 11: {12}, 12: {13}, 13: {20}, 14: {21}}
-{0: {4}, 1: {0}, 2: {11, 5, 15}, 3: {3}, 4: {8, 9}, 5: {1, 16, 8, 9}, 6: {2}, 7: {6}, 8: {7}, 9: {10}, 10: {12}, 11: {13}, 12: {14}, 13: {17}, 14: {18}}
-gt_matches = {3:0, 5:1, 4:2, 2:3, 8:4, 0:5, 1:6, 6:7, 7:8, 9:9, 10:10, 11:11, 12:12, 13:13, 14:14}
+g_frame_matches(g1->g2), frames_gtids1(g1->t1), frames_gtids2(g2->t2) -> (t1->t2) 
+gid2tids1, frames_gtids1=
+{0: {0, 16, 17}, 1: {6, 14}, 2: {1}, 3: {7}, 4: {8}, 5: {10, 19, 4, 14?}, 6: {3, 15}, 7: {18, 5}, 8: {2}, 9: {9}, 10: {11}, 11: {12}, 12: {13}, 13: {20}, 14: {21}}
+frames_gtids1
+[[0, 2488, 0, 0], [2504, 2512, 0, 16], [2520, 3112, 0, 17], [0, 2408, 1, 6], [2416, 3112, 1, 14], [0, 312, 2, 1], [0, 3112, 3, 7], [56, 3112, 4, 8], [0, 1448, 5, 4], [1456, 2808, 5, 10], [2832, 2848, 5, 14], [2864, 3112, 5, 19], [0, 2376, 6, 3], [2424, 3112, 6, 15], [0, 2552, 7, 5], [2576, 3112, 7, 18], [0, 3112, 8, 2], [1075, 2131, 9, 9], [1652, 3116, 10, 11], [2016, 3112, 11, 12], [2269, 3109, 12, 13], [2874, 3114, 13, 20], [2916, 3116, 14, 21]]
+gid2tids2, frames_gtids2=
+{0: {4}, 1: {0}, 2: {2?, 11, 5, 15}, 3: {3}, 4: {8, 9}, 5: {1, 6?, 8, 9, 16}, 6: {2}, 7: {6}, 8: {7}, 9: {10}, 10: {12}, 11: {13}, 12: {14}, 13: {17}, 14: {18}}
+[[0, 3112, 0, 4], [0, 3112, 1, 0], [0, 1112, 2, 5], [1144, 1744, 2, 2], [1176, 2416, 2, 11], [2424, 3112, 2, 15], [0, 328, 3, 3], [0, 2440, 4, 8], [2448, 3112, 4, 9], [0, 800, 5, 1], [816, 824, 5, 6], [848, 2432, 5, 9], [2448, 2504, 5, 8], [2512, 3112, 5, 16], [0, 3112, 6, 2], [0, 3112, 7, 6], [0, 3112, 8, 7], [1084, 2140, 9, 10], [1609, 3113, 10, 12], [1916, 3116, 11, 13], [2274, 3114, 12, 14], [2567, 3111, 13, 17], [2917, 3117, 14, 18]]
+gt_matches = {0: 5, 1: 6, 2: 3, 3: 0, 4: 2, 5: 1, 6: 7, 7: 8, 8: 4, 9: 9, 10: 10, 11: 11, 12: 12, 13: 13, 14: 14}
 frame_matches=
 [[0, 800, 0, 1], [0, 400, 1, 3], [0, 2400, 2, 8], [0, 2400, 3, 6], [0, 1400, 4, 0], [0, 2400, 5, 7], [0, 2400, 6, 2], [0, 3200, 7, 4], [0, 1200, 8, 5], 
 [800, 2600, 0, 9], [1000, 2200, 9, 10], [1200, 2400, 8, 11], [1400, 2800, 10, 0], [1600, 3200, 11, 12], [1800, 3200, 12, 13], [2200, 3200, 13, 14], 
 [2400, 2600, 2, 17]x, [2400, 2600, 6, 11]x, [2400, 3200, 8, 15], [2400, 3200, 14, 2], [2400, 3200, 15, 6], [2400, 2600, 16, 8], [2400, 3200, 17, 16], 
 [2400, 3200, 18, 7], [2600, 3200, 2, 9], [2800, 3200, 19, 0], [2800, 3200, 20, 17], [2800, 3200, 21, 18]]
 g_frame_matches=
-[[0, 3116, 3, 0], [0, 3116, 5, 1], [0, 3116, 4, 2], [0, 315, 2, 3], [0, 3116, 8, 4], [0, 3116, 0, 5], [0, 3116, 1, 6], [0, 3116, 6, 7], [0, 3116, 7, 8], 
+[[0, 3116, 0, 5], [0, 3116, 1, 6], [0, 315, 2, 3], [0, 3116, 3, 0], [0, 3116, 4, 2], [0, 3116, 5, 1], [0, 3116, 6, 7], [0, 3116, 7, 8], [0, 3116, 8, 4], 
 [1084, 2141, 9, 9], [1644, 3116, 10, 10], [2016, 3116, 11, 11], [2274, 3116, 12, 12], [2866, 3116, 13, 13], [2917, 3116, 14, 14]]
 [(0, 1), (1, 3), (2, 8), (3, 6), (4, 0), (5, 7), (6, 2), (7, 4), (8, 5)] 0, 200
 [(0, 1), (2, 8), (3, 6), (4, 0), (5, 7), (6, 2), (7, 4), (8, 5)] 400, 600

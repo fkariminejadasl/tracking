@@ -200,7 +200,7 @@ def tid_from_xyf(tracks, xcent, ycent, frame, thrs=1):
     if len(tracks[mask]) == 0:
         return
     track_id = tracks[mask][0, 0]
-    print(tracks[mask])
+    # print(tracks[mask])
     return track_id
 
 
