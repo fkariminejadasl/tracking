@@ -1,14 +1,16 @@
 # None: means leave it empty
-det_checkpoint: /home/fatemeh/Downloads/fish/best_model/det_best_bgr29.pt # Value: Path
-save_path: /home/fatemeh/Downloads/fish/mot_data # Value: Path
-video_path: /home/fatemeh/Downloads/fish/mot_data/vids/129_1.mp4 # Value: Path. Single file or a path to multiple files. The video file extension .mp4.
-dets_path: /home/fatemeh/Downloads/fish/mot_data/yolov8 # Value: Path | None . Path to the location of detection zip file e.g /content/dets/{vid_name_dets.zip}. For single or multiple files, only the main path should be give not files. 
-save_name: exp3 # Value: str . The name of the file used to save tracks and/or images with tracks
-# det_checkpoint: /content/det_best_bgr29.pt # Value: Path
-# save_path: /content # Value: Path
-# video_path: /content/2.mp4  # Value: Path. Single file or a path to multiple files. The video file extension .mp4.
-# dets_path: # Value: Path | None . Path to the location of detection zip file e.g /content/dets/{vid_name_dets.zip}. For single or multiple files, only the main path should be give not files. 
-# save_name: exp1 # Value: str . The name of the file used to save tracks and/or images with tracks
+det_checkpoint: /content/det_best_bgr29.pt # Value: Path
+save_path: /content # Value: Path
+video_path: /content/2.mp4  # Value: Path. Single file or a path to multiple files. The video file extension .mp4.
+dets_path: # Value: Path | None . Path to the location of detection zip file e.g /content/dets/{vid_name_dets.zip}. For single or multiple files, only the main path should be give not files. 
+save_name: exp1 # Value: str . The name of the file used to save tracks and/or images with tracks
+
+# det_checkpoint: /home/fatemeh/Downloads/fish/best_model/det_best_bgr29.pt # Value: Path
+# save_path: /home/fatemeh/Downloads/fish/mot_data # Value: Path
+# video_path: /home/fatemeh/Downloads/fish/mot_data/vids/129_1.mp4 # Value: Path. Single file or a path to multiple files. The video file extension .mp4.
+# dets_path: /home/fatemeh/Downloads/fish/mot_data/yolov8 # Value: Path | None . Path to the location of detection zip file e.g /content/dets/{vid_name_dets.zip}. For single or multiple files, only the main path should be give not files. 
+# save_name: exp3 # Value: str . The name of the file used to save tracks and/or images with tracks
+
 start_frame: 0 # Value: int . The counting of frames is zero-based.
 end_frame: # Value: int|None . The counting of frames is zero-based. 
 step: 8 # only track with this step size
