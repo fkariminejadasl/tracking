@@ -161,7 +161,7 @@ def match_gt_stereo_tracks(tracks1, tracks2):
             # c2 = normalize_curve(track2[:, 7:9])
             # dist = curve_distance(c1, c2)
             n_points = track1.shape[0]
-            dist = np.mean(abs(track1[:,8]-track2[:,8]))/n_points
+            dist = np.mean(abs(track1[:, 8] - track2[:, 8])) / n_points
             all_dists[(tid1, tid2)] = round(dist, 3)
 
     # n-n matching
@@ -188,6 +188,7 @@ def match_gt_stereo_tracks(tracks1, tracks2):
     """
     return matched_tids
 
+
 # match with ground truth (for evaluation)
 def match_tracks_with_gt(tracks, gtracks, step=8):
     """
@@ -198,12 +199,12 @@ def match_tracks_with_gt(tracks, gtracks, step=8):
     frames_tids = []
     for gtid in np.unique(gtracks[:, 0]):
         gtrack = gtracks[(gtracks[:, 0] == gtid)]
-        tid2frame = defaultdict(list) # gtid to frame number
+        tid2frame = defaultdict(list)  # gtid to frame number
         for det in gtrack[::step]:
             tid = pp.tid_from_xyf(tracks, det[7], det[8], det[1], thrs=5)
             if tid is not None:
                 tid2frame[tid].append(det[1])
-        # take min and max 
+        # take min and max
         for tid, frames in tid2frame.items():
             if min(frames) != max(frames):
                 gid2tids[gtid].append(tid)
@@ -562,7 +563,7 @@ tracks2 = rectify_tracks(tracks2, cameraMatrix2, distCoeffs2, R2, r_P2)
 
 # evaluation
 # ==========
-# # g_frame_matches(g1->g2), frames_gtids1(g1->t1), frames_gtids2(g2->t2) -> (t1->t2) 
+# # g_frame_matches(g1->g2), frames_gtids1(g1->t1), frames_gtids2(g2->t2) -> (t1->t2)
 
 # # g1->t1, g2->t2
 # gid2tids1, frames_gtids1 = match_tracks_with_gt(tracks1, gtracks1)
@@ -682,6 +683,44 @@ frame_matches = [
     for st, matches in frame_matched_tids.items()
     for match in matches
 ]
+
+"""
+tracks1 = otracks1.copy()
+tracks2 = otracks2.copy()
+tracks1 = rectify_tracks(tracks1, cameraMatrix1, distCoeffs1, R1, r_P1)
+tracks2 = rectify_tracks(tracks2, cameraMatrix2, distCoeffs2, R2, r_P2)
+
+
+def get_matched_stereo_tracks(tracks1, tracks2, sframe, eframe, tid1, tid2):
+    track1 = tracks1[(tracks1[:, 0] == tid1) & (tracks1[:, 1] >= sframe) & (tracks1[:, 1] < eframe)]
+    track2 = tracks2[(tracks2[:, 0] == tid2) & (tracks2[:, 1] >= sframe) & (tracks2[:, 1] < eframe)]
+    track1, track2 = pp.get_matching_frames_between_tracks(track1, track2, tid1, tid2)
+    return track1, track2
+
+from scipy.ndimage import uniform_filter1d
+# Apply a moving average filter to smooth the data
+
+# plt.figure()
+# prev_disp = None
+# for item in [[0, 1200, 8, 5], [1200, 2400, 8, 11], [2400, 3120, 8, 15]]:
+#     track1, track2 = get_matched_stereo_tracks(tracks1, tracks2, *item)
+#     disparity = track1[:,7]-track2[:,7]
+#     smoothed_disp = uniform_filter1d(disparity, size=4*16)
+#     if prev_disp is not None:
+#         print(smoothed_disp[-1] - prev_disp)
+#     prev_disp = smoothed_disp[-1]
+#     plt.plot(track1[:,1], disparity, '*')
+#     plt.plot(track1[:,1], smoothed_disp, 'r-')
+
+group1 = [frame_match for frame_match in frame_matches if frame_match[0] == 2160]
+group2 = [frame_match for frame_match in frame_matches if frame_match[0] == 2400]
+plt.figure()
+for item in [[0, 720, 0, 1], [720, 2640, 0, 9], [2400, 3120, 17, 16], [2640, 3120, 20, 17]]:
+    track1, track2 = get_matched_stereo_tracks(tracks1, tracks2, *item)
+    plt.plot(track1[:,1], track1[:,7]-track2[:,7], '-*', label=f"{item[2]}:{item[3]}")
+plt.legend()
+"""
+
 frame_matches1 = merge_by_mached_tids(frame_matches)
 # frame_matches2 = merge_by_one_tid(frame_matches1)
 
