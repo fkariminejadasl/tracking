@@ -33,6 +33,10 @@ NB. Since the old data is used, they are symbolically linked.</br>
 [description]: training data of `data8_v2` with `6380` images is uploaded in Roboflow and rotation `[-15, 15]` and then mosaic approximatly 3 times more data is generated. The validation is the same as `data8_v2`. </br>
 NB. The data is here is copied so they are not symbolically linked.
 
+**data_rand_v1**
+[data]: mot_data </br>
+[description]: Randomly select one frame from every 8th frames. </br>
+
 
 ## Data for association learning
 

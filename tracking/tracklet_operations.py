@@ -3,13 +3,12 @@ from typing import List
 import numpy as np
 
 from tracking.data_association import (
-    cen_wh_from_tl_br,
     get_iou,
     get_track_from_track_id,
     get_track_ind_from_track_id_frame_number,
     get_track_inds_from_track_id,
-    interpolate_two_bboxes,
 )
+from tracking.postprocess import reindex_tracks
 from tracking.stereo_gt import get_disparity_info_from_stereo_track
 
 # min_track_length: int = 10
@@ -54,26 +53,6 @@ def remove_detects_change_track_ids(tracks: np.ndarray):
     return tracks
 
 
-def remove_short_tracks(tracks: np.ndarray, min_track_length: int = 10):
-    track_ids = np.unique(np.sort(tracks[:, 0]))
-    for track_id in track_ids:
-        inds = np.where(tracks[:, 0] == track_id)[0]
-        if len(inds) < min_track_length:
-            tracks = np.delete(tracks, inds, axis=0)
-    return tracks
-
-
-def arrange_track_ids(tracks: np.ndarray):
-    new_tracks = tracks.copy()
-    track_ids = np.unique(np.sort(tracks[:, 0]))
-    old_to_new_ids = {
-        track_id: new_track_id for new_track_id, track_id in enumerate(track_ids)
-    }
-    for track_id in track_ids:
-        new_tracks[tracks[:, 0] == track_id, 0] = old_to_new_ids[track_id]
-    return new_tracks
-
-
 # TODO: remove?
 def compute_tracks_length_same_size(tracks: np.ndarray) -> np.ndarray:
     lengths = tracks[:, :3].copy()
@@ -101,15 +80,6 @@ def get_track_length(tracks, track_id):
     track = get_track_from_track_id(tracks, track_id)
     track_length = len(track)
     return track_length
-
-
-def get_tracks_lengths(tracks):
-    tracks_ids = np.unique(tracks[:, 0])
-    tracks_lengths = dict()
-    for track_id in tracks_ids:
-        track_length = get_track_length(tracks, track_id)
-        tracks_lengths[track_id] = track_length
-    return tracks_lengths
 
 
 def _compute_tracks_lengths(tracks, cam_id) -> list:
@@ -478,61 +448,6 @@ def make_long_tracks_from_stereo_tracklets(tracks1, tracks2):
     # to combine other tracklets.
     p_tracks, s_tracks = combine_tracklets_one_iteration(p_tracks, s_tracks)
     p_tracks, s_tracks = combine_tracklets_one_iteration(p_tracks, s_tracks)
-    p_tracks = arrange_track_ids(p_tracks)
-    s_tracks = arrange_track_ids(s_tracks)
+    p_tracks = reindex_tracks(p_tracks)
+    s_tracks = reindex_tracks(s_tracks)
     return p_tracks, s_tracks
-
-
-def get_start_ends_missing_frames(missing_frames):
-    diffs = np.diff(missing_frames)
-    inds = np.where(diffs != 1)[0]
-
-    diffs1 = np.hstack((missing_frames[0], missing_frames[inds + 1]))
-    diffs2 = np.hstack((missing_frames[inds], missing_frames[-1]))
-
-    start_ends = []
-    for start_frame, end_frame in zip(diffs1, diffs2):
-        start_ends.append((start_frame - 1, end_frame + 1))
-    return start_ends
-
-
-def make_new_detections_for_track(track, bboxes, start_frame, end_frame):
-    track_id = track[0, 0]
-    cam_id = track[0, -2]
-    match_id = track[0, -1]
-    frame_numbers = np.arange(start_frame + 1, end_frame)
-    detections = []
-    for frame_number, bbox in zip(frame_numbers, bboxes):
-        cent_wh = cen_wh_from_tl_br(*bbox)
-        detection = [frame_number, track_id, -1, *bbox, *cent_wh, cam_id, match_id]
-        detections.append(detection)
-    new_track = np.append(track, detections, axis=0)
-    return new_track
-
-
-def interpolate_track_when_missing_frames(track):
-    frame_numbers = np.unique(track[:, 1])  # unique is ordered
-    all_frame_numbers = np.arange(frame_numbers[0], frame_numbers[-1] + 1)
-    missing_frames = set(all_frame_numbers).difference(set(frame_numbers))
-    if len(missing_frames) == 0:
-        return track
-    new_track = track.copy()
-    start_ends = get_start_ends_missing_frames(missing_frames)
-    for start_frame, end_frame in start_ends:
-        start_bbox = track[track[:, 1] == start_frame, 3:7][0]
-        end_bbox = track[track[:, 1] == end_frame, 3:7][0]
-        bboxes = interpolate_two_bboxes(start_bbox, end_bbox, start_frame, end_frame)
-        new_track = make_new_detections_for_track(
-            new_track, bboxes, start_frame, end_frame
-        )
-    return new_track
-
-
-def interpolate_tracks_when_missing_frames(tracks):
-    new_tracks = np.empty(shape=(0, 13), dtype=np.int64)
-    tracks_ids = np.unique(tracks[:, 0])
-    for track_id in tracks_ids:
-        track = get_track_inds_from_track_id(tracks, track_id)
-        new_track = interpolate_track_when_missing_frames(track)
-        new_tracks = np.append(new_tracks, new_track, axis=0)
-    return new_tracks

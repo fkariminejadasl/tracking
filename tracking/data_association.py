@@ -1352,17 +1352,6 @@ def is_bbox_in_bbox(bbox1, bbox2, inters_thres=0.85) -> float:
         return False
 
 
-def interpolate_two_bboxes(start_bbox, end_bbox, start_frame, end_frame):
-    # bbox: (x_topleft, y_topleft, x_bottomright, y_bottomright)
-    frames = np.arange(start_frame + 1, end_frame)
-    given_frames = [start_frame, end_frame]
-    xs_tl = np.interp(frames, given_frames, [start_bbox[0], end_bbox[0]])
-    ys_tl = np.interp(frames, given_frames, [start_bbox[1], end_bbox[1]])
-    xs_br = np.interp(frames, given_frames, [start_bbox[2], end_bbox[2]])
-    ys_br = np.interp(frames, given_frames, [start_bbox[3], end_bbox[3]])
-    return list(zip(xs_tl, ys_tl, xs_br, ys_br))
-
-
 def find_detection_in_track_by_frame_number(track, frame_number):
     for det in track.dets:
         if det.frame_number == frame_number:

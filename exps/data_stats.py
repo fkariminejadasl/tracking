@@ -7,6 +7,7 @@ path = (Path(__file__).parents[1]).as_posix()
 sys.path.insert(0, path)
 
 from tracking import data_association as da
+from tracking import postprocess as pp
 from tracking import tracklet_operations as tk
 
 """
@@ -156,7 +157,7 @@ mot_main_path = Path("/home/fatemeh/Downloads/vids/mot")
 tracks_lengths = {}
 for zip_file in mot_main_path.glob("*.zip"):
     tracks = da.load_tracks_from_mot_format(zip_file)
-    tracks_lengths[zip_file.stem] = tk.get_tracks_lengths(tracks)
+    tracks_lengths[zip_file.stem] = pp.get_tracks_lengths(tracks)
 
 tracks_lengths_t = {key: [] for key in ["vid", "track_id:track_length"]}
 for key, val in tracks_lengths.items():

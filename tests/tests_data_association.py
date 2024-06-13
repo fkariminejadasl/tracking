@@ -11,11 +11,13 @@ sys.path.insert(0, path)
 from tracking.data_association import (
     are_boxes_close,
     bipartite_local_matching,
+    cen_wh_from_tl_br,
     clean_detections,
     get_detections,
     get_detections_array,
     get_detections_with_disparity,
     get_iou,
+    get_track_from_track_id,
     hungarian_global_matching,
     is_bbox_in_bbox,
     is_inside_bbox,
@@ -29,7 +31,14 @@ from tracking.data_association import (
     match_detections,
     save_tracks_to_cvat_txt_format,
     save_tracks_to_mot_format,
+    tl_br_from_cen_wh,
     zero_out_of_image_bboxs,
+)
+from tracking.postprocess import (
+    get_start_ends_missing_frames,
+    interpolate_two_bboxes,
+    reindex_tracks,
+    remove_short_tracks,
 )
 from tracking.stats import (
     get_gt_object_match,
@@ -37,16 +46,19 @@ from tracking.stats import (
     get_stats_for_track,
     get_stats_for_tracks,
 )
-from tracking.stereo_gt import get_matched_track_ids, load_matched_tracks_ids
+from tracking.stereo_gt import (
+    get_disparity_info_from_stereo_track,
+    get_matched_track_ids,
+    load_matched_tracks_ids,
+)
 from tracking.tracklet_operations import (
+    add_remove_tracks,
     add_remove_tracks_by_disp_infos,
     append_tracks_with_cam_id_match_id,
-    arrange_track_ids,
     get_candidates_disparity_infos,
     get_matches_from_candidates_disparity_infos,
     match_primary_track_to_secondry_tracklets,
     remove_detects_change_track_ids,
-    remove_short_tracks,
     select_from_overlaps,
 )
 
@@ -402,19 +414,6 @@ def test_get_matched_track_ids():
     np.testing.assert_equal(matches[:, :2], desired[:, :2])
 
 
-from tracking.data_association import (
-    cen_wh_from_tl_br,
-    get_track_from_track_id,
-    interpolate_two_bboxes,
-    tl_br_from_cen_wh,
-)
-from tracking.stereo_gt import get_disparity_info_from_stereo_track
-from tracking.tracklet_operations import (
-    add_remove_tracks,
-    get_start_ends_missing_frames,
-)
-
-
 # TODO maybe remove
 def test_add_remove_tracks():
     remove_tracks = np.random.randint(10, size=(3, 2))
@@ -499,10 +498,10 @@ def test_add_remove_tracks_by_disp_infos():
         data_path / "04_07_22_F_2_rect_valid_gt.txt"
     )
     annos2 = annos.copy()
-    tracks1 = arrange_track_ids(
+    tracks1 = reindex_tracks(
         remove_short_tracks(remove_detects_change_track_ids(annos1), 10)
     )
-    tracks2 = arrange_track_ids(
+    tracks2 = reindex_tracks(
         remove_short_tracks(remove_detects_change_track_ids(annos2), 10)
     )
 
@@ -523,10 +522,10 @@ def test_get_matches_from_candidates_disparity_infos():
         data_path / "04_07_22_F_2_rect_valid_gt.txt"
     )
     annos2 = annos.copy()
-    tracks1 = arrange_track_ids(
+    tracks1 = reindex_tracks(
         remove_short_tracks(remove_detects_change_track_ids(annos1), 10)
     )
-    tracks2 = arrange_track_ids(
+    tracks2 = reindex_tracks(
         remove_short_tracks(remove_detects_change_track_ids(annos2), 10)
     )
 
