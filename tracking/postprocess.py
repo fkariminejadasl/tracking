@@ -66,7 +66,8 @@ def remove_static_tracks(tracks, window_size=16, move_threshold=10):
 
         distances = np.sqrt((ma_x[1:] - ma_x[0]) ** 2 + (ma_y[1:] - ma_y[0]) ** 2)
         if np.all(distances < move_threshold):
-            print(track_id)
+            # print(track_id)
+            pass
         else:
             non_static_indices.append(np.where(tracks[:, 0] == track_id)[0])
 

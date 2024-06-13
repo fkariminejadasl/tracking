@@ -637,7 +637,6 @@ for st in range(start, end + 1, step):
 
     print("----> ", st)
     print(matched_tids)
-    print(sorted(gt_matches.items(), key=lambda i: i[0]))
     # for tid1, tid2 in frame_matched_tids[st]:
     #     track1, track2 = pp.get_matching_frames_between_tracks(tracks1, tracks2, tid1, tid2)
     #     plt.figure();plt.plot(track1[:, 7], track1[:, 8], "o--", label=str(tid1));plt.plot(track2[:, 7], track2[:, 8], "o--", label=str(tid2));plt.legend()
