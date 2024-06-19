@@ -476,20 +476,6 @@ else:
     gt_track_file2 = Path(inputs.gt_track_file2)
 
 
-# save_video_file=Path("/home/fatemeh/Downloads/fish/mot_data/stereo.mp4")
-# mat_file = Path("/home/fatemeh/Downloads/fish/mot_data//stereo_129.mat")
-# vid_path1 = Path("/home/fatemeh/Downloads/fish/mot_data/vids/129_1.mp4")
-# vid_path2 = Path("/home/fatemeh/Downloads/fish/mot_data/vids/129_2.mp4")
-# track_file1 = Path(
-#     "/home/fatemeh/Downloads/fish/mot_data/ms_exp1/mots/129_1_ms_exp1.txt"
-# )
-# track_file2 = Path(
-#     "/home/fatemeh/Downloads/fish/mot_data/ms_exp1/mots/129_2_ms_exp1.txt"
-# )
-# gt_track_file1 = Path("/home/fatemeh/Downloads/fish/mot_data/mots/129_1.txt")
-# gt_track_file2 = Path("/home/fatemeh/Downloads/fish/mot_data/mots/129_2.txt")
-
-
 # parameters
 # ==========
 max_dist = 100
@@ -683,21 +669,139 @@ frame_matches = [
     for match in matches
 ]
 
+frame_matches1 = merge_by_mached_tids(frame_matches)
+# frame_matches2 = merge_by_one_tid(frame_matches1)
+
+from scipy.ndimage import uniform_filter1d
+
+
+# Apply a moving average filter to smooth the data
+def get_matched_stereo_tracks(tracks1, tracks2, sframe, eframe, tid1, tid2):
+    # TODO: rename both get_matched_stereo_tracks, get_matching_frames_between_tracks
+    track1 = tracks1[
+        (tracks1[:, 0] == tid1) & (tracks1[:, 1] >= sframe) & (tracks1[:, 1] < eframe)
+    ]
+    track2 = tracks2[
+        (tracks2[:, 0] == tid2) & (tracks2[:, 1] >= sframe) & (tracks2[:, 1] < eframe)
+    ]
+    track1, track2 = pp.get_matching_frames_between_tracks(track1, track2, tid1, tid2)
+    return track1, track2
+
+
+def find_match_key(
+    query, keys, tracks1, tracks2, thrs=20, frame_thrs=480, short_thrs=60
+):
+    # query: list, keys: list[list].
+    # return: match or no match (None)
+    q_track1, q_track2 = get_matched_stereo_tracks(tracks1, tracks2, *query)
+    if len(q_track1) == 0:
+        return
+    q_disparities = q_track1[:, 7] - q_track2[:, 7]
+    disp_diff = []
+    for i, item in enumerate(keys):
+        track1, track2 = get_matched_stereo_tracks(tracks1, tracks2, *item)
+        if len(track1) == 0:
+            continue
+        # Remove short track
+        if track1.shape[0] < short_thrs:
+            continue
+        # Remove by if occurs before
+        if track1[0, 1] < q_track1[-1, 1]:
+            continue
+        # Remove by frame threshold
+        if (track1[0, 1] - q_track1[-1, 1]) > frame_thrs:
+            continue
+
+        disparities = track1[:, 7] - track2[:, 7]
+        # smoothed_disps = uniform_filter1d(disparities, size=4*16)
+        # Query is earlier in time than keys
+        abs_disp = abs(disparities[0] - q_disparities[-1])
+        if abs_disp > thrs:
+            continue
+        # If they match id: the disparity should be also low.
+        if (query[2] == item[2]) or (query[3] == item[3]):
+            return item
+        disp_diff.append([i, abs_disp])
+    if not disp_diff:
+        return
+    if len(disp_diff) == 1:
+        ind = disp_diff[0][0]
+        return keys[ind]
+    # Ambigious case
+    if len(disp_diff) > 1:
+        return
+
+
 """
+inds = [i for i, d in disp_diff if d<10]
+cand_keys = [query] + [keys[k] for k in inds]
+plt.figure()
+for item in [[0, 2400, 2, 8], [2640, 3120, 2, 9], [0, 2400, 5, 7], [2400, 3120, 18, 7]]:#cand_keys:
+    track1, track2 = get_matched_stereo_tracks(tracks1, tracks2, *item)
+    plt.plot(track1[:,1], track1[:,7]-track2[:,7], '-*', label=f"{item[2]}:{item[3]}")
+plt.legend()
+"""
+
 tracks1 = otracks1.copy()
 tracks2 = otracks2.copy()
 tracks1 = rectify_tracks(tracks1, cameraMatrix1, distCoeffs1, R1, r_P1)
 tracks2 = rectify_tracks(tracks2, cameraMatrix2, distCoeffs2, R2, r_P2)
 
+# 0 [[0, 720, 0, 1], [0, 480, 1, 3], [0, 2400, 2, 8], [0, 2400, 3, 6], [0, 1440, 4, 0], [0, 2400, 5, 7], [0, 2400, 6, 2], [0, 3120, 7, 4], [0, 1200, 8, 5]]
+# 720 [[720, 2640, 0, 9]]
+# 960 [[960, 2160, 9, 10]]
+# 1200 [[1200, 2400, 8, 11]]
+# 1440 [[1440, 2880, 10, 0], [1440, 3120, 11, 12]]
+# 1920 [[1920, 3120, 12, 13]]
+# 2160 [[2160, 3120, 13, 14]]
+# 2400 [[2400, 2640, 2, 17], [2400, 2640, 6, 11], [2400, 3120, 8, 15], [2400, 3120, 14, 2], [2400, 3120, 15, 6], [2400, 2640, 16, 8], [2400, 3120, 17, 16], [2400, 3120, 18, 7]]
+# 2640 [[2640, 3120, 2, 9], [2640, 3120, 20, 17]]
+# 2880 [[2880, 3120, 19, 0], [2880, 3120, 21, 18]]
+last_checked = []
+remained = frame_matches1.copy()
+frame_matches2 = []
+for i in range(0, 3117 + 1, 240):  # range(start, end + 1, step)
+    queries = [item for item in frame_matches1 if item[0] == i]
+    # Get the last matches
+    last = [item[-1] for item in frame_matches2 if len(item) > 1]
+    queries += last
+    # Remove already matched items
+    _ = [queries.remove(item) for item in last_checked if item in queries]
+    # Remove queries from rest
+    _ = [remained.remove(item) for item in queries if item in remained]
+    last_checked = last
+    if not queries:
+        continue
+    for query in queries:
+        matched_key = find_match_key(query, remained, tracks1, tracks2)
 
-def get_matched_stereo_tracks(tracks1, tracks2, sframe, eframe, tid1, tid2):
-    track1 = tracks1[(tracks1[:, 0] == tid1) & (tracks1[:, 1] >= sframe) & (tracks1[:, 1] < eframe)]
-    track2 = tracks2[(tracks2[:, 0] == tid2) & (tracks2[:, 1] >= sframe) & (tracks2[:, 1] < eframe)]
-    track1, track2 = pp.get_matching_frames_between_tracks(track1, track2, tid1, tid2)
-    return track1, track2
+        # Update frame matches
+        if not matched_key:
+            query_found = False
+            for group in frame_matches2:
+                if query in group:
+                    query_found = True
+                    break
+            if not query_found:
+                frame_matches2.append([query])
+            continue
 
-from scipy.ndimage import uniform_filter1d
-# Apply a moving average filter to smooth the data
+        remained.remove(matched_key)  # Update remains
+        query_found = False
+        for group in frame_matches2:
+            if query in group:
+                query_found = True
+                group.append(matched_key)
+                break
+        if not query_found:
+            frame_matches2.append([query, matched_key])
+
+# Fatemeh: continue (wrongly matched)
+# [960, 2160, 9, 10], [2160, 3120, 13, 14]
+# [2640, 3120, 20, 17] in [[0, 1200, 8, 5], [1200, 2400, 8, 11], [2400, 3120, 8, 15], [2640, 3120, 20, 17]]
+# Improve the code
+print(frame_matches2)
+
 
 # plt.figure()
 # prev_disp = None
@@ -711,33 +815,21 @@ from scipy.ndimage import uniform_filter1d
 #     plt.plot(track1[:,1], disparity, '*')
 #     plt.plot(track1[:,1], smoothed_disp, 'r-')
 
-group1 = [frame_match for frame_match in frame_matches if frame_match[0] == 2160]
-group2 = [frame_match for frame_match in frame_matches if frame_match[0] == 2400]
-plt.figure()
-for item in [[0, 720, 0, 1], [720, 2640, 0, 9], [2400, 3120, 17, 16], [2640, 3120, 20, 17]]:
-    track1, track2 = get_matched_stereo_tracks(tracks1, tracks2, *item)
-    plt.plot(track1[:,1], track1[:,7]-track2[:,7], '-*', label=f"{item[2]}:{item[3]}")
-plt.legend()
-"""
-
-frame_matches1 = merge_by_mached_tids(frame_matches)
-# frame_matches2 = merge_by_one_tid(frame_matches1)
-
 
 # save_stereo_images_with_matches_as_images(
 #     save_video_file/"tmp", vid_path1, vid_path2, otracks1, otracks2, frame_matches1, 0, None, 8
 # )
 # save_images_as_video(save_video_file, save_video_file/"tmp", 30, 3840, 1080)
-save_stereo_images_with_matches_as_video(
-    save_video_file,
-    vid_path1,
-    vid_path2,
-    otracks1,
-    otracks2,
-    frame_matches1,
-    inputs.start_frame,
-    inputs.end_frame,
-    inputs.step,
-    inputs.fps,
-)
+# save_stereo_images_with_matches_as_video(
+#     save_video_file,
+#     vid_path1,
+#     vid_path2,
+#     otracks1,
+#     otracks2,
+#     frame_matches1,
+#     inputs.start_frame,
+#     inputs.end_frame,
+#     inputs.step,
+#     inputs.fps,
+# )
 print("======")
