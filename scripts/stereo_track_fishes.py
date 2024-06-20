@@ -655,48 +655,60 @@ def get_matched_stereo_tracks(tracks1, tracks2, sframe, eframe, tid1, tid2):
 def find_match_key(
     query, keys, tracks1, tracks2, thrs=20, frame_thrs=480, short_thrs=60
 ):
-    # query: list, keys: list[list].
-    # return: match or no match (None)
+    """
+    Finds a matching key for the given query based on various thresholds and conditions.
+
+    Parameters:
+        query (list): The query to match. e.g. [720, 2640, 0, 9] (start_frame, end_frame,
+                      track_id1, track_id2)
+        keys (list of lists): List of potential match keys. e.g. [[720, 2640, 0, 9],
+                          [0, 480, 1, 3]]
+        tracks1 (list): List of tracks from the first source.
+        tracks2 (list): List of tracks from the second source.
+        thrs (int, optional): Threshold for disparity difference. Default is 20.
+        frame_thrs (int, optional): Threshold for frame difference. Default is 480.
+        short_thrs (int, optional): Threshold for minimum track length. Default is 60.
+
+    Returns:
+        list or None: The matching key if found, otherwise None.
+    """
     q_track1, q_track2 = get_matched_stereo_tracks(tracks1, tracks2, *query)
     if len(q_track1) == 0:
-        return
+        return None
+
     q_disparities = q_track1[:, 7] - q_track2[:, 7]
     disp_diff = []
+
     for i, item in enumerate(keys):
         track1, track2 = get_matched_stereo_tracks(tracks1, tracks2, *item)
         if len(track1) == 0:
             continue
-        # Remove short track
         if track1.shape[0] < short_thrs:
             continue
-        # Remove by if occurs before
         if track1[0, 1] < q_track1[-1, 1]:
             continue
-        # Remove if there is overlap e.g. [2400, 3120, 8, 15], [2640, 3120, 20, 17]
         if q_track1[-1, 1] >= track1[-1, 1]:
             continue
-        # Remove by frame threshold
         if (track1[0, 1] - q_track1[-1, 1]) > frame_thrs:
             continue
 
         disparities = track1[:, 7] - track2[:, 7]
-        # smoothed_disps = uniform_filter1d(disparities, size=4*16)
-        # Query is earlier in time than keys
         abs_disp = abs(disparities[0] - q_disparities[-1])
         if abs_disp > thrs:
             continue
-        # If they match id: the disparity should be also low.
+
         if (query[2] == item[2]) or (query[3] == item[3]):
             return item
+
         disp_diff.append([i, abs_disp])
+
     if not disp_diff:
-        return
+        return None
     if len(disp_diff) == 1:
         ind = disp_diff[0][0]
         return keys[ind]
-    # Ambigious case
-    if len(disp_diff) > 1:
-        return
+
+    return None  # Ambiguous case with more than one possible match
 
 
 """
@@ -718,41 +730,74 @@ all_checked = []
 remained = frame_matches1.copy()
 frame_matches2 = []
 for i in range(start, end + 1, step):
+    # Collect queries for the current frame index
     queries = [item for item in frame_matches1 if item[0] == i]
-    # Get the last matches
-    last = [item[-1] for item in frame_matches2 if len(item) > 1]
-    queries += last  # [2400, 3120, 8, 15], [2640, 3120, 20, 17]
-    # Remove already matched items
-    _ = [queries.remove(item) for item in all_checked if item in queries]
-    # Remove queries from rest
-    _ = [remained.remove(item) for item in queries if item in remained]
-    all_checked.extend(queries)  # TODO change to all_checked
+
+    # Include the last matched items from frame_matches2
+    last_matches = [item[-1] for item in frame_matches2 if len(item) > 1]
+    queries += last_matches
+
+    # Remove already matched items from queries
+    queries = [item for item in queries if item not in all_checked]
+
+    # Remove queries from the remained list
+    remained = [item for item in remained if item not in queries]
+
+    # Add queries to all_checked
+    all_checked.extend(queries)
+
     if not queries:
         continue
+
     for query in queries:
         matched_key = find_match_key(query, remained, tracks1, tracks2)
 
-        # Update frame matches
         if not matched_key:
-            query_found = False
-            for group in frame_matches2:
-                if query in group:
-                    query_found = True
-                    break
-            if not query_found:
+            # If no match found, add query to frame_matches2 if not already present
+            if not any(query in group for group in frame_matches2):
                 frame_matches2.append([query])
             continue
 
-        remained.remove(matched_key)  # Update remains
+        # Remove matched key from remained
+        remained.remove(matched_key)
+
+        # Add matched key to the corresponding group in frame_matches2
         query_found = False
         for group in frame_matches2:
             if query in group:
-                query_found = True
                 group.append(matched_key)
+                query_found = True
                 break
+
         if not query_found:
             frame_matches2.append([query, matched_key])
 
+"""
+# Tobe removed. Just for debugging.
+expected = [
+    [[0, 720, 0, 1], [720, 2640, 0, 9]],
+    [[0, 480, 1, 3]],
+    [[0, 2400, 2, 8], [2640, 3120, 2, 9]],
+    [[0, 2400, 3, 6], [2400, 3120, 15, 6]],
+    [[0, 1440, 4, 0], [1440, 2880, 10, 0], [2880, 3120, 19, 0]],
+    [[0, 2400, 5, 7], [2400, 3120, 18, 7]],
+    [[0, 2400, 6, 2], [2400, 3120, 14, 2]],
+    [[0, 3120, 7, 4]],
+    [[0, 1200, 8, 5], [1200, 2400, 8, 11], [2400, 3120, 8, 15]],
+    [[960, 2160, 9, 10], [2160, 3120, 13, 14]],
+    [[1440, 3120, 11, 12]],
+    [[1920, 3120, 12, 13]],
+    [[2400, 2640, 2, 17]],
+    [[2400, 2640, 6, 11]],
+    [[2400, 2640, 16, 8]],
+    [[2400, 3120, 17, 16]],
+    [[2640, 3120, 20, 17]],
+    [[2880, 3120, 21, 18]],
+]
+assert len(expected) == len(frame_matches2)
+for exp, act in zip(expected, frame_matches2):
+    assert exp == act
+"""
 print(frame_matches2)
 
 # plt.figure()
