@@ -276,7 +276,7 @@ def draw_matches(image1, image2, dets1, dets2, color):
             int(x_br),
             int(y_br),
             color,
-            f"{det[0]}",
+            f"{det[2]},{det[0]}",
         )
 
     for det in dets2:
@@ -288,7 +288,7 @@ def draw_matches(image1, image2, dets1, dets2, color):
             int(x_br) + image1.shape[1],
             int(y_br),
             color,
-            f"{det[0]}",
+            f"{det[2]},{det[0]}",
         )
 
     return combined_image
@@ -298,14 +298,15 @@ def create_stereo_image_with_matches(
     image1, image2, dets1, dets2, frame, frame_matches
 ):
     """
+    dets1, dets2: np.ndarray. detections in a image1 and image2
     frame_matches: list[list], each item [start_frame, end_frame, tid1, tid2]
     """
     # find matches.
     tids1 = dets1[:, 0]
     tids2 = dets2[:, 0]
     matches = {
-        frame_match[2]: frame_match[3]
-        for frame_match in frame_matches
+        i: (frame_match[2], frame_match[3])  # stereo id, track id1, track id2
+        for i, frame_match in enumerate(frame_matches)
         if frame_match[0] <= frame < frame_match[1]
         and frame_match[2] in tids1
         and frame_match[3] in tids2
@@ -315,8 +316,15 @@ def create_stereo_image_with_matches(
         return None
 
     # ordered based on matches
-    mdets1 = np.array([dets1[dets1[:, 0] == tid1][0] for tid1 in matches.keys()])
-    mdets2 = np.array([dets2[dets2[:, 0] == tid2][0] for tid2 in matches.values()])
+    mdets1 = []
+    mdets2 = []
+    for sid, (tid1, tid2) in matches.items():
+        det = dets1[dets1[:, 0] == tid1][0]  # copy
+        det[2] = sid
+        mdets1.append(det)
+        det = dets2[dets2[:, 0] == tid2][0]  # copy
+        det[2] = sid
+        mdets2.append(det)
 
     # plot and save results
     color = (0, 0, 255)
@@ -813,9 +821,17 @@ print(frame_matches2)
 #     plt.plot(track1[:,1], smoothed_disp, 'r-')
 
 
-# save_stereo_images_with_matches_as_images(
-#     save_video_file/"tmp", vid_path1, vid_path2, otracks1, otracks2, frame_matches1, 0, None, 8
-# )
+save_stereo_images_with_matches_as_images(
+    save_video_file / "tmp",
+    vid_path1,
+    vid_path2,
+    otracks1,
+    otracks2,
+    frame_matches1,
+    0,
+    None,
+    8,
+)
 # save_images_as_video(save_video_file, save_video_file/"tmp", 30, 3840, 1080)
 # save_stereo_images_with_matches_as_video(
 #     save_video_file,
