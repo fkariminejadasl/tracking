@@ -299,32 +299,40 @@ def create_stereo_image_with_matches(
 ):
     """
     dets1, dets2: np.ndarray. detections in a image1 and image2
-    frame_matches: list[list], each item [start_frame, end_frame, tid1, tid2]
+    frame_matches: list[list[list]], each item [start_frame, end_frame, tid1, tid2]
     """
     # find matches.
     tids1 = dets1[:, 0]
     tids2 = dets2[:, 0]
-    matches = {
-        i: (frame_match[2], frame_match[3])  # stereo id, track id1, track id2
-        for i, frame_match in enumerate(frame_matches)
-        if frame_match[0] <= frame < frame_match[1]
-        and frame_match[2] in tids1
-        and frame_match[3] in tids2
-    }
+    matches = dict()  # sid: [(tid1,tid2), ...]
+    for i, frame_match_group in enumerate(frame_matches):
+        if isinstance(frame_match_group[0], int):
+            frame_match_group = [frame_match_group]
+        for frame_match in frame_match_group:
+            if (
+                frame_match[0] <= frame < frame_match[1]
+                and frame_match[2] in tids1
+                and frame_match[3] in tids2
+            ):
+                item = (frame_match[2], frame_match[3])
+                if i not in matches:
+                    matches[i] = []
+                matches[i].append(item)  # stereo id, track id1, track id2
 
     if not matches:
         return None
 
-    # ordered based on matches
+    # append stereo id and get detections
     mdets1 = []
     mdets2 = []
-    for sid, (tid1, tid2) in matches.items():
-        det = dets1[dets1[:, 0] == tid1][0]  # copy
-        det[2] = sid
-        mdets1.append(det)
-        det = dets2[dets2[:, 0] == tid2][0]  # copy
-        det[2] = sid
-        mdets2.append(det)
+    for sid, match_list in matches.items():
+        for tid1, tid2 in match_list:
+            det = dets1[dets1[:, 0] == tid1][0]  # copy
+            det[2] = sid
+            mdets1.append(det)
+            det = dets2[dets2[:, 0] == tid2][0]  # copy
+            det[2] = sid
+            mdets2.append(det)
 
     # plot and save results
     color = (0, 0, 255)
@@ -827,7 +835,7 @@ save_stereo_images_with_matches_as_images(
     vid_path2,
     otracks1,
     otracks2,
-    frame_matches1,
+    frame_matches2,
     0,
     None,
     8,
