@@ -154,7 +154,10 @@ def make_new_detections_for_track(track, bboxes, start_frame, end_frame):
         cent_wh = cen_wh_from_tl_br(*bbox)
         bbox = np.int64(np.round(bbox, decimals=0))
         cent_wh = np.int64(np.round(cent_wh, decimals=0))
-        detection = [track_id, frame_number, -1, *bbox, *cent_wh, -1]  # TODO
+        if track.shape[1] == 12:
+            detection = [track_id, frame_number, -1, *bbox, *cent_wh, -1]  # TODO
+        else:
+            detection = [track_id, frame_number, -1, *bbox, *cent_wh]  # TODO
         detections.append(detection)
     new_track = np.concatenate((track, detections), axis=0)
     new_track = new_track[new_track[:, 1].argsort()]

@@ -15,14 +15,6 @@ from tqdm import tqdm
 from tracking import data_association as da
 from tracking import postprocess as pp
 
-"""
-TODO id dictionary after reindex 
-TODO match_tracks_with_gt is very basic. Since due to id switch, part of id
-can be matched to gt. The same for plot_matched_tracks_with_gt.
-e.g. in 129_1, 2 in gt 6 wrong (crossing); 14 in 5
-e.g. in 129_2, 2 in gt 2 wrong; 6, 8, 9 in 5 (part 8, 9 correct)
-"""
-
 
 # Matching
 # ========
@@ -479,7 +471,6 @@ def parse_args():
 # =======
 inputs = parse_args()
 save_video_file = Path(inputs.save_video_file)
-mat_file = Path(inputs.mat_file)
 vid_path1 = Path(inputs.vid_path1)
 vid_path2 = Path(inputs.vid_path2)
 track_file1 = Path(inputs.track_file1)
@@ -490,6 +481,10 @@ if not inputs.gt_track_file1:
 else:
     gt_track_file1 = Path(inputs.gt_track_file1)
     gt_track_file2 = Path(inputs.gt_track_file2)
+if inputs.mat_file is None:
+    mat_file = None
+else:
+    mat_file = Path(inputs.mat_file)
 
 
 # parameters
@@ -504,43 +499,56 @@ gtracks2 = da.load_tracks_from_mot_format(gt_track_file2)
 tracks1 = da.load_tracks_from_mot_format(track_file1)
 tracks2 = da.load_tracks_from_mot_format(track_file2)
 
-dd = loadmat(mat_file)
-vc1 = cv2.VideoCapture(str(vid_path1))
+if mat_file is not None:
+    dd = loadmat(mat_file)
+    vc1 = cv2.VideoCapture(str(vid_path1))
 
+    distCoeffs1 = deepcopy(dd["distortionCoefficients1"])[0].astype(np.float64)
+    distCoeffs2 = deepcopy(dd["distortionCoefficients2"])[0].astype(np.float64)
+    cameraMatrix1 = deepcopy(dd["intrinsicMatrix1"]).astype(np.float64)
+    cameraMatrix2 = deepcopy(dd["intrinsicMatrix2"]).astype(np.float64)
+    R = deepcopy(dd["rotationOfCamera2"]).astype(np.float64)
+    T = deepcopy(dd["translationOfCamera2"]).T.astype(np.float64)
+    cameraMatrix1[0:2, 2] += 1
+    cameraMatrix2[0:2, 2] += 1
+    # Projection matrices
+    P1 = np.dot(cameraMatrix1, np.hstack((np.eye(3), np.zeros((3, 1))))).astype(
+        np.float64
+    )
+    P2 = np.dot(cameraMatrix2, np.hstack((R, T))).astype(np.float64)
 
-distCoeffs1 = deepcopy(dd["distortionCoefficients1"])[0].astype(np.float64)
-distCoeffs2 = deepcopy(dd["distortionCoefficients2"])[0].astype(np.float64)
-cameraMatrix1 = deepcopy(dd["intrinsicMatrix1"]).astype(np.float64)
-cameraMatrix2 = deepcopy(dd["intrinsicMatrix2"]).astype(np.float64)
-R = deepcopy(dd["rotationOfCamera2"]).astype(np.float64)
-T = deepcopy(dd["translationOfCamera2"]).T.astype(np.float64)
-cameraMatrix1[0:2, 2] += 1
-cameraMatrix2[0:2, 2] += 1
-# Projection matrices
-P1 = np.dot(cameraMatrix1, np.hstack((np.eye(3), np.zeros((3, 1))))).astype(np.float64)
-P2 = np.dot(cameraMatrix2, np.hstack((R, T))).astype(np.float64)
-
-_, image1 = vc1.read()
-vc1.release()
-image_size = image1.shape[1], image1.shape[0]
-R1, R2, r_P1, r_P2, Q, validPixROI1, validPixROI2 = cv2.stereoRectify(
-    cameraMatrix1=cameraMatrix1,
-    distCoeffs1=distCoeffs1,
-    cameraMatrix2=cameraMatrix2,
-    distCoeffs2=distCoeffs2,
-    imageSize=image_size,
-    R=R,
-    T=T,
-)  # , flags=cv2.CALIB_ZERO_DISPARITY, alpha=-1)
+    _, image1 = vc1.read()
+    vc1.release()
+    image_size = image1.shape[1], image1.shape[0]
+    R1, R2, r_P1, r_P2, Q, validPixROI1, validPixROI2 = cv2.stereoRectify(
+        cameraMatrix1=cameraMatrix1,
+        distCoeffs1=distCoeffs1,
+        cameraMatrix2=cameraMatrix2,
+        distCoeffs2=distCoeffs2,
+        imageSize=image_size,
+        R=R,
+        T=T,
+    )  # , flags=cv2.CALIB_ZERO_DISPARITY, alpha=-1)
 
 
 # postprocess tracks
 # =====
+# from tracking import visualize
+# # debug
+# visualize.save_images_with_tracks(
+#                 vid_path1.parent / "images/tr",
+#                 vid_path1,
+#                 tracks1,
+#                 0,
+#                 None,
+#                 1,
+#             )
 tracks1 = postprocess_tracks(tracks1)
 tracks2 = postprocess_tracks(tracks2)
-# from tracking import visualize
+
+# # debug
 # visualize.save_images_with_tracks(
-#                 Path("/home/fatemeh/Downloads/fish/mot_data/images/129_1/pp"),
+#                 vid_path1.parent / "images/pp",
 #                 vid_path1,
 #                 tracks1,
 #                 0,
@@ -553,8 +561,9 @@ tracks2 = postprocess_tracks(tracks2)
 # =======
 otracks1 = tracks1.copy()
 otracks2 = tracks2.copy()
-tracks1 = rectify_tracks(tracks1, cameraMatrix1, distCoeffs1, R1, r_P1)
-tracks2 = rectify_tracks(tracks2, cameraMatrix2, distCoeffs2, R2, r_P2)
+if mat_file is not None:
+    tracks1 = rectify_tracks(tracks1, cameraMatrix1, distCoeffs1, R1, r_P1)
+    tracks2 = rectify_tracks(tracks2, cameraMatrix2, distCoeffs2, R2, r_P2)
 
 # debuging
 # ============
@@ -588,7 +597,12 @@ tracks2 = rectify_tracks(tracks2, cameraMatrix2, distCoeffs2, R2, r_P2)
 
 # tracklet matching
 # =================
-start, end, step = 0, 3117, 240  # 200
+# start, end, step = 0, 3117, 240  # 200
+vc1 = cv2.VideoCapture(str(vid_path1))
+end = int(vc1.get(cv2.CAP_PROP_FRAME_COUNT))
+step = 240  # int(round(vc1.get(cv2.CAP_PROP_FPS))) * 2
+start = 0
+vc1.release()
 
 # for debuging
 # tid1 = 3
@@ -739,8 +753,9 @@ plt.legend()
 
 tracks1 = otracks1.copy()
 tracks2 = otracks2.copy()
-tracks1 = rectify_tracks(tracks1, cameraMatrix1, distCoeffs1, R1, r_P1)
-tracks2 = rectify_tracks(tracks2, cameraMatrix2, distCoeffs2, R2, r_P2)
+if mat_file is not None:
+    tracks1 = rectify_tracks(tracks1, cameraMatrix1, distCoeffs1, R1, r_P1)
+    tracks2 = rectify_tracks(tracks2, cameraMatrix2, distCoeffs2, R2, r_P2)
 
 all_checked = []
 remained = frame_matches1.copy()
@@ -829,28 +844,28 @@ print(frame_matches2)
 #     plt.plot(track1[:,1], smoothed_disp, 'r-')
 
 
-save_stereo_images_with_matches_as_images(
-    save_video_file / "tmp",
-    vid_path1,
-    vid_path2,
-    otracks1,
-    otracks2,
-    frame_matches2,
-    0,
-    None,
-    8,
-)
-# save_images_as_video(save_video_file, save_video_file/"tmp", 30, 3840, 1080)
-# save_stereo_images_with_matches_as_video(
-#     save_video_file,
+# save_stereo_images_with_matches_as_images(
+#     save_video_file / "new3",
 #     vid_path1,
 #     vid_path2,
 #     otracks1,
 #     otracks2,
-#     frame_matches1,
+#     frame_matches2,
 #     inputs.start_frame,
 #     inputs.end_frame,
 #     inputs.step,
-#     inputs.fps,
 # )
+# save_images_as_video(save_video_file, save_video_file/"tmp", 30, 3840, 1080)
+save_stereo_images_with_matches_as_video(
+    save_video_file,
+    vid_path1,
+    vid_path2,
+    otracks1,
+    otracks2,
+    frame_matches1,
+    inputs.start_frame,
+    inputs.end_frame,
+    inputs.step,
+    inputs.fps,
+)
 print("======")
