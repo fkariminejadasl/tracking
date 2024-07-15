@@ -73,6 +73,62 @@ def cut_tracks_into_tracklets(tracks, start, end, step):
     return np.array(tracklets)
 
 
+def match_tracklets(tracklets1, tracklets2):
+    """
+    Returns:
+    - List of list: List of Matched track ids.
+                    Each item contains start frame, end frame, track id1, track id2
+    """
+    frame_matched_tids = dict()
+    for st in range(start, end + 1, step):
+        # tracklets in a specific time
+        tracks1 = tracklets1[tracklets1[:, 2] == st]
+        tracks2 = tracklets2[tracklets2[:, 2] == st]
+
+        # compute distances between tracks
+        tids1 = np.unique(tracks1[:, 0])
+        tids2 = np.unique(tracks2[:, 0])
+        all_dists = dict()
+        for tid1 in tids1:
+            for tid2 in tids2:
+                track1, track2 = pp.match_frames_between_tracks(
+                    tracks1, tracks2, tid1, tid2
+                )
+                if track1.size == 0:
+                    continue
+                # c1 = normalize_curve(track1[:, 7:9])
+                # c2 = normalize_curve(track2[:, 7:9])
+                # dist = curve_distance(c1, c2)
+                n_points = track1.shape[0]
+                dist = np.mean(abs(track1[:, 8] - track2[:, 8])) / n_points
+                all_dists[(tid1, tid2)] = round(dist, 3)
+
+        # n-n matching
+        i2tids1 = {k: v for k, v in enumerate(tids1)}
+        i2tids2 = {k: v for k, v in enumerate(tids2)}
+        dist_mat = np.zeros((len(tids1), len(tids2)))
+        for i, tid1 in enumerate(tids1):
+            for j, tid2 in enumerate(tids2):
+                dist_mat[i, j] = all_dists.get((tid1, tid2), max_dist)
+        rows, cols = linear_sum_assignment(dist_mat)
+        matched_tids = [(i2tids1[r], i2tids2[c]) for r, c in zip(rows, cols)]
+        frame_matched_tids[st] = matched_tids
+        print("----> ", st)
+        print(matched_tids)
+        # debuging
+        # ========
+        # for tid1, tid2 in frame_matched_tids[st]:
+        #     track1, track2 = pp.match_frames_between_tracks(tracks1, tracks2, tid1, tid2)
+        #     plt.figure();plt.plot(track1[:, 7], track1[:, 8], "o--", label=str(tid1));plt.plot(track2[:, 7], track2[:, 8], "o--", label=str(tid2));plt.legend()
+
+    frame_matches = [
+        [st, st + step, *match]
+        for st, matches in frame_matched_tids.items()
+        for match in matches
+    ]
+    return frame_matches
+
+
 # 3D
 # ==
 def get_stereo_parameters(mat_file, vid_path):
@@ -181,7 +237,7 @@ def match_gt_stereo_tracks(tracks1, tracks2):
     all_dists = dict()
     for tid1 in tids1:
         for tid2 in tids2:
-            track1, track2 = pp.get_matching_frames_between_tracks(
+            track1, track2 = pp.match_frames_between_tracks(
                 tracks1, tracks2, tid1, tid2
             )
             if track1.size == 0:
@@ -279,15 +335,63 @@ def merge_by_mached_tids(input_list):
     return merged_list
 
 
-def get_matched_stereo_tracks(tracks1, tracks2, sframe, eframe, tid1, tid2):
-    # TODO: rename both get_matched_stereo_tracks, get_matching_frames_between_tracks
+def merge_not_matched_tids(tracks1, tracks2, frame_matches1):
+    all_checked = []
+    remained = frame_matches1.copy()
+    frame_matches2 = []
+    for i in range(start, end + 1, step):
+        # Collect queries for the current frame index
+        queries = [item for item in frame_matches1 if item[0] == i]
+
+        # Include the last matched items from frame_matches2
+        last_matches = [item[-1] for item in frame_matches2 if len(item) > 1]
+        queries += last_matches
+
+        # Remove already matched items from queries
+        queries = [item for item in queries if item not in all_checked]
+
+        # Remove queries from the remained list
+        remained = [item for item in remained if item not in queries]
+
+        # Add queries to all_checked
+        all_checked.extend(queries)
+
+        if not queries:
+            continue
+
+        for query in queries:
+            matched_key = find_match_key(query, remained, tracks1, tracks2)
+
+            if not matched_key:
+                # If no match found, add query to frame_matches2 if not already present
+                if not any(query in group for group in frame_matches2):
+                    frame_matches2.append([query])
+                continue
+
+            # Remove matched key from remained
+            remained.remove(matched_key)
+
+            # Add matched key to the corresponding group in frame_matches2
+            query_found = False
+            for group in frame_matches2:
+                if query in group:
+                    group.append(matched_key)
+                    query_found = True
+                    break
+
+            if not query_found:
+                frame_matches2.append([query, matched_key])
+    return frame_matches2
+
+
+def match_frames_within_range(tracks1, tracks2, sframe, eframe, tid1, tid2):
     track1 = tracks1[
         (tracks1[:, 0] == tid1) & (tracks1[:, 1] >= sframe) & (tracks1[:, 1] < eframe)
     ]
     track2 = tracks2[
         (tracks2[:, 0] == tid2) & (tracks2[:, 1] >= sframe) & (tracks2[:, 1] < eframe)
     ]
-    track1, track2 = pp.get_matching_frames_between_tracks(track1, track2, tid1, tid2)
+    track1, track2 = pp.match_frames_between_tracks(track1, track2, tid1, tid2)
     return track1, track2
 
 
@@ -311,7 +415,7 @@ def find_match_key(
     Returns:
         list or None: The matching key if found, otherwise None.
     """
-    q_track1, q_track2 = get_matched_stereo_tracks(tracks1, tracks2, *query)
+    q_track1, q_track2 = match_frames_within_range(tracks1, tracks2, *query)
     if len(q_track1) == 0:
         return None
 
@@ -319,7 +423,7 @@ def find_match_key(
     disp_diff = []
 
     for i, item in enumerate(keys):
-        track1, track2 = get_matched_stereo_tracks(tracks1, tracks2, *item)
+        track1, track2 = match_frames_within_range(tracks1, tracks2, *item)
         if len(track1) == 0:
             continue
         if track1.shape[0] < short_thrs:
@@ -583,7 +687,7 @@ vid_path1 = Path(inputs.vid_path1)
 vid_path2 = Path(inputs.vid_path2)
 track_file1 = Path(inputs.track_file1)
 track_file2 = Path(inputs.track_file2)
-if not inputs.gt_track_file1:
+if (inputs.gt_track_file1 is None) or (inputs.gt_track_file2):
     gt_track_file1 = track_file1
     gt_track_file2 = track_file2
 else:
@@ -599,9 +703,6 @@ else:
 # ==========
 max_dist = 100
 
-
-gtracks1 = da.load_tracks_from_mot_format(gt_track_file1)
-gtracks2 = da.load_tracks_from_mot_format(gt_track_file2)
 tracks1 = da.load_tracks_from_mot_format(track_file1)
 tracks2 = da.load_tracks_from_mot_format(track_file2)
 
@@ -636,6 +737,7 @@ tracks2 = postprocess_tracks(tracks2)
 
 # rectify
 # =======
+# Tracks are either rectified or not. Otracks are the orignal tracks and not rectified.
 otracks1 = tracks1.copy()
 otracks2 = tracks2.copy()
 if mat_file is not None:
@@ -652,14 +754,17 @@ if mat_file is not None:
     tracks1 = rectify_tracks(tracks1, cameraMatrix1, distCoeffs1, R1, r_P1)
     tracks2 = rectify_tracks(tracks2, cameraMatrix2, distCoeffs2, R2, r_P2)
 
+# Fatemeh: start here
 # debuging
 # ========
 # fmt: off
 # gt_matches = {3:0, 5:1, 4:2, 2:3, 8:4, 0:5, 1:6, 6:7, 7:8, 9:9, 10:10, 11:11, 12:12, 13:13, 14:14}
 # fmt: on
+# gtracks1 = da.load_tracks_from_mot_format(gt_track_file1)
+# gtracks2 = da.load_tracks_from_mot_format(gt_track_file2)
 
 # for tid1, tid2 in gt_matches.items():
-#     track1, track2 = pp.get_matching_frames_between_tracks(tracks1, tracks2, tid1, tid2)
+#     track1, track2 = pp.match_frames_between_tracks(tracks1, tracks2, tid1, tid2)
 #     plt.figure();plt.plot(track1[:,1], track1[:,8]-track2[:,8], '*-')
 #     plt.title(f'{tid1}:{tid2}')
 
@@ -678,7 +783,7 @@ if mat_file is not None:
 # g1g2_tids = match_gt_stereo_tracks(rgtracks1, rgtracks2)
 # g_frame_matches = []
 # for tid1, tid2 in g1g2_tids: #gt_matches.items():
-#     track1, track2 = pp.get_matching_frames_between_tracks(
+#     track1, track2 = pp.match_frames_between_tracks(
 #         gtracks1, gtracks2, tid1, tid2
 #     )
 #     g_frame_matches.append([min(track1[:, 1]), max(track1[:, 1]), tid1, tid2])
@@ -708,119 +813,10 @@ vc1.release()
 tracklets1 = cut_tracks_into_tracklets(tracks1, start, end, step)
 tracklets2 = cut_tracks_into_tracklets(tracks2, start, end, step)
 
-frame_matched_tids = dict()
-for st in range(start, end + 1, step):
-    # tracklets in a specific time
-    tracks1 = tracklets1[tracklets1[:, 2] == st]
-    tracks2 = tracklets2[tracklets2[:, 2] == st]
-
-    # compute distances between tracks
-    tids1 = np.unique(tracks1[:, 0])
-    tids2 = np.unique(tracks2[:, 0])
-    all_dists = dict()
-    for tid1 in tids1:
-        for tid2 in tids2:
-            track1, track2 = pp.get_matching_frames_between_tracks(
-                tracks1, tracks2, tid1, tid2
-            )
-            if track1.size == 0:
-                continue
-            # c1 = normalize_curve(track1[:, 7:9])
-            # c2 = normalize_curve(track2[:, 7:9])
-            # dist = curve_distance(c1, c2)
-            n_points = track1.shape[0]
-            dist = np.mean(abs(track1[:, 8] - track2[:, 8])) / n_points
-            all_dists[(tid1, tid2)] = round(dist, 3)
-
-    # n-n matching
-    i2tids1 = {k: v for k, v in enumerate(tids1)}
-    i2tids2 = {k: v for k, v in enumerate(tids2)}
-    dist_mat = np.zeros((len(tids1), len(tids2)))
-    for i, tid1 in enumerate(tids1):
-        for j, tid2 in enumerate(tids2):
-            dist_mat[i, j] = all_dists.get((tid1, tid2), max_dist)
-    rows, cols = linear_sum_assignment(dist_mat)
-    matched_tids = [(i2tids1[r], i2tids2[c]) for r, c in zip(rows, cols)]
-    frame_matched_tids[st] = matched_tids
-
-    print("----> ", st)
-    print(matched_tids)
-    # for tid1, tid2 in frame_matched_tids[st]:
-    #     track1, track2 = pp.get_matching_frames_between_tracks(tracks1, tracks2, tid1, tid2)
-    #     plt.figure();plt.plot(track1[:, 7], track1[:, 8], "o--", label=str(tid1));plt.plot(track2[:, 7], track2[:, 8], "o--", label=str(tid2));plt.legend()
-
-
-frame_matches = [
-    [st, st + step, *match]
-    for st, matches in frame_matched_tids.items()
-    for match in matches
-]
-
+frame_matches = match_tracklets(tracklets1, tracklets2)
 frame_matches1 = merge_by_mached_tids(frame_matches)
 
-
-"""
-inds = [i for i, d in disp_diff if d<10]
-cand_keys = [query] + [keys[k] for k in inds]
-plt.figure()
-for item in [[0, 2400, 2, 8], [2640, 3120, 2, 9], [0, 2400, 5, 7], [2400, 3120, 18, 7]]:#cand_keys:
-    track1, track2 = get_matched_stereo_tracks(tracks1, tracks2, *item)
-    plt.plot(track1[:,1], track1[:,7]-track2[:,7], '-*', label=f"{item[2]}:{item[3]}")
-plt.legend()
-"""
-
-tracks1 = otracks1.copy()
-tracks2 = otracks2.copy()
-if mat_file is not None:
-    tracks1 = rectify_tracks(tracks1, cameraMatrix1, distCoeffs1, R1, r_P1)
-    tracks2 = rectify_tracks(tracks2, cameraMatrix2, distCoeffs2, R2, r_P2)
-
-all_checked = []
-remained = frame_matches1.copy()
-frame_matches2 = []
-for i in range(start, end + 1, step):
-    # Collect queries for the current frame index
-    queries = [item for item in frame_matches1 if item[0] == i]
-
-    # Include the last matched items from frame_matches2
-    last_matches = [item[-1] for item in frame_matches2 if len(item) > 1]
-    queries += last_matches
-
-    # Remove already matched items from queries
-    queries = [item for item in queries if item not in all_checked]
-
-    # Remove queries from the remained list
-    remained = [item for item in remained if item not in queries]
-
-    # Add queries to all_checked
-    all_checked.extend(queries)
-
-    if not queries:
-        continue
-
-    for query in queries:
-        matched_key = find_match_key(query, remained, tracks1, tracks2)
-
-        if not matched_key:
-            # If no match found, add query to frame_matches2 if not already present
-            if not any(query in group for group in frame_matches2):
-                frame_matches2.append([query])
-            continue
-
-        # Remove matched key from remained
-        remained.remove(matched_key)
-
-        # Add matched key to the corresponding group in frame_matches2
-        query_found = False
-        for group in frame_matches2:
-            if query in group:
-                group.append(matched_key)
-                query_found = True
-                break
-
-        if not query_found:
-            frame_matches2.append([query, matched_key])
-
+frame_matches2 = merge_not_matched_tids(tracks1, tracks2, frame_matches1)
 
 expected = [
     [[0, 720, 0, 1], [720, 2640, 0, 9]],
@@ -846,10 +842,12 @@ assert frame_matches2 == expected
 
 print(frame_matches2)
 
+# debuging
+# ========
 # plt.figure()
 # prev_disp = None
 # for item in [[0, 1200, 8, 5], [1200, 2400, 8, 11], [2400, 3120, 8, 15]]:
-#     track1, track2 = get_matched_stereo_tracks(tracks1, tracks2, *item)
+#     track1, track2 = match_frames_within_range(tracks1, tracks2, *item)
 #     disparity = track1[:,7]-track2[:,7]
 #     smoothed_disp = uniform_filter1d(disparity, size=4*16)
 #     if prev_disp is not None:
@@ -858,7 +856,8 @@ print(frame_matches2)
 #     plt.plot(track1[:,1], disparity, '*')
 #     plt.plot(track1[:,1], smoothed_disp, 'r-')
 
-
+# save results
+# ============
 # save_stereo_images_with_matches_as_images(
 #     save_video_file / "new3",
 #     vid_path1,
@@ -871,16 +870,16 @@ print(frame_matches2)
 #     inputs.step,
 # )
 # save_images_as_video(save_video_file, save_video_file/"tmp", 30, 3840, 1080)
-# save_stereo_images_with_matches_as_video(
-#     save_video_file,
-#     vid_path1,
-#     vid_path2,
-#     otracks1,
-#     otracks2,
-#     frame_matches1,
-#     inputs.start_frame,
-#     inputs.end_frame,
-#     inputs.step,
-#     inputs.fps,
-# )
+save_stereo_images_with_matches_as_video(
+    save_video_file,
+    vid_path1,
+    vid_path2,
+    otracks1,
+    otracks2,
+    frame_matches1,
+    inputs.start_frame,
+    inputs.end_frame,
+    inputs.step,
+    inputs.fps,
+)
 print("======")

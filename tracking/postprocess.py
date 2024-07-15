@@ -8,7 +8,7 @@ from scipy.optimize import linear_sum_assignment
 from tracking import data_association as da
 
 
-def get_matching_frames_between_tracks(tracks1, tracks2, track_id1, track_id2):
+def match_frames_between_tracks(tracks1, tracks2, track_id1, track_id2):
     # get the matched detections based on the common frame numbers
     track1 = tracks1[tracks1[:, 0] == track_id1]
     track2 = tracks2[tracks2[:, 0] == track_id2]
@@ -370,7 +370,7 @@ plot_2d_tracks(tracks)
 gt_matches = {3:0, 5:1, 4:2, 2:3, 8:4, 0:5, 1:6, 6:7, 7:8, 9:9, 10:10, 11:11, 12:12, 13:13, 14:14}
 # gt_matches = {3:0, 5:0, 4:0, 2:0, 8:0, 0:0, 1:0, 6:0, 7:0, 9:0, 10:0, 11:0, 12:0, 13:0, 14:0}
 
-track1, track2 = get_matching_frames_between_tracks(tracks1, tracks2, 7, 8)
+track1, track2 = match_frames_between_tracks(tracks1, tracks2, 7, 8)
 track1 = correct_outliers(track1)
 
 plt.figure();plt.plot(track1[::16,7],track1[::16,8],'g-*');plt.plot(track2[::16,7],track2[::16,8],'r-*');plt.show(block=False)
@@ -378,7 +378,7 @@ plt.figure();plt.plot(track1[::16,7],track1[::16,8],'g-*');plt.plot(track2[::16,
 # np.mean(np.linalg.norm(np.diff(track1[:,7:9]-track2[:,7:9],axis=0),axis=1))
 
 # for tid1, tid2 in gt_matches.items():
-#     track1, track2 = get_matching_frames_between_tracks(tracks1, tracks2, tid1, tid2)
+#     track1, track2 = match_frames_between_tracks(tracks1, tracks2, tid1, tid2)
 #     plt.figure();plt.plot(np.diff(np.linalg.norm(track1[:,7:9], axis=1)),'-*');plt.plot(np.diff(np.linalg.norm(track2[:,7:9], axis=1)),'-*');plt.title(f"{tid1}:{tid2}")
 
 # TODO: remove
