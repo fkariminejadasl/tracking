@@ -15,6 +15,9 @@ from tqdm import tqdm
 from tracking import data_association as da
 from tracking import postprocess as pp
 
+# from tracking import visualize
+# from scipy.ndimage import uniform_filter1d # Apply a moving average to smooth data
+
 
 # Matching
 # ========
@@ -71,6 +74,40 @@ def cut_tracks_into_tracklets(tracks, start, end, step):
 
 
 # 3D
+# ==
+def get_stereo_parameters(mat_file, vid_path):
+    dd = loadmat(mat_file)
+    vc1 = cv2.VideoCapture(str(vid_path))
+
+    distCoeffs1 = deepcopy(dd["distortionCoefficients1"])[0].astype(np.float64)
+    distCoeffs2 = deepcopy(dd["distortionCoefficients2"])[0].astype(np.float64)
+    cameraMatrix1 = deepcopy(dd["intrinsicMatrix1"]).astype(np.float64)
+    cameraMatrix2 = deepcopy(dd["intrinsicMatrix2"]).astype(np.float64)
+    R = deepcopy(dd["rotationOfCamera2"]).astype(np.float64)
+    T = deepcopy(dd["translationOfCamera2"]).T.astype(np.float64)
+    cameraMatrix1[0:2, 2] += 1
+    cameraMatrix2[0:2, 2] += 1
+    # Projection matrices
+    P1 = np.dot(cameraMatrix1, np.hstack((np.eye(3), np.zeros((3, 1))))).astype(
+        np.float64
+    )
+    P2 = np.dot(cameraMatrix2, np.hstack((R, T))).astype(np.float64)
+
+    _, image1 = vc1.read()
+    vc1.release()
+    image_size = image1.shape[1], image1.shape[0]
+    R1, R2, r_P1, r_P2, Q, validPixROI1, validPixROI2 = cv2.stereoRectify(
+        cameraMatrix1=cameraMatrix1,
+        distCoeffs1=distCoeffs1,
+        cameraMatrix2=cameraMatrix2,
+        distCoeffs2=distCoeffs2,
+        imageSize=image_size,
+        R=R,
+        T=T,
+    )  # , flags=cv2.CALIB_ZERO_DISPARITY, alpha=-1)
+    return cameraMatrix1, distCoeffs1, R1, r_P1, cameraMatrix2, distCoeffs2, R2, r_P2
+
+
 def cen_wh_from_tl_br(tl_x, tl_y, br_x, br_y):
     width = int(round(br_x - tl_x))
     height = int(round(br_y - tl_y))
@@ -181,7 +218,7 @@ def match_gt_stereo_tracks(tracks1, tracks2):
     return matched_tids
 
 
-# match with ground truth (for evaluation)
+# Match with ground truth (for evaluation)
 def match_tracks_with_gt(tracks, gtracks, step=8):
     """
     gid2tids: dict[list]. ground truth id to matched tids
@@ -242,8 +279,79 @@ def merge_by_mached_tids(input_list):
     return merged_list
 
 
-# Visualization
-# =============
+def get_matched_stereo_tracks(tracks1, tracks2, sframe, eframe, tid1, tid2):
+    # TODO: rename both get_matched_stereo_tracks, get_matching_frames_between_tracks
+    track1 = tracks1[
+        (tracks1[:, 0] == tid1) & (tracks1[:, 1] >= sframe) & (tracks1[:, 1] < eframe)
+    ]
+    track2 = tracks2[
+        (tracks2[:, 0] == tid2) & (tracks2[:, 1] >= sframe) & (tracks2[:, 1] < eframe)
+    ]
+    track1, track2 = pp.get_matching_frames_between_tracks(track1, track2, tid1, tid2)
+    return track1, track2
+
+
+def find_match_key(
+    query, keys, tracks1, tracks2, thrs=20, frame_thrs=480, short_thrs=60
+):
+    """
+    Finds a matching key for the given query based on various thresholds and conditions.
+
+    Parameters:
+        query (list): The query to match. e.g. [720, 2640, 0, 9] (start_frame, end_frame,
+                      track_id1, track_id2)
+        keys (list of lists): List of potential match keys. e.g. [[720, 2640, 0, 9],
+                          [0, 480, 1, 3]]
+        tracks1 (list): List of tracks from the first source.
+        tracks2 (list): List of tracks from the second source.
+        thrs (int, optional): Threshold for disparity difference. Default is 20.
+        frame_thrs (int, optional): Threshold for frame difference. Default is 480.
+        short_thrs (int, optional): Threshold for minimum track length. Default is 60.
+
+    Returns:
+        list or None: The matching key if found, otherwise None.
+    """
+    q_track1, q_track2 = get_matched_stereo_tracks(tracks1, tracks2, *query)
+    if len(q_track1) == 0:
+        return None
+
+    q_disparities = q_track1[:, 7] - q_track2[:, 7]
+    disp_diff = []
+
+    for i, item in enumerate(keys):
+        track1, track2 = get_matched_stereo_tracks(tracks1, tracks2, *item)
+        if len(track1) == 0:
+            continue
+        if track1.shape[0] < short_thrs:
+            continue
+        if track1[0, 1] < q_track1[-1, 1]:
+            continue
+        if q_track1[-1, 1] >= track1[-1, 1]:
+            continue
+        if (track1[0, 1] - q_track1[-1, 1]) > frame_thrs:
+            continue
+
+        disparities = track1[:, 7] - track2[:, 7]
+        abs_disp = abs(disparities[0] - q_disparities[-1])
+        if abs_disp > thrs:
+            continue
+
+        if (query[2] == item[2]) or (query[3] == item[3]):
+            return item
+
+        disp_diff.append([i, abs_disp])
+
+    if not disp_diff:
+        return None
+    if len(disp_diff) == 1:
+        ind = disp_diff[0][0]
+        return keys[ind]
+
+    return None  # Ambiguous case with more than one possible match
+
+
+# Visualization and saving
+# ========================
 def put_bbox_in_image(image, x_tl, y_tl, x_br, y_br, color, text, black=True):
     cv2.rectangle(image, (x_tl, y_tl), (x_br, y_br), color=color, thickness=1)
     if black:
@@ -490,51 +598,16 @@ else:
 # parameters
 # ==========
 max_dist = 100
-# fmt: off
-gt_matches = {3:0, 5:1, 4:2, 2:3, 8:4, 0:5, 1:6, 6:7, 7:8, 9:9, 10:10, 11:11, 12:12, 13:13, 14:14}
-# fmt: on
+
 
 gtracks1 = da.load_tracks_from_mot_format(gt_track_file1)
 gtracks2 = da.load_tracks_from_mot_format(gt_track_file2)
 tracks1 = da.load_tracks_from_mot_format(track_file1)
 tracks2 = da.load_tracks_from_mot_format(track_file2)
 
-if mat_file is not None:
-    dd = loadmat(mat_file)
-    vc1 = cv2.VideoCapture(str(vid_path1))
 
-    distCoeffs1 = deepcopy(dd["distortionCoefficients1"])[0].astype(np.float64)
-    distCoeffs2 = deepcopy(dd["distortionCoefficients2"])[0].astype(np.float64)
-    cameraMatrix1 = deepcopy(dd["intrinsicMatrix1"]).astype(np.float64)
-    cameraMatrix2 = deepcopy(dd["intrinsicMatrix2"]).astype(np.float64)
-    R = deepcopy(dd["rotationOfCamera2"]).astype(np.float64)
-    T = deepcopy(dd["translationOfCamera2"]).T.astype(np.float64)
-    cameraMatrix1[0:2, 2] += 1
-    cameraMatrix2[0:2, 2] += 1
-    # Projection matrices
-    P1 = np.dot(cameraMatrix1, np.hstack((np.eye(3), np.zeros((3, 1))))).astype(
-        np.float64
-    )
-    P2 = np.dot(cameraMatrix2, np.hstack((R, T))).astype(np.float64)
-
-    _, image1 = vc1.read()
-    vc1.release()
-    image_size = image1.shape[1], image1.shape[0]
-    R1, R2, r_P1, r_P2, Q, validPixROI1, validPixROI2 = cv2.stereoRectify(
-        cameraMatrix1=cameraMatrix1,
-        distCoeffs1=distCoeffs1,
-        cameraMatrix2=cameraMatrix2,
-        distCoeffs2=distCoeffs2,
-        imageSize=image_size,
-        R=R,
-        T=T,
-    )  # , flags=cv2.CALIB_ZERO_DISPARITY, alpha=-1)
-
-
-# postprocess tracks
-# =====
-# from tracking import visualize
-# # debug
+# debuging
+# ========
 # visualize.save_images_with_tracks(
 #                 vid_path1.parent / "images/tr",
 #                 vid_path1,
@@ -543,10 +616,14 @@ if mat_file is not None:
 #                 None,
 #                 1,
 #             )
+
+# postprocess tracks
+# ==================
 tracks1 = postprocess_tracks(tracks1)
 tracks2 = postprocess_tracks(tracks2)
 
-# # debug
+# debuging
+# ========
 # visualize.save_images_with_tracks(
 #                 vid_path1.parent / "images/pp",
 #                 vid_path1,
@@ -562,11 +639,25 @@ tracks2 = postprocess_tracks(tracks2)
 otracks1 = tracks1.copy()
 otracks2 = tracks2.copy()
 if mat_file is not None:
+    (
+        cameraMatrix1,
+        distCoeffs1,
+        R1,
+        r_P1,
+        cameraMatrix2,
+        distCoeffs2,
+        R2,
+        r_P2,
+    ) = get_stereo_parameters(mat_file, vid_path1)
     tracks1 = rectify_tracks(tracks1, cameraMatrix1, distCoeffs1, R1, r_P1)
     tracks2 = rectify_tracks(tracks2, cameraMatrix2, distCoeffs2, R2, r_P2)
 
 # debuging
-# ============
+# ========
+# fmt: off
+# gt_matches = {3:0, 5:1, 4:2, 2:3, 8:4, 0:5, 1:6, 6:7, 7:8, 9:9, 10:10, 11:11, 12:12, 13:13, 14:14}
+# fmt: on
+
 # for tid1, tid2 in gt_matches.items():
 #     track1, track2 = pp.get_matching_frames_between_tracks(tracks1, tracks2, tid1, tid2)
 #     plt.figure();plt.plot(track1[:,1], track1[:,8]-track2[:,8], '*-')
@@ -604,7 +695,8 @@ step = 240  # int(round(vc1.get(cv2.CAP_PROP_FPS))) * 2
 start = 0
 vc1.release()
 
-# for debuging
+# debuging
+# ========
 # tid1 = 3
 # track1 = tracks1[tracks1[:, 0] == tid1]
 # tracklet1 = cut_track_into_tracklets(track1, start, end, step)
@@ -665,80 +757,6 @@ frame_matches = [
 ]
 
 frame_matches1 = merge_by_mached_tids(frame_matches)
-
-from scipy.ndimage import uniform_filter1d
-
-
-# Apply a moving average filter to smooth the data
-def get_matched_stereo_tracks(tracks1, tracks2, sframe, eframe, tid1, tid2):
-    # TODO: rename both get_matched_stereo_tracks, get_matching_frames_between_tracks
-    track1 = tracks1[
-        (tracks1[:, 0] == tid1) & (tracks1[:, 1] >= sframe) & (tracks1[:, 1] < eframe)
-    ]
-    track2 = tracks2[
-        (tracks2[:, 0] == tid2) & (tracks2[:, 1] >= sframe) & (tracks2[:, 1] < eframe)
-    ]
-    track1, track2 = pp.get_matching_frames_between_tracks(track1, track2, tid1, tid2)
-    return track1, track2
-
-
-def find_match_key(
-    query, keys, tracks1, tracks2, thrs=20, frame_thrs=480, short_thrs=60
-):
-    """
-    Finds a matching key for the given query based on various thresholds and conditions.
-
-    Parameters:
-        query (list): The query to match. e.g. [720, 2640, 0, 9] (start_frame, end_frame,
-                      track_id1, track_id2)
-        keys (list of lists): List of potential match keys. e.g. [[720, 2640, 0, 9],
-                          [0, 480, 1, 3]]
-        tracks1 (list): List of tracks from the first source.
-        tracks2 (list): List of tracks from the second source.
-        thrs (int, optional): Threshold for disparity difference. Default is 20.
-        frame_thrs (int, optional): Threshold for frame difference. Default is 480.
-        short_thrs (int, optional): Threshold for minimum track length. Default is 60.
-
-    Returns:
-        list or None: The matching key if found, otherwise None.
-    """
-    q_track1, q_track2 = get_matched_stereo_tracks(tracks1, tracks2, *query)
-    if len(q_track1) == 0:
-        return None
-
-    q_disparities = q_track1[:, 7] - q_track2[:, 7]
-    disp_diff = []
-
-    for i, item in enumerate(keys):
-        track1, track2 = get_matched_stereo_tracks(tracks1, tracks2, *item)
-        if len(track1) == 0:
-            continue
-        if track1.shape[0] < short_thrs:
-            continue
-        if track1[0, 1] < q_track1[-1, 1]:
-            continue
-        if q_track1[-1, 1] >= track1[-1, 1]:
-            continue
-        if (track1[0, 1] - q_track1[-1, 1]) > frame_thrs:
-            continue
-
-        disparities = track1[:, 7] - track2[:, 7]
-        abs_disp = abs(disparities[0] - q_disparities[-1])
-        if abs_disp > thrs:
-            continue
-
-        if (query[2] == item[2]) or (query[3] == item[3]):
-            return item
-
-        disp_diff.append([i, abs_disp])
-
-    if not disp_diff:
-        return None
-    if len(disp_diff) == 1:
-        ind = disp_diff[0][0]
-        return keys[ind]
-
-    return None  # Ambiguous case with more than one possible match
 
 
 """
@@ -803,8 +821,7 @@ for i in range(start, end + 1, step):
         if not query_found:
             frame_matches2.append([query, matched_key])
 
-"""
-# Tobe removed. Just for debugging.
+
 expected = [
     [[0, 720, 0, 1], [720, 2640, 0, 9]],
     [[0, 480, 1, 3]],
@@ -825,10 +842,8 @@ expected = [
     [[2640, 3120, 20, 17]],
     [[2880, 3120, 21, 18]],
 ]
-assert len(expected) == len(frame_matches2)
-for exp, act in zip(expected, frame_matches2):
-    assert exp == act
-"""
+assert frame_matches2 == expected
+
 print(frame_matches2)
 
 # plt.figure()
@@ -856,16 +871,16 @@ print(frame_matches2)
 #     inputs.step,
 # )
 # save_images_as_video(save_video_file, save_video_file/"tmp", 30, 3840, 1080)
-save_stereo_images_with_matches_as_video(
-    save_video_file,
-    vid_path1,
-    vid_path2,
-    otracks1,
-    otracks2,
-    frame_matches1,
-    inputs.start_frame,
-    inputs.end_frame,
-    inputs.step,
-    inputs.fps,
-)
+# save_stereo_images_with_matches_as_video(
+#     save_video_file,
+#     vid_path1,
+#     vid_path2,
+#     otracks1,
+#     otracks2,
+#     frame_matches1,
+#     inputs.start_frame,
+#     inputs.end_frame,
+#     inputs.step,
+#     inputs.fps,
+# )
 print("======")
