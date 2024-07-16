@@ -226,10 +226,10 @@ def postprocess_tracks(tracks):
 def match_gt_stereo_tracks(tracks1, tracks2):
     """match two ground truth tracks
     rectified coordinates should be given.
-    return list[tuple(gid1, gid2)]
-    >>> gtracks1 = rectify_tracks(gtracks1, cameraMatrix1, distCoeffs1, R1, r_P1)
-    >>> gtracks2 = rectify_tracks(gtracks2, cameraMatrix2, distCoeffs2, R2, r_P2)
-    >>> g1g2_tids = match_gt_stereo_tracks(gtracks1, gtracks2)
+    return list[tuple(tid1, tid2)], list[list[sframe, eframe, tid1, tid2]]
+    >>> tracks1 = rectify_tracks(tracks1, cameraMatrix1, distCoeffs1, R1, r_P1)
+    >>> tracks2 = rectify_tracks(tracks2, cameraMatrix2, distCoeffs2, R2, r_P2)
+    >>> tids, frame_tids = match_gt_stereo_tracks(tracks1, tracks2)
     """
     # compute distances between tracks
     tids1 = np.unique(tracks1[:, 0])
@@ -266,17 +266,20 @@ def match_gt_stereo_tracks(tracks1, tracks2):
         if row_dists:
             match_key = min(row_dists, key=row_dists.get)
             matched_keys.append(match_key)
-
-    print(matched_tids)
-    print(matched_keys)
-    print(sorted(gt_matches.items(), key=lambda i: i[0]))
     """
-    return matched_tids
+
+    frame_tids = []
+    for tid1, tid2 in matched_tids:
+        track1, track2 = pp.match_frames_between_tracks(tracks1, tracks2, tid1, tid2)
+        frame_tids.append([min(track1[:, 1]), max(track1[:, 1]), tid1, tid2])
+
+    return matched_tids, frame_tids
 
 
 # Match with ground truth (for evaluation)
 def match_tracks_with_gt(tracks, gtracks, step=8):
     """
+    Match tracks with ground truth based on coordinates and frames (spatiotemporal)
     gid2tids: dict[list]. ground truth id to matched tids
     frames_tids: list[list]: each element: start frame, end frame, gt id, track id
     """
@@ -295,6 +298,47 @@ def match_tracks_with_gt(tracks, gtracks, step=8):
                 gid2tids[gtid].append(tid)
                 frames_tids.append([min(frames), max(frames), gtid, tid])
     return gid2tids, frames_tids
+
+
+def get_t1t2_from_g1t1_g2t2(g1t1s, g2t2s, threshold=240):
+    """
+    Parameters:
+    - g1t1s, g2t2s: list[start_frame, end_frame, tid1, tid2]
+    Returns:
+    - list[list[start_frame, end_frame, tid1, tid2]]
+    """
+    result = []
+    for g1t1 in g1t1s:
+        for g2t2 in g2t2s:
+            max_start = max(g1t1[0], g2t2[0])
+            min_end = min(g1t1[1], g2t2[1])
+
+            if max_start < min_end:  # Check if there is an overlap
+                new_element = [max_start, min_end, g1t1[3], g2t2[3]]
+                if (min_end - max_start) >= threshold:
+                    result.append(new_element)
+    return result
+
+
+def get_t1t2s_from_g1t1s_g2t2s(
+    g1g2_tids, g1t1_frames_tids, g2t2_frames_tids, threshold=240
+):
+    """
+    Parameters:
+    - g1g2_tids, g1t1_frames_tids, g2t2_frames_tids: list[start_frame, end_frame, tid1, tid2]
+    Returns:
+    - list[list[list[start_frame, end_frame, tid1, tid2]]]
+    """
+    results = []
+    for g1g2 in g1g2_tids:
+        g1 = g1g2[0]
+        g2 = g1g2[1]
+        sel_g1t1 = [g1t1 for g1t1 in g1t1_frames_tids if g1 == g1t1[2]]
+        sel_g2t2 = [g2t2 for g2t2 in g2t2_frames_tids if g2 == g2t2[2]]
+        result = get_t1t2_from_g1t1_g2t2(sel_g1t1, sel_g2t2, threshold)
+        if result:
+            results.append(result)
+    return results
 
 
 # Debugging
@@ -456,7 +500,7 @@ def find_match_key(
 
 # Visualization and saving
 # ========================
-def put_bbox_in_image(image, x_tl, y_tl, x_br, y_br, color, text, black=True):
+def put_bbox_in_image(image, x_tl, y_tl, x_br, y_br, color, text, black=False):
     cv2.rectangle(image, (x_tl, y_tl), (x_br, y_br), color=color, thickness=1)
     if black:
         color = (0, 0, 0)
@@ -464,7 +508,7 @@ def put_bbox_in_image(image, x_tl, y_tl, x_br, y_br, color, text, black=True):
     cv2.putText(image, text, (x_tl, y_tl), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, 2)
 
 
-def draw_matches(image1, image2, dets1, dets2, color):
+def draw_matches(image1, image2, dets1, dets2, color, black=False):
     combined_image = np.hstack((image1, image2))
     for d1, d2 in zip(dets1, dets2):
         start_point = (int(d1[7]), int(d1[8]))
@@ -481,6 +525,7 @@ def draw_matches(image1, image2, dets1, dets2, color):
             int(y_br),
             color,
             f"{det[2]},{det[0]}",
+            black,
         )
 
     for det in dets2:
@@ -499,7 +544,7 @@ def draw_matches(image1, image2, dets1, dets2, color):
 
 
 def create_stereo_image_with_matches(
-    image1, image2, dets1, dets2, frame, frame_matches
+    image1, image2, dets1, dets2, frame, frame_matches, black=False
 ):
     """
     dets1, dets2: np.ndarray. detections in a image1 and image2
@@ -540,7 +585,7 @@ def create_stereo_image_with_matches(
 
     # plot and save results
     color = (0, 0, 255)
-    combined_image = draw_matches(image1, image2, mdets1, mdets2, color)
+    combined_image = draw_matches(image1, image2, mdets1, mdets2, color, black)
     return combined_image
 
 
@@ -555,6 +600,7 @@ def save_stereo_images_with_matches_as_video(
     en_frame=None,
     step=1,
     fps=30,
+    black=False,
 ):
     save_video_file = Path(save_video_file)
     save_video_file.parent.mkdir(parents=True, exist_ok=True)
@@ -592,7 +638,7 @@ def save_stereo_images_with_matches_as_video(
         if (dets1.size == 0) or (dets2.size == 0):
             continue
         combined_image = create_stereo_image_with_matches(
-            image1, image2, dets1, dets2, frame, frame_matches
+            image1, image2, dets1, dets2, frame, frame_matches, black
         )
         out.write(combined_image)
 
@@ -609,6 +655,7 @@ def save_stereo_images_with_matches_as_images(
     st_frame=0,
     en_frame=None,
     step=1,
+    black=False,
 ):
     save_path.mkdir(parents=True, exist_ok=True)
 
@@ -635,7 +682,7 @@ def save_stereo_images_with_matches_as_images(
         if (dets1.size == 0) or (dets2.size == 0):
             continue
         combined_image = create_stereo_image_with_matches(
-            image1, image2, dets1, dets2, frame, frame_matches
+            image1, image2, dets1, dets2, frame, frame_matches, black
         )
         cv2.imwrite(f"{save_path}/frame_{frame:06d}.jpg", combined_image)
 
@@ -643,7 +690,7 @@ def save_stereo_images_with_matches_as_images(
 def save_images_as_video(vid_file, image_path, fps, width, height):
     """
     The same code as ffmpeg but get 3 time more storage.
-    # ffmpeg -framerate 30 -pattern_type glob -i "frame_*.jpg" -c:v libx264 -pix_fmt yuv420p output.mp4
+    `ffmpeg -framerate 30 -pattern_type glob -i "frame_*.jpg" -c:v libx264 -pix_fmt yuv420p output.mp4`
     """
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # (*"XVID") with .avi
     out = cv2.VideoWriter(str(vid_file), fourcc, fps, (width, height))
@@ -687,7 +734,7 @@ vid_path1 = Path(inputs.vid_path1)
 vid_path2 = Path(inputs.vid_path2)
 track_file1 = Path(inputs.track_file1)
 track_file2 = Path(inputs.track_file2)
-if (inputs.gt_track_file1 is None) or (inputs.gt_track_file2):
+if (inputs.gt_track_file1 is None) or (inputs.gt_track_file2 is None):
     gt_track_file1 = track_file1
     gt_track_file2 = track_file2
 else:
@@ -754,50 +801,15 @@ if mat_file is not None:
     tracks1 = rectify_tracks(tracks1, cameraMatrix1, distCoeffs1, R1, r_P1)
     tracks2 = rectify_tracks(tracks2, cameraMatrix2, distCoeffs2, R2, r_P2)
 
-# Fatemeh: start here
-# debuging
-# ========
-# fmt: off
-# gt_matches = {3:0, 5:1, 4:2, 2:3, 8:4, 0:5, 1:6, 6:7, 7:8, 9:9, 10:10, 11:11, 12:12, 13:13, 14:14}
-# fmt: on
-# gtracks1 = da.load_tracks_from_mot_format(gt_track_file1)
-# gtracks2 = da.load_tracks_from_mot_format(gt_track_file2)
-
-# for tid1, tid2 in gt_matches.items():
-#     track1, track2 = pp.match_frames_between_tracks(tracks1, tracks2, tid1, tid2)
-#     plt.figure();plt.plot(track1[:,1], track1[:,8]-track2[:,8], '*-')
-#     plt.title(f'{tid1}:{tid2}')
-
-# evaluation
-# ==========
-# # g_frame_matches(g1->g2), frames_gtids1(g1->t1), frames_gtids2(g2->t2) -> (t1->t2)
-
-# # g1->t1, g2->t2
-# gid2tids1, frames_gtids1 = match_tracks_with_gt(tracks1, gtracks1)
-# gid2tids2, frames_gtids2 = match_tracks_with_gt(tracks2, gtracks2)
-# # [plot_matched_tracks_with_gt(tracks2, gtracks2, k, v) for k, v in gid2tids1.items()]
-
-# # g1->g2
-# rgtracks1 = rectify_tracks(gtracks1, cameraMatrix1, distCoeffs1, R1, r_P1)
-# rgtracks2 = rectify_tracks(gtracks2, cameraMatrix2, distCoeffs2, R2, r_P2)
-# g1g2_tids = match_gt_stereo_tracks(rgtracks1, rgtracks2)
-# g_frame_matches = []
-# for tid1, tid2 in g1g2_tids: #gt_matches.items():
-#     track1, track2 = pp.match_frames_between_tracks(
-#         gtracks1, gtracks2, tid1, tid2
-#     )
-#     g_frame_matches.append([min(track1[:, 1]), max(track1[:, 1]), tid1, tid2])
-# print(sorted(gt_matches.items(), key=lambda x:x[0]))
-# print(g1g2_tids)
-# print(g_frame_matches)
 
 # tracklet matching
 # =================
-# start, end, step = 0, 3117, 240  # 200
 vc1 = cv2.VideoCapture(str(vid_path1))
 end = int(vc1.get(cv2.CAP_PROP_FRAME_COUNT))
-step = 240  # int(round(vc1.get(cv2.CAP_PROP_FPS))) * 2
+step = int(round(vc1.get(cv2.CAP_PROP_FPS)))  # 240
 start = 0
+im_height = int(vc1.get(cv2.CAP_PROP_FRAME_HEIGHT))
+im_width = int(vc1.get(cv2.CAP_PROP_FRAME_WIDTH))
 vc1.release()
 
 # debuging
@@ -815,9 +827,105 @@ tracklets2 = cut_tracks_into_tracklets(tracks2, start, end, step)
 
 frame_matches = match_tracklets(tracklets1, tracklets2)
 frame_matches1 = merge_by_mached_tids(frame_matches)
-
 frame_matches2 = merge_not_matched_tids(tracks1, tracks2, frame_matches1)
 
+print(frame_matches2)
+
+
+# debuging
+# ========
+# plt.figure()
+# prev_disp = None
+# for item in [[0, 1200, 8, 5], [1200, 2400, 8, 11], [2400, 3120, 8, 15]]:
+#     track1, track2 = match_frames_within_range(tracks1, tracks2, *item)
+#     disparity = track1[:,7]-track2[:,7]
+#     smoothed_disp = uniform_filter1d(disparity, size=4*16)
+#     if prev_disp is not None:
+#         print(smoothed_disp[-1] - prev_disp)
+#     prev_disp = smoothed_disp[-1]
+#     plt.plot(track1[:,1], disparity, '*')
+#     plt.plot(track1[:,1], smoothed_disp, 'r-')
+
+# save results
+# ============
+# save_stereo_images_with_matches_as_images(
+#     save_video_file.parent / save_video_file.stem,
+#     vid_path1,
+#     vid_path2,
+#     otracks1,
+#     otracks2,
+#     frame_matches2,
+#     inputs.start_frame,
+#     inputs.end_frame,
+#     inputs.step,
+#     black=False,
+# )
+# save_images_as_video(
+#     save_video_file,
+#     save_video_file.parent / save_video_file.stem,
+#     30,
+#     im_width * 2,
+#     im_height,
+# )
+save_stereo_images_with_matches_as_video(
+    save_video_file,
+    vid_path1,
+    vid_path2,
+    otracks1,
+    otracks2,
+    frame_matches1,
+    inputs.start_frame,
+    inputs.end_frame,
+    inputs.step,
+    inputs.fps,
+    black=False,
+)
+
+"""
+# evaluation
+# ==========
+# g1g2_frames_tids(g1->g2), g1t1_frames_tids(g1->t1), g2t2_frames_tids(g2->t2) -> (t1->t2)
+
+# fmt: off
+gt_matches = {0:5, 1:6, 2:3, 3:0, 4:2, 5:1, 6:7, 7:8, 8:4, 9:9, 10:10, 11:11, 12:12, 13:13, 14:14}
+gt_matches = sorted(gt_matches.items(), key=lambda x:x[0])
+# fmt: on
+ogtracks1 = da.load_tracks_from_mot_format(gt_track_file1) # original, ground truth
+ogtracks2 = da.load_tracks_from_mot_format(gt_track_file2)
+
+# g1->t1, g2->t2
+g1t1_tids, g1t1_frames_tids = match_tracks_with_gt(otracks1, ogtracks1)
+g2t2_tids, g2t2_frames_tids = match_tracks_with_gt(otracks2, ogtracks2)
+# [plot_matched_tracks_with_gt(otracks2, ogtracks2, k, v) for k, v in g1t1_tids.items()]
+
+# g1->g2
+gtracks1 = rectify_tracks(ogtracks1, cameraMatrix1, distCoeffs1, R1, r_P1)
+gtracks2 = rectify_tracks(ogtracks2, cameraMatrix2, distCoeffs2, R2, r_P2)
+g1g2_tids, g1g2_frames_tids = match_gt_stereo_tracks(gtracks1, gtracks2)
+
+# t1-> t2
+t1t2s_frames_tids = get_t1t2s_from_g1t1s_g2t2s(g1g2_tids, g1t1_frames_tids, g2t2_frames_tids, threshold=240)
+
+matched_with_gts = []
+for items in frame_matches2:
+    for t1t2s in t1t2s_frames_tids:
+        matched = [[item, t1t2] for item in items for t1t2 in t1t2s if (item[2]==t1t2[2])&(item[3]==t1t2[3])]
+        if matched:
+            matched_with_gts.append(matched) 
+
+
+flat_frame_matches2 = [item for items in frame_matches2 for item in items] 
+flat_t1t2s_frames_tids = [item for items in t1t2s_frames_tids for item in items] 
+matched_computed = [item[0] for items in matched_with_gts for item in items]
+matched_gt = [item[1] for items in matched_with_gts for item in items]
+print(set(map(tuple, flat_frame_matches2)) - set(map(tuple, matched_computed)))
+print(set(map(tuple, matched_computed)) - set(map(tuple, flat_frame_matches2)))
+print(set(map(tuple, flat_t1t2s_frames_tids)) - set(map(tuple, matched_gt)))
+print(set(map(tuple, matched_gt)) - set(map(tuple, flat_t1t2s_frames_tids)))
+
+
+# evaluation
+# ==========
 expected = [
     [[0, 720, 0, 1], [720, 2640, 0, 9]],
     [[0, 480, 1, 3]],
@@ -839,47 +947,5 @@ expected = [
     [[2880, 3120, 21, 18]],
 ]
 assert frame_matches2 == expected
-
-print(frame_matches2)
-
-# debuging
-# ========
-# plt.figure()
-# prev_disp = None
-# for item in [[0, 1200, 8, 5], [1200, 2400, 8, 11], [2400, 3120, 8, 15]]:
-#     track1, track2 = match_frames_within_range(tracks1, tracks2, *item)
-#     disparity = track1[:,7]-track2[:,7]
-#     smoothed_disp = uniform_filter1d(disparity, size=4*16)
-#     if prev_disp is not None:
-#         print(smoothed_disp[-1] - prev_disp)
-#     prev_disp = smoothed_disp[-1]
-#     plt.plot(track1[:,1], disparity, '*')
-#     plt.plot(track1[:,1], smoothed_disp, 'r-')
-
-# save results
-# ============
-# save_stereo_images_with_matches_as_images(
-#     save_video_file / "new3",
-#     vid_path1,
-#     vid_path2,
-#     otracks1,
-#     otracks2,
-#     frame_matches2,
-#     inputs.start_frame,
-#     inputs.end_frame,
-#     inputs.step,
-# )
-# save_images_as_video(save_video_file, save_video_file/"tmp", 30, 3840, 1080)
-save_stereo_images_with_matches_as_video(
-    save_video_file,
-    vid_path1,
-    vid_path2,
-    otracks1,
-    otracks2,
-    frame_matches1,
-    inputs.start_frame,
-    inputs.end_frame,
-    inputs.step,
-    inputs.fps,
-)
-print("======")
+"""
+print("Done")
