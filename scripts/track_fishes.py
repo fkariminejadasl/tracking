@@ -56,7 +56,7 @@ def main(inputs):
 
     # N.B. in yolov8, if image list is empty, it will donwload own bus.jpg.
     if video_path.is_dir():
-        video_files = list(video_path.glob("*"))
+        video_files = list(video_path.glob("*mp4"))
     elif video_path.is_file():
         video_files = [video_path]
     else:

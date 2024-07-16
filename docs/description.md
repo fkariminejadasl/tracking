@@ -12,6 +12,25 @@ Multistage tracking consists of two stages, where (nearly) occluded detections a
 - In the second stage, a weighted sum of the cosine similarity loss and IOU loss is used for the usual Hungarian matching algorithm, with 0.9 and 0.1 weights, respectively.
 
 
+Stereo Fish Tracking (SFT)
+====================
+SFT matches tracks of stereo views. SFT requires videos and tracks in MOT format from each video, along with intrinsic and stereo parameters.
+
+Due to tracking errors, ID switches cause a track to consist of different tracks. This makes stereo matching of tracks challenging.
+
+To tackle the ID switch issue, each track is divided into tracklets, and tracklets are matched based on a (3D) metric. After that, the tracklets are converted into longer tracks based on certain criteria.
+
+SFT has three main steps: track postprocessing, tracklet matching, and making tracks longer. Here is the description of each step:
+
+- Postprocessing tracks: The track postprocessing consists of a few simple steps: remove static tracks, remove short tracks, reindex tracks, and interpolate tracks when frames are missing.
+- Tracklet matching: Divide each track into tracklets and then match tracklets based on a metric. The matching is based on the Hungarian method, which is an n-n linear assignment method. A metric is calculated for each pair of tracklets, and the Hungarian method finds the matching pairs. A 3D geometry metric, the sum of differences of the y-component of the rectified coordinates, is used. N.B. We tested different 2D, 3D geometry, and appearance metrics, such as cosine similarity of the deep features for appearance metric, similar 2D shape of the trajectory as a 2D geometry, and 3D coordinates, speed, and acceleration consistency for 3D geometry. We found that the current metric is strong and simple as well. The experiments on different metrics can be seen in `exps/stereo_deep_features.py`.
+- Making tracks longer: The tracks become longer if they have the same matching track IDs. If there is only one track ID in common, the disparity continuity, which checks that the difference of disparities does not exceed a threshold, is used. In the case of not having any common track IDs, the track can only become longer if there is only one stereo tracklet holding the disparity continuity. N.B. Due to the complex motion of fishes, the disparity continuity can be easily maintained for wrong tracklet matches.
+
+Either run the below script or use `notebooks/stereo_track_fishes.ipynb`.
+```python
+scripts/stereo_track_fishes.py configs/stereo_track.yaml
+```
+
 Stereo matchting on ground truth data
 ================
 Per track, compute the mean alignment errors and the minimum alignment error is the match. The stereo images should be rectified before.
@@ -52,4 +71,4 @@ The association learning still requirs some improvement. Here is the list:
 Postprocessing tracks
 ==================
 
-remove static tracks, remove short tracks, interpolate tracks, reindexing
+The track postprocessing consists of a few simple steps: remove static tracks, remove short tracks, reindex tracks, and interpolate tracks when frames are missing.
