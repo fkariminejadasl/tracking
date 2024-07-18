@@ -1,11 +1,8 @@
-import argparse
 import sys
 import time
 from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
-import yaml
 
 from tracking import utils
 from tracking.data_association import hungarian_track, save_tracks_to_mot_format
@@ -14,28 +11,8 @@ from tracking.multi_stage_tracking import (
     ultralytics_detect_video,
     ultralytics_track_video,
 )
+from tracking.utils_general import parse_args
 from tracking.visualize import get_video_parameters
-
-
-def process_config(config_path):
-    with open(config_path, "r") as config_file:
-        try:
-            return yaml.safe_load(config_file)
-        except yaml.YAMLError as error:
-            print(error)
-
-
-def parse_args():
-    parser = argparse.ArgumentParser(description="Process a config file.")
-    parser.add_argument("config_file", type=Path, help="Path to the config file")
-
-    args = parser.parse_args()
-    config_path = args.config_file
-    inputs = process_config(config_path)
-    for key, value in inputs.items():
-        print(f"{key}: {value}")
-    inputs = SimpleNamespace(**inputs)
-    return inputs
 
 
 def main(inputs):

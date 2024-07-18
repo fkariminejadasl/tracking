@@ -1,0 +1,15 @@
+# Match ground-truth stereo tracks
+
+# None: means leave it empty
+# ==========================
+save_file: "/content/matches.csv"  # Value: Path
+mat_file: "/content/stereo_129.mat"  # Value: Path
+track_file1: "/content/129_1.txt"  # Value: Path. Track files in the mot format.
+track_file2: "/content/129_2.txt"  # Value: Path. Track files in the mot format.
+image_width: 1920 # Value: int.
+image_height: 1080 # Value: int.
+
+# save_file: "/home/fatemeh/Downloads/fish/mot_data/matches.csv"  # Value: Path
+# mat_file: "/home/fatemeh/Downloads/fish/mot_data/stereo_129.mat"  # Value: Path
+# track_file1: "/home/fatemeh/Downloads/fish/mot_data/mots/129_1.txt"  # Value: Path. Track files in the mot format.
+# track_file2: "/home/fatemeh/Downloads/fish/mot_data/mots/129_2.txt"  # Value: Path. Track files in the mot format.
