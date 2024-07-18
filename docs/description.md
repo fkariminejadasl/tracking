@@ -33,6 +33,11 @@ scripts/stereo_track_fishes.py configs/stereo_track.yaml
 
 Stereo matchting on ground truth data
 ================
+Match the corresponding tracks in stereo tracks. The tracks are matched based on a linear assigment (Hungarian method) of a 3D geometry metric. The 3D geometry metric is simply a mean absolute error in the normalized rectification error (y-axis). The error is normalized by the number of track points. 
+
+
+Stereo matchting on ground truth data (old)
+================
 Per track, compute the mean alignment errors and the minimum alignment error is the match. The stereo images should be rectified before.
 Requirements: 
 - Tracks should be provided.

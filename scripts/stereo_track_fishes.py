@@ -1,9 +1,6 @@
-import argparse
 from pathlib import Path
-from types import SimpleNamespace
 
 import cv2
-import yaml
 
 from tracking import data_association as da
 from tracking.stereo_track import (
@@ -21,32 +18,10 @@ from tracking.stereo_track import (
     save_stereo_images_with_matches_as_images,
     save_stereo_images_with_matches_as_video,
 )
+from tracking.utils_general import parse_args
 
 # from tracking import visualize
 # from scipy.ndimage import uniform_filter1d # Apply a moving average to smooth data
-
-
-# Parse arguments
-# ===============
-def process_config(config_path):
-    with open(config_path, "r") as config_file:
-        try:
-            return yaml.safe_load(config_file)
-        except yaml.YAMLError as error:
-            print(error)
-
-
-def parse_args():
-    parser = argparse.ArgumentParser(description="Process a config file.")
-    parser.add_argument("config_file", type=Path, help="Path to the config file")
-
-    args = parser.parse_args()
-    config_path = args.config_file
-    inputs = process_config(config_path)
-    for key, value in inputs.items():
-        print(f"{key}: {value}")
-    inputs = SimpleNamespace(**inputs)
-    return inputs
 
 
 # Inputs
@@ -152,7 +127,9 @@ tracklets2 = cut_tracks_into_tracklets(tracks2, start, end, step)
 
 frame_matches = match_tracklets(tracklets1, tracklets2, start, end, step, max_dist)
 frame_matches1 = merge_by_mached_tids(frame_matches)
-frame_matches2 = merge_not_matched_tids(tracks1, tracks2, frame_matches1, start, step, end)
+frame_matches2 = merge_not_matched_tids(
+    tracks1, tracks2, frame_matches1, start, step, end
+)
 
 print("matched frames: ", frame_matches2)
 

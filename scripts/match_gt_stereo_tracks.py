@@ -1,32 +1,12 @@
-import argparse
 from pathlib import Path
-from types import SimpleNamespace
-
-import yaml
 
 import tracking.data_association as da
-from tracking.stereo_track import get_stereo_parameters, rectify_tracks, match_gt_stereo_tracks
-
-
-def process_config(config_path):
-    with open(config_path, "r") as config_file:
-        try:
-            return yaml.safe_load(config_file)
-        except yaml.YAMLError as error:
-            print(error)
-
-
-def parse_args():
-    parser = argparse.ArgumentParser(description="Process a config file.")
-    parser.add_argument("config_file", type=Path, help="Path to the config file")
-
-    args = parser.parse_args()
-    config_path = args.config_file
-    inputs = process_config(config_path)
-    for key, value in inputs.items():
-        print(f"{key}: {value}")
-    inputs = SimpleNamespace(**inputs)
-    return inputs
+from tracking.stereo_track import (
+    get_stereo_parameters,
+    match_gt_stereo_tracks,
+    rectify_tracks,
+)
+from tracking.utils_general import parse_args
 
 
 def main(inputs):
@@ -38,7 +18,7 @@ def main(inputs):
     mat_file = Path(inputs.mat_file)
     im_width = inputs.image_width
     im_height = inputs.image_height
-   
+
     (
         cameraMatrix1,
         distCoeffs1,
@@ -57,15 +37,16 @@ def main(inputs):
     print(g1g2_tids)
     print(g1g2_frames_tids)
 
-    with open(save_file, 'w') as file:
+    with open(save_file, "w") as file:
         # Write g1g2_tids
-        file.write('g1g2_tids:\n')
-        file.write(str(g1g2_tids) + '\n')
-        
+        file.write("g1g2_tids:\n")
+        file.write(str(g1g2_tids) + "\n")
+
         # Write g1g2_frames_tids
-        file.write('g1g2_frames_tids:\n')
+        file.write("g1g2_frames_tids:\n")
         for frame in g1g2_frames_tids:
-            file.write(str(frame) + '\n')
+            file.write(str(frame) + "\n")
+
 
 if __name__ == "__main__":
     inputs = parse_args()
