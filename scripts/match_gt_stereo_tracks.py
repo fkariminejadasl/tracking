@@ -1,78 +1,72 @@
 import argparse
-import sys
 from pathlib import Path
+from types import SimpleNamespace
 
-import numpy as np
+import yaml
 
-path = (Path(__file__).parents[1]).as_posix()
-sys.path.insert(0, path)
+import tracking.data_association as da
+from tracking.stereo_track import get_stereo_parameters, rectify_tracks, match_gt_stereo_tracks
 
 
-from tracking.data_association import load_tracks_from_mot_format
-from tracking.stereo_gt import get_matched_track_ids
+def process_config(config_path):
+    with open(config_path, "r") as config_file:
+        try:
+            return yaml.safe_load(config_file)
+        except yaml.YAMLError as error:
+            print(error)
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Match ground-truth stereo tracks")
-    parser.add_argument(
-        "-r",
-        "--result_folder",
-        help="Path to save the result",
-        required=True,
-        type=Path,
-    )
-    parser.add_argument(
-        "-d",
-        "--data_folder",
-        help="Path where the tracks are",
-        required=True,
-        type=Path,
-    )
-    parser.add_argument(
-        "-t1",
-        "--tracks1",
-        help="tracks1 in mot format",
-        required=True,
-        type=Path,
-    )
-    parser.add_argument(
-        "-t2",
-        "--tracks2",
-        help="tracks1 in mot format",
-        required=True,
-        type=Path,
-    )
-    parser.add_argument(
-        "--save_name",
-        help="The name of the file used to save matches and 3D coordinates",
-        required=False,
-        type=str,
-        default="tracks_test",
-    )
+    parser = argparse.ArgumentParser(description="Process a config file.")
+    parser.add_argument("config_file", type=Path, help="Path to the config file")
+
     args = parser.parse_args()
-    print(args)
-    return args
+    config_path = args.config_file
+    inputs = process_config(config_path)
+    for key, value in inputs.items():
+        print(f"{key}: {value}")
+    inputs = SimpleNamespace(**inputs)
+    return inputs
 
 
-def main():
-    args = parse_args()
-    result_folder = args.result_folder.expanduser().resolve()
-    data_folder = args.data_folder.expanduser().resolve()
+def main(inputs):
+    max_dist = 100
 
-    tracks1 = load_tracks_from_mot_format(Path(data_folder / args.tracks1))
-    tracks2 = load_tracks_from_mot_format(Path(data_folder / args.tracks2))
-    matches = np.array(get_matched_track_ids(tracks1, tracks2))
-    matched_ids = matches[matches[:, 2] < 5][:, :2]
-    np.savetxt(
-        result_folder / args.save_name,
-        matched_ids[:, :2],
-        header="tracks1_ids, tracks2_ids",
-        delimiter=",",
-        fmt="%d",
-    )
+    save_file = Path(inputs.save_file)
+    track_file1 = Path(inputs.track_file1)
+    track_file2 = Path(inputs.track_file2)
+    mat_file = Path(inputs.mat_file)
+    im_width = inputs.image_width
+    im_height = inputs.image_height
+   
+    (
+        cameraMatrix1,
+        distCoeffs1,
+        R1,
+        r_P1,
+        cameraMatrix2,
+        distCoeffs2,
+        R2,
+        r_P2,
+    ) = get_stereo_parameters(mat_file, im_width, im_height)
+    otracks1 = da.load_tracks_from_mot_format(track_file1)
+    otracks2 = da.load_tracks_from_mot_format(track_file2)
+    tracks1 = rectify_tracks(otracks1, cameraMatrix1, distCoeffs1, R1, r_P1)
+    tracks2 = rectify_tracks(otracks2, cameraMatrix2, distCoeffs2, R2, r_P2)
+    g1g2_tids, g1g2_frames_tids = match_gt_stereo_tracks(tracks1, tracks2, max_dist)
+    print(g1g2_tids)
+    print(g1g2_frames_tids)
 
-    # read stereo parameters and create 3D coordinates
-
+    with open(save_file, 'w') as file:
+        # Write g1g2_tids
+        file.write('g1g2_tids:\n')
+        file.write(str(g1g2_tids) + '\n')
+        
+        # Write g1g2_frames_tids
+        file.write('g1g2_frames_tids:\n')
+        for frame in g1g2_frames_tids:
+            file.write(str(frame) + '\n')
 
 if __name__ == "__main__":
-    main()
+    inputs = parse_args()
+    main(inputs)

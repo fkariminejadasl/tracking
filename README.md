@@ -40,7 +40,42 @@ pip install --find-links ~/dev/tracking/dist ftracking -r ~/dev/tracking/require
 ```
 </details>
 
+## Run a script
+
+The parameters are set in `configs/*.yaml`. The help is given in this file.
+
+There are examples in [notebooks](notebooks) how to setup environment and run the scripts.
+
+### stereo tracking script
+
+The parameters are set in `track.yaml`. The help is given in this file.
+```bash
+python ~/dev/tracking/scripts/track_fishes.py ~/dev/tracking/configs/track.yaml
+```
+
+### tracking script
+
+The parameters are set in `stereo_track.yaml`. The help is given in this file.
+```bash
+python ~/dev/tracking/scripts/stereo_track_fishes.py ~/dev/tracking/configs/stereo_track.yaml
+```
+
+### match ground-truth stereo tracks
+
+The parameters are set in `match_gt_stereo_tracks.yaml`. The help is given in this file.
+```bash
+python ~/dev/tracking/scripts/match_gt_stereo_tracks.py ~/dev/tracking/configs/match_gt_stereo_tracks.yaml
+```
+
+### plot tracks in video
+
+The parameters are set in `plot_tracks.yaml`. The help is given in this file.
+```bash
+python ~/dev/tracking/scripts/plot_tracks_in_video.py ~/dev/tracking/configs/plot_tracks.yaml
+```
+
 ## Use in a code
+> Important: This part is not up to date. But in general works like this code snippet. 
 
 To call the package, simply use:
 ```python
@@ -79,26 +114,4 @@ tracks = da.make_array_from_tracks(tracks)
 visualize.save_images_with_tracks(
     main_path/"tracks_hung", vid_file, tracks, start_frame=0, end_frame=256, step=8, format="06d"
 )
-```
-
-## Run a script
-
-### tracking script
-
-The parameters are set in `track.yaml`. The help is given in this file.
-```bash
-python ~/dev/tracking/scripts/track_fishes.py ~/dev/tracking/configs/track.yaml
-```
-
-### match ground-truth stereo tracks
-
-```bash
-python ~/dev/tracking/scripts/match_gt_stereo_tracks.py -r ~/Downloads -d ~/Downloads/ -t1 04_07_22_F_2_rect_valid_gt.txt -t2 04_07_22_G_2_rect_valid_gt.txt --save_name my_matches.txt
-```
-
-### plot tracks in video
-
-The parameters are set in `plot_tracks.yaml`. The help is given in this file.
-```bash
-python ~/dev/tracking/scripts/plot_tracks_in_video.py ~/dev/tracking/configs/plot_tracks.yaml
 ```
