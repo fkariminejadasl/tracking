@@ -36,14 +36,6 @@ Stereo matchting on ground truth data
 Match the corresponding tracks in stereo tracks. The tracks are matched based on a linear assigment (Hungarian method) of a 3D geometry metric. The 3D geometry metric is simply a mean absolute error in the normalized rectification error (y-axis). The error is normalized by the number of track points. 
 
 
-Stereo matchting on ground truth data (old)
-================
-Per track, compute the mean alignment errors and the minimum alignment error is the match. The stereo images should be rectified before.
-Requirements: 
-- Tracks should be provided.
-- rectified images 
-- The best works on ground truth tracks mainly: If there are too many short tracklets due to id switch, the method can only match to the best and ignore the rest.  
-
 Track statistics
 ===========
 - tp, fp, fn: number of true positive, false positive, false negative regardless of their track ids.
@@ -77,3 +69,20 @@ Postprocessing tracks
 ==================
 
 The track postprocessing consists of a few simple steps: remove static tracks, remove short tracks, reindex tracks, and interpolate tracks when frames are missing.
+
+OLD
+===
+Stereo matchting
+----------------
+It starts from larger track and find the matching part. It then remove these matching parts and repeats. The code is in exps/old/stereo.py and tests are in exps/old/tests_stereo.py.
+
+Stereo matchting on ground truth data
+-------------------------------------
+
+Per track, compute the mean alignment errors and the minimum alignment error is the match. The stereo images should be rectified before.
+Requirements: 
+- Tracks should be provided.
+- rectified images 
+- The best works on ground truth tracks mainly: If there are too many short tracklets due to id switch, the method can only match to the best and ignore the rest.  
+
+The code is in exps/old/stereo_gt.py and tests are in exps/old/tests_stereo.py.

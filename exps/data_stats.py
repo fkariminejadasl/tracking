@@ -8,7 +8,6 @@ sys.path.insert(0, path)
 
 from tracking import data_association as da
 from tracking import postprocess as pp
-from tracking import tracklet_operations as tk
 
 """
 yolo_main_path = Path("/home/fatemeh/Downloads/vids/yolo")

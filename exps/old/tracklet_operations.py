@@ -1,6 +1,7 @@
 from typing import List
 
 import numpy as np
+from stereo_gt import get_disparity_info_from_stereo_track
 
 from tracking.data_association import (
     get_iou,
@@ -9,7 +10,6 @@ from tracking.data_association import (
     get_track_inds_from_track_id,
 )
 from tracking.postprocess import reindex_tracks
-from tracking.stereo_gt import get_disparity_info_from_stereo_track
 
 # min_track_length: int = 10
 # min_match_length = 50
