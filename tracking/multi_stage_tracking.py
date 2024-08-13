@@ -26,6 +26,15 @@ hug_thrs = 0.8
 # for close bboxes
 close_iou_thrs = 0
 close_dist_thrs = 3
+"""
+In ultralytics botsort, match_thresh=.8 is used for hungarian but it is after matching.
+My improve_hungarian handles it better by totally removing the high cost vlaues. This 
+is done by first thresholding cost function and then removing all zero row and columns.  
+TODO:
+- det_score x iou in fuse_score in 
+https://github.com/ultralytics/ultralytics/blob/main/ultralytics/trackers/utils/matching.py
+- new_track_thresh=.6
+"""
 
 
 def large_occlusion(det1, det2, thrs_iou, thrs_inside):
@@ -599,7 +608,7 @@ def handle_tracklets(dets1, dets2, matches, trks, u_dids=[]):
     # matched here. So it will be removed. N.B. previous step for matches should
     # be done before. Otherwise, the track length (frequency) is not 2.
     # N.B. In DeepMOT, for track birth, track is born if detections appear in 3
-    # consecutive frames and have at least .3 IOU overlap.
+    # consecutive frames and have at least .3 IOU overlap. (maybe TODO)
     counter = Counter(trks[:, 0])
     freqs = np.array(list(counter.values()))
     vals = np.array(list(counter.keys()))

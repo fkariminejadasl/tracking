@@ -75,6 +75,7 @@ OLD
 Stereo matchting
 ----------------
 It starts from larger track and find the matching part. It then remove these matching parts and repeats. The code is in exps/old/stereo.py and tests are in exps/old/tests_stereo.py.
+N.B. The old method is top down and the new method is bottom up. 
 
 Stereo matchting on ground truth data
 -------------------------------------
