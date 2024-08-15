@@ -199,12 +199,18 @@ def save_images_of_video(
 def save_images_with_tracks(
     save_path: Path,
     video_file: Path,
-    tracks: np.ndarray,
+    tracks,
     start_frame=None,
     end_frame=None,
     step: int = 1,
     format: str = "06d",
 ):
+    """
+    tracks: Path or np.ndarray. Track path or tracks in mot format.
+    """
+    if isinstance(tracks, Path) or isinstance(tracks, str):
+        tracks = load_tracks_from_mot_format(tracks)
+
     save_path.mkdir(parents=True, exist_ok=True)
 
     vc = cv2.VideoCapture(video_file.as_posix())
