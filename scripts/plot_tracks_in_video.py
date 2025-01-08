@@ -52,9 +52,9 @@ def main(inputs):
                 save_file,
                 tracks,
                 video_file,
-                start_frame,
-                end_frame,
-                step,
+                start_frame=start_frame,
+                end_frame=end_frame,
+                step=step,
                 black=False,
             )
 
