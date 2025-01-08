@@ -87,17 +87,25 @@ import cv2
 print(da.get_iou((0, 0, 4, 2), (2, 1, 3, 2)))
 
 # save video as images
-vid_name = "16_cam12"
-main_path = Path("/home/fatemeh/Downloads/fish/out_of_sample_vids")
-vid_file = main_path/f"vids/{vid_name}.mp4"
-visualize.save_images_of_video(main_path/"images",  vid_file, step=8)
+save_path = Path("/home/fatemeh/Downloads/fish/mot_data/images/129_1/im")
+video_file = Path("/home/fatemeh/Downloads/fish/mot_data/vids/129_1.mp4")
+visualize.save_images_of_video(save_path, video_file, start_frame=0, end_frame=512, step=256)
+
+# save detections as images
+save_path = Path("/home/fatemeh/Downloads/fish/mot_data/images/129_1/det")
+video_file = Path("/home/fatemeh/Downloads/fish/mot_data/vids/129_1.mp4")
+dets_file = Path("/home/fatemeh/Downloads/fish/mot_data/yolov8/129_1_dets/gt/gt.txt") # in mot format
+visualize.save_images_with_detections_mot(save_path, video_file, dets_file, start_frame=0, end_frame=512, step=256)
+# The mot format is Table 4 in [mot20](https://arxiv.org/abs/2003.09003)
 
 # save tracks as images
-tracks = da.load_tracks_from_mot_format(main_path / f"mots/{vid_name}.zip")
-save_path = main_path/"images_tracks"
-visualize.save_images_with_tracks(
-    save_path, vid_file, tracks, start_frame=0, end_frame=256, step=8, format="06d"
-)
+save_path = Path("/home/fatemeh/Downloads/fish/mot_data/images/129_1/tracks")
+video_file = Path("/home/fatemeh/Downloads/fish/mot_data/vids/129_1.mp4")
+track_file = Path("/home/fatemeh/Downloads/fish/mot_data/mots/129_1.txt") # in mot format
+visualize.save_images_with_tracks(save_path, video_file, track_file, start_frame=0, end_frame=512, step=256)
+
+# load tracks
+tracks = da.load_tracks_from_mot_format(track_file)
 
 # compute tracks
 det_path = main_path / f"yolo/{vid_name}/obj_train_data"
