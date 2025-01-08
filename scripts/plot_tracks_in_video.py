@@ -55,6 +55,7 @@ def main(inputs):
                 start_frame=start_frame,
                 end_frame=end_frame,
                 step=step,
+                fps=inputs.fps,
                 black=False,
             )
 

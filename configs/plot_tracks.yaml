@@ -3,5 +3,6 @@
 track_path: "/home/fatemeh/Downloads/fish/mot_data/ms_exp3/mots/129_1_ms_exp3.txt" # Value: Path . mot format (.txt or .zip). 
 video_path: "/home/fatemeh/Downloads/fish/mot_data/vids/129_1.mp4" # Value: Path . video file extension .mp4.
 save_path: "/home/fatemeh/Downloads/fish/mot_data/ms_exp3/129_1/ms" # Value: Path # vids_tracks
-save_images: yes # Value: yes|no or true|false . Save images with tracks. 
+save_images: no # Value: yes|no or true|false . Save images with tracks. 
 # format: 06d # files are saved with this format. e.g. name_0000123.txt the format is '06d'. e.g. name_123.txt the format is ''
+fps: 30 # E.g., if the original video is 240 fps and we save every 8th frame, then the resulting fps will be 240/8.
